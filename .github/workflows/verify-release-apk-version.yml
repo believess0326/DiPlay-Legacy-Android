@@ -61,7 +61,7 @@ jobs:
           fi
 
           # Full checkout history is needed to compare the APK revision with the tag.
-          git fetch origin tag "$TAG" --no-tags
+          git fetch origin tag "$TAG" --no-tags --force
           tag_commit=$(git rev-parse "$TAG^{commit}")
           echo "Release tag commit: $tag_commit"
 
