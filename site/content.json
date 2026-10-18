@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.75 RELEASE",
+    "badge": "v0.2.76 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,13 +25,11 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.75",
+    "whats": "New in v0.2.76",
     "features": [
-      "External USB Bluetooth inbound RFCOMM & auto-negotiation: implement L2CAP PSM 0x0003 inbound service factory and auto-session negotiation to eliminate iOS pairing rejection (#218).",
-      "Immediate broadcast name & SSP fix: write local name immediately during HCI init to eliminate broadcast latency, and disable forced PIN auth on SSP.",
-      "Wired mode USB bus deadlock prevention: safely disable USB Bluetooth dongle when switching to wired mode, preventing kernel driver lockups and watchdog reboots on Allwinner T3.",
-      "Cold startup performance optimization: eliminate redundant triplicate ECDSA verification loops during asset staging, slashing cold boot duration on low-end hardware from 10-15s to under 1s.",
-      "Hotplug & device filter expansion: register standard USB Bluetooth class (224/1/1) and broad VID matches to retain permissions across hotplugs."
+      "Wired connection secondary open deadlock fix (Allwinner T3): add kernel settle delay before reopening device and reuse probed CarPlay configurations, bypassing redundant EP0 descriptor transfers to eliminate Linux kernel D-state deadlocks (#221, #227).",
+      "Suppressed resetDevice ioctl on detach: prevent sending USBDEVFS_RESET ioctl to disconnected devices when write transfers fail during cable unplug, avoiding kernel panics and watchdog reboots (#227).",
+      "Suppressed periodic USB Bluetooth log spam: check adapter active state before disable/shutdown to eliminate repeating log messages when no external USB Bluetooth dongle is plugged in (#227, #229)."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -242,7 +240,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.75 发布版",
+    "badge": "v0.2.76 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -264,13 +262,11 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.75 更新亮点",
+    "whats": "v0.2.76 更新亮点",
     "features": [
-      "外置 USB 蓝牙入站 RFCOMM 服务与自动握手：实现 L2CAP PSM 0x0003 入站服务工厂及 RFCOMM SABM/PN/MSC 自动协商，彻底消除手机连接失败提示（#218）。",
-      "蓝牙广播名称即时生效与 SSP 认证修复：HCI 初始化即时写入 DiPlay 名称杜绝广播延迟，关闭 SSP 强制 PIN 认证消除 Actions/Realtek 芯片拒绝配对问题。",
-      "切换有线总线死锁与看门狗重启预防：切换有线或关闭无线时安全释放 USB 蓝牙适配器与轮询线程，消除老旧单控制器 USB Hub 内核驱动 D-state 死锁。",
-      "冷启动耗时大幅优化：移除安装目录重复 ECDSA 验签循环与无谓内存分配，老旧硬件冷启动从 10-15s 降低至 1s 内。",
-      "热插拔与设备过滤器扩充：注册标准蓝牙控制器类（224/1/1）及主流厂商 VID，热插拔自动保持系统 USB 权限。"
+      "全志 T3 有线连接二次打开死锁与配置复用修复：在重新打开 USB 句柄前加入内核释放缓冲延时，并直接复用探查得到的 CarPlay 配置跳过重复 EP0 控制传输，根除 Linux 内核 usbfs D-state 死锁（#221, #227）。",
+      "拔出重置异常抑制：物理拔出 iPhone 触发批量传输失败时，严格抑制对断开设备执行 resetDevice ioctl 重置，避免向已失效描述符发送指令引发内核崩溃与看门狗重启（#227）。",
+      "USB 蓝牙关闭日志刷屏抑制：在未插入或未启动外置 USB 蓝牙适配器的车机上执行有线重试时，静默跳过周期性日志打印，保持调试日志清爽（#227, #229）。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",

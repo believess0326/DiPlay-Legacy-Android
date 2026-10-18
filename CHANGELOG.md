@@ -1,3 +1,11 @@
+# DiPlay 0.2.76 — 2026-10-18
+
+- Wired CarPlay secondary open deadlock & descriptor reuse fix: add kernel settle delay before reopening USB handle and reuse probed CarPlay configurations, bypassing redundant EP0 descriptor transfers to eliminate Linux kernel D-state deadlocks on legacy Allwinner T3 head units (#221, #227).
+- Suppressed resetDevice ioctl on detach: prevent sending USBDEVFS_RESET ioctl to disconnected devices when write transfers fail during cable unplug, avoiding kernel panics and watchdog reboots (#227).
+- Suppressed periodic USB Bluetooth log spam: check adapter active state before disable/shutdown to eliminate repeating log messages when no external USB Bluetooth dongle is plugged in (#227, #229).
+
+See [v0.2.76 release notes](docs/RELEASE-NOTES-0.2.76.md) for validation and device-testing limits.
+
 # DiPlay 0.2.75 — 2026-10-18
 
 - External USB Bluetooth adapter (CM390/Actions/Realtek) pairing & connection fix: implement inbound RFCOMM (PSM 0x0003) L2CAP service factory and auto-session negotiation; immediate broadcast name initialization to eliminate 2-minute latency; disable forced PIN auth on SSP; remove unhandled HFP record to eliminate iOS pairing rejection.
