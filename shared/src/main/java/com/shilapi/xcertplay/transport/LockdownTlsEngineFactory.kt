@@ -42,9 +42,38 @@ object LockdownTlsEngineFactory {
                 load(null, password)
                 setKeyEntry(KEY_ALIAS, privateKey, password, arrayOf(certificate))
             }
-            val keyManagers = KeyManagerFactory.getInstance("PKIX").apply {
-                init(keyStore, password)
-            }.keyManagers
+            val defaultAlgorithm = runCatching { KeyManagerFactory.getDefaultAlgorithm() }.getOrNull()
+            val candidateAlgorithms = sequenceOf(defaultAlgorithm, "X509", "PKIX", "SunX509")
+                .filterNotNull()
+                .filter { it.isNotBlank() }
+                .distinct()
+            var kmf: KeyManagerFactory? = null
+            var lastKmfError: Throwable? = null
+            for (algo in candidateAlgorithms) {
+                try {
+                    kmf = KeyManagerFactory.getInstance(algo).apply {
+                        init(keyStore, password)
+                    }
+                    break
+                } catch (e: Throwable) {
+                    lastKmfError = e
+                }
+                try {
+                    val conscryptProvider = runCatching { Conscrypt.newProvider() }.getOrNull()
+                    if (conscryptProvider != null) {
+                        kmf = KeyManagerFactory.getInstance(algo, conscryptProvider).apply {
+                            init(keyStore, password)
+                        }
+                        break
+                    }
+                } catch (e: Throwable) {
+                    lastKmfError = e
+                }
+            }
+            val keyManagers = kmf?.keyManagers ?: throw GeneralSecurityException(
+                "No supported KeyManagerFactory found (tried: ${candidateAlgorithms.joinToString(",")})",
+                lastKmfError,
+            )
             // Some Android 4.4/5.1 vendor providers expose only TLSv1 through the generic
             // "TLS" SSLContext alias, while the version-specific factory supports TLSv1.2.
             // Never downgrade Lockdown to TLSv1.0/1.1.
@@ -116,6 +145,10 @@ object LockdownTlsEngineFactory {
                                 ""
                             }
                     )
+                }
+                val targetProtocols = supportedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }
+                if (targetProtocols.isNotEmpty()) {
+                    runCatching { enabledProtocols = targetProtocols.toTypedArray() }
                 }
             }
         } finally {

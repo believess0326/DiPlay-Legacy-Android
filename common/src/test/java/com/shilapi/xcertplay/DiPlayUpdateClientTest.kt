@@ -36,8 +36,22 @@ class DiPlayUpdateClientTest {
 
     @Test fun githubApkPrefersDomesticRelayWithDirectFallback() {
         val url = prefix + name
-        assertEquals(listOf("https://ghproxy.net/$url", url), DiPlayUpdateClient.downloadCandidates(url))
+        assertEquals(
+            listOf("https://ghproxy.net/$url", "https://gh-proxy.com/$url", url),
+            DiPlayUpdateClient.downloadCandidates(url)
+        )
         assertEquals(listOf("https://example.com/test.apk"), DiPlayUpdateClient.downloadCandidates("https://example.com/test.apk"))
+    }
+
+    @Test fun approvedHostsAllowGitHubAndDomesticMirrors() {
+        assertTrue(DiPlayUpdateClient.isApprovedHost("api.github.com"))
+        assertTrue(DiPlayUpdateClient.isApprovedHost("github.com"))
+        assertTrue(DiPlayUpdateClient.isApprovedHost("objects.githubusercontent.com"))
+        assertTrue(DiPlayUpdateClient.isApprovedHost("release-assets.githubusercontent.com"))
+        assertTrue(DiPlayUpdateClient.isApprovedHost("ghproxy.net"))
+        assertTrue(DiPlayUpdateClient.isApprovedHost("gh-proxy.com"))
+        assertFalse(DiPlayUpdateClient.isApprovedHost("evil.com"))
+        assertFalse(DiPlayUpdateClient.isApprovedHost("notgithub.com"))
     }
 
     @Test fun acceptsOnlyHigherStableVersion() {

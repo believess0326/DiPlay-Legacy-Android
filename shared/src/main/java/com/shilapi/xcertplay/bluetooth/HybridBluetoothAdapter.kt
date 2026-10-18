@@ -109,7 +109,7 @@ class HybridBluetoothAdapter(
         val pairedOnDongle = dongleActive && dongle!!.getPairedDevices().any {
             it.address.equals(deviceAddress, ignoreCase = true)
         }
-        val pairedOnAndroid = android.isSupported() && android.getPairedDevices().any {
+        val pairedOnAndroid = android.isSupported() && android.isEnabled() && android.getPairedDevices().any {
             it.address.equals(deviceAddress, ignoreCase = true)
         }
         val preferAndroidOverDongle = pairedOnAndroid && !pairedOnDongle
@@ -130,7 +130,7 @@ class HybridBluetoothAdapter(
         }
 
         fun tryAndroid(): BlockingDuplexByteStream? {
-            if (!android.isSupported()) return null
+            if (!android.isSupported() || !android.isEnabled()) return null
             tried = true
             com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying Android Bluetooth stack for $deviceAddress")
             val result = runCatching { android.openRfcommStream(deviceAddress, uuid) }

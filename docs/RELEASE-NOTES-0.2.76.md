@@ -12,6 +12,10 @@
 ### 3. 未插外置蓝牙适配器车机日志刷屏抑制 (#227, #229)
 - **精准活跃状态判定**：针对未插入外置 USB 蓝牙适配器的车机，在执行有线重试或模式切换时，静默跳过周期性 `USB Bluetooth shut down` 日志打印，保持车机运行与调试日志清爽。
 
+### 4. Android 4.2 (API 17) 有线连接 TLS KeyManagerFactory 兼容与系统蓝牙异常过滤 (#234, #235)
+- **KeyManagerFactory 算法多级回退**：解决 Android 4.2.2（API 17）缺失 `PKIX` KeyManagerFactory 算法导致在 `Lockdown pairing` 阶段抛出 `NoSuchAlgorithmException` 并误判配对记录失效的问题；新增平台默认算法（`X509`）、`PKIX` 及 `SunX509` 动态回退机制，并在底层 SSLEngine 上显式启用 TLSv1.2 协议套件，彻底疏通 Android 4.2 车机有线 CarPlay 通道。
+- **系统蓝牙禁用状态过滤**：在系统自带蓝牙处于关闭状态时，禁止回退调用 `android.openRfcommStream`，避免抛出 `Bluetooth is off` 覆盖外置 USB 蓝牙适配器的真实建链错误。
+
 ---
 
 ## 验证与发布

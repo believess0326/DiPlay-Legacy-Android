@@ -119,7 +119,11 @@ internal object DiPlayUpdateClient {
     /** Prefer domestic relay for canonical GitHub release assets, not release metadata. */
     internal fun downloadCandidates(url: String): List<String> {
         val canonical = "https://github.com/$REPO/releases/download/"
-        return if (url.startsWith(canonical)) listOf("https://ghproxy.net/$url", url)
+        return if (url.startsWith(canonical)) listOf(
+            "https://ghproxy.net/$url",
+            "https://gh-proxy.com/$url",
+            url
+        )
         else listOf(url)
     }
 
@@ -219,6 +223,10 @@ internal object DiPlayUpdateClient {
 
     fun configure(context: android.content.Context) {
         appContext = context.applicationContext
+        try {
+            System.setProperty("java.net.preferIPv4Stack", "true")
+            System.setProperty("java.net.preferIPv6Addresses", "false")
+        } catch (_: Exception) {}
     }
 
     private data class LegacyTls(val factory: SSLSocketFactory, val trust: X509TrustManager)
@@ -281,7 +289,14 @@ internal object DiPlayUpdateClient {
             .protocols(listOf(Protocol.HTTP_1_1))
             .followRedirects(false)
             .followSslRedirects(false)
-            .retryOnConnectionFailure(false)
+            .retryOnConnectionFailure(true)
+            .dns { hostname ->
+                val addresses = okhttp3.Dns.SYSTEM.lookup(hostname)
+                // Issue #220: On legacy Android 4.4 / T3 car head units, IPv6 routes via Wi-Fi/cellular
+                // are frequently broken or unrouted, causing connection timeout on AAAA records.
+                // Prioritize IPv4 addresses (Inet4Address) first to ensure immediate connectivity.
+                addresses.sortedBy { if (it is java.net.Inet4Address) 0 else 1 }
+            }
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .build())
@@ -293,6 +308,14 @@ internal object DiPlayUpdateClient {
             message.contains("No enabled protocols", ignoreCase = true) &&
                 message.contains("SSLv3", ignoreCase = true)
         }
+
+    internal fun isApprovedHost(host: String): Boolean {
+        val lower = host.lowercase()
+        return lower == "github.com" || lower.endsWith(".github.com") ||
+            lower.endsWith(".githubusercontent.com") ||
+            lower == "ghproxy.net" || lower.endsWith(".ghproxy.net") ||
+            lower == "gh-proxy.com" || lower.endsWith(".gh-proxy.com")
+    }
 
     private fun configureRequest(connection: HttpsURLConnection, method: String) {
         connection.instanceFollowRedirects = false
@@ -307,12 +330,8 @@ internal object DiPlayUpdateClient {
         var next = url
         repeat(7) {
             val candidate = URL(next)
-            val host = candidate.host.lowercase()
-            val approvedHost = host == "api.github.com" || host == "github.com" ||
-                host == "release-assets.githubusercontent.com" ||
-                host == "objects.githubusercontent.com" || host == "ghproxy.net"
-            if (candidate.protocol != "https" || !approvedHost) {
-                throw IOException("Untrusted update redirect")
+            if (candidate.protocol != "https" || !isApprovedHost(candidate.host)) {
+                throw IOException("Untrusted update redirect: ${candidate.host}")
             }
             // Issue #141: Android 6.0's system CA store is frozen at 2015 and no longer
             // validates GitHub's current chain ("Trust anchor not found"), so the
