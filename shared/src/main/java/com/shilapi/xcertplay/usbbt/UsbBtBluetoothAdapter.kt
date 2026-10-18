@@ -215,6 +215,9 @@ class UsbBtBluetoothAdapter(
     }
 
     override fun disable() {
+        if (!isEnabled() && synchronized(lock) { hci == null && activeDevice == null } && !pumpRunning.get()) {
+            return
+        }
         shutdown(unregisterReceivers = false)
     }
 
@@ -704,6 +707,7 @@ class UsbBtBluetoothAdapter(
 
     /** Shut the adapter down; idempotent. */
     fun shutdown(unregisterReceivers: Boolean = true) {
+        val wasActive = isEnabled() || synchronized(lock) { hci != null || activeDevice != null } || pumpRunning.get()
         pumpRunning.set(false)
         eventPumpThread?.interrupt()
         runCatching { eventPumpThread?.join(300) }
@@ -747,7 +751,9 @@ class UsbBtBluetoothAdapter(
         authLatches.clear()
         encryptLatches.values.forEach { it.countDown() }
         encryptLatches.clear()
-        UsbBtLog.log(appContext, TAG, "USB Bluetooth shut down")
+        if (wasActive) {
+            UsbBtLog.log(appContext, TAG, "USB Bluetooth shut down")
+        }
     }
 
     /** Snapshot for diagnostics (LegacyConnectionProbe). */

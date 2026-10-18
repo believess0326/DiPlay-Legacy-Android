@@ -240,11 +240,12 @@ class IphoneUsbHost(
     fun openIap2UsbSessionAsync(
         device: UsbDevice,
         executor: Executor,
+        knownConfiguration: CarPlayUsbConfiguration? = null,
         callback: (Iap2SessionResult) -> Unit,
     ) {
         executor.execute {
             val result = try {
-                Iap2SessionResult.Connected(openIap2UsbSession(device))
+                Iap2SessionResult.Connected(openIap2UsbSession(device, knownConfiguration))
             } catch (error: IphoneUsbException) {
                 Iap2SessionResult.Failed(error)
             } catch (error: SecurityException) {
@@ -304,10 +305,18 @@ class IphoneUsbHost(
         TransitionResult.Failed(IphoneUsbException.DeviceUnavailable("iPhone USB operation failed", error))
     }
 
-    private fun openIap2UsbSession(device: UsbDevice): Iap2UsbSession {
+    private fun openIap2UsbSession(
+        device: UsbDevice,
+        knownConfiguration: CarPlayUsbConfiguration? = null,
+    ): Iap2UsbSession {
         requireConfiguredDevice(device)
         if (!usbManager.hasPermission(device)) {
             throw IphoneUsbException.PermissionDenied("USB permission has not been granted")
+        }
+        // Issue #221/#227: On KitKat (Allwinner T3), let kernel usbfs finish releasing the prior
+        // descriptor inspection connection before opening a new one; avoids kernel D-state deadlock.
+        if (realSdkInt() < 21) {
+            SystemClock.sleep(100L)
         }
         // Issue #112: stale UsbDevice after re-enumeration; try the fresh instance.
         val connection = usbManager.openDevice(device)
@@ -316,7 +325,7 @@ class IphoneUsbHost(
         val sharedConnection = SharedUsbDeviceConnection.own(connection)
         var claimedInterface: UsbInterface? = null
         try {
-            val configuration = IphoneCarPlayConfiguration.find(device, connection)
+            val configuration = knownConfiguration ?: IphoneCarPlayConfiguration.find(device, connection)
                 ?: throw IphoneUsbException.Protocol(
                     "Re-enumerated iPhone exposes no USBMUX CarPlay configuration",
                 )
@@ -493,6 +502,7 @@ class Iap2UsbSession internal constructor(
     private val readLock = Any()
     private val writeLock = Any()
     private var closed = false
+    @Volatile private var isAbortedOrDetached = false
     private var failure: IphoneUsbException? = null
     private var readRequest: UsbRequest? = null
     private var readQueued = false
@@ -503,6 +513,10 @@ class Iap2UsbSession internal constructor(
     private val readQueuePolicy = UsbReadQueuePolicy(
         if (realSdkInt() < Build.VERSION_CODES.P) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
     )
+
+    fun markAborted() {
+        isAbortedOrDetached = true
+    }
 
     fun write(data: ByteArray, timeoutMillis: Int) = synchronized(writeLock) {
         checkOpen()
@@ -515,7 +529,8 @@ class Iap2UsbSession internal constructor(
             // A -1 bulk transfer means the device stopped responding (wedged USB stack,
             // typically after an abrupt teardown). Reset the port so the next discovery
             // sees a re-enumerated, sane device instead of failing every attempt.
-            if (transferred < 0) {
+            // Do NOT attempt a reset if the session is already aborted, detached or closed (issue #227).
+            if (transferred < 0 && !closed && !isAbortedOrDetached) {
                 runCatching { LegacyUsbHostCompat.resetDevice(connection, onDiagnostic) }
             }
             throw IphoneUsbException.DeviceUnavailable(

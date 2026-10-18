@@ -2108,7 +2108,7 @@ class CarPlayController(
                                     }}",
                             )
                             if (configuration != null) {
-                                openDataPaths(result.device)
+                                openDataPaths(result.device, configuration)
                             } else if (reenumerationAttempts < MAXIMUM_REENUMERATION_ATTEMPTS) {
                                 beginReenumeration(result.device)
                             } else {
@@ -2257,7 +2257,7 @@ class CarPlayController(
     private fun useIphoneConfiguration(device: UsbDevice, configuration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration?) {
         connectionDiagnostic("USB descriptor inspection sdk=${Build.VERSION.SDK_INT} " +
             "configuration=${configuration?.id ?: "none"} transitions=$reenumerationAttempts")
-        if (configuration != null) openDataPaths(device)
+        if (configuration != null) openDataPaths(device, configuration)
         else if (reenumerationAttempts < MAXIMUM_REENUMERATION_ATTEMPTS) beginReenumeration(device)
         else fail(IphoneUsbException.Protocol("iPhone did not expose a complete CarPlay USB configuration"))
     }
@@ -2360,6 +2360,7 @@ class CarPlayController(
         closeBestEffort("USBMUX") {
             val muxHost = mux
             mux = null
+            muxHost?.markAborted()
             muxHost?.close()
         }
         if (config.transport == CarPlayTransport.WIRED) {
@@ -2414,13 +2415,13 @@ class CarPlayController(
         )
     }
 
-    private fun openDataPaths(device: UsbDevice) {
+    private fun openDataPaths(device: UsbDevice, knownConfiguration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration? = null) {
         phase = Phase.DATAPATHS
         availabilityPollGeneration.incrementAndGet()
         debugLog("wired opening iPhone USB data paths")
         onStatus(CarPlayStatus.SelectingConfiguration)
         onStatus(CarPlayStatus.OpeningDataPaths)
-        iphoneHost.openIap2UsbSessionAsync(device, executor) { result ->
+        iphoneHost.openIap2UsbSessionAsync(device, executor, knownConfiguration) { result ->
             when (result) {
                 is IphoneUsbHost.Iap2SessionResult.Connected -> {
                     wiredChain(3, "iAP2 USB session opened (USBMUX fd ready)")

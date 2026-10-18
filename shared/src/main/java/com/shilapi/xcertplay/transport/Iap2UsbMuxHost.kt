@@ -58,6 +58,11 @@ class Iap2UsbMuxHost private constructor(
         }
     }
 
+    /** Marks the connection aborted (e.g. iPhone detached) to suppress resetDevice ioctl. */
+    fun markAborted() {
+        pipe.markAborted()
+    }
+
     override fun close() {
         val activeConnections = synchronized(stateLock) {
             if (closed) return
