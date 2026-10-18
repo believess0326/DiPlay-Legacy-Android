@@ -16,6 +16,10 @@
 - **KeyManagerFactory 算法多级回退**：解决 Android 4.2.2（API 17）缺失 `PKIX` KeyManagerFactory 算法导致在 `Lockdown pairing` 阶段抛出 `NoSuchAlgorithmException` 并误判配对记录失效的问题；新增平台默认算法（`X509`）、`PKIX` 及 `SunX509` 动态回退机制，并在底层 SSLEngine 上显式启用 TLSv1.2 协议套件，彻底疏通 Android 4.2 车机有线 CarPlay 通道。
 - **系统蓝牙禁用状态过滤**：在系统自带蓝牙处于关闭状态时，禁止回退调用 `android.openRfcommStream`，避免抛出 `Bluetooth is off` 覆盖外置 USB 蓝牙适配器的真实建链错误。
 
+### 5. 在线更新下载 IPv4 优先与镜像容灾 (#236)
+- **IPv4 DNS 优先与超时连接重试**：针对全志 T3 等老旧 Android 4.4 车机因 Wi-Fi 或热点 IPv6 路由不可达导致 `ghproxy.net` 在 IPv6 (AAAA) 地址上阻塞 12 秒超时的缺陷，增加 DNS IPv4 (A 记录) 优先排序并在 OkHttp 上启用连接故障自动重试，消除更新下载阻塞报错。
+- **扩展国内镜像与域名安全白名单**：增加 `gh-proxy.com` 备用国内镜像，并在白名单中支持其域名，确保在单一镜像波动时无缝自动回退。
+
 ---
 
 ## 验证与发布

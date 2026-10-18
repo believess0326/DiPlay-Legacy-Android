@@ -4,6 +4,7 @@
 - Suppressed resetDevice ioctl on detach: prevent sending USBDEVFS_RESET ioctl to disconnected devices when write transfers fail during cable unplug, avoiding kernel panics and watchdog reboots (#227).
 - Suppressed periodic USB Bluetooth log spam: check adapter active state before disable/shutdown to eliminate repeating log messages when no external USB Bluetooth dongle is plugged in (#227, #229).
 - Android 4.2 (API 17) wired TLS KeyManagerFactory fallback & Bluetooth state filter: implement dynamic KeyManagerFactory algorithm fallback (default/X509/PKIX/SunX509) to prevent NoSuchAlgorithmException in Lockdown pairing, explicitly enable TLSv1.2 on legacy SSLEngine, and bypass disabled system Bluetooth in openRfcommStream to avoid masking external dongle errors (#234, #235).
+- In-app updater IPv4 DNS priority & domestic mirror fallback: prioritize IPv4 (A records) over unroutable IPv6 (AAAA) on legacy car head units, enable OkHttp connection retries, and add gh-proxy.com mirror fallback to eliminate 12s connection timeouts during update downloads (#236).
 
 See [v0.2.76 release notes](docs/RELEASE-NOTES-0.2.76.md) for validation and device-testing limits.
 
