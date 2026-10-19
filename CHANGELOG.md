@@ -1,3 +1,11 @@
+# DiPlay 0.2.78 — 2026-10-19
+
+- Wireless CarPlay Opus audio format declaration fix: unconditionally advertise Opus audio format (0x70000000) in AirPlay InfoPlist to prevent iOS from disabling wireless audio and dropping the CarPlay audio route option on Android 4.2/4.4 devices (#244).
+- Allwinner T3 wired CarPlay re-enumeration deadlock elimination: increase settle delay to 400ms after USB permission grant on Android KitKat/JellyBean to eliminate kernel khubd descriptor race and D-state driver freeze (#243).
+- NCM network stack asynchronous queueing & TCP handshake enhancement: decouple all mDNS answers, Router Advertisements, and Neighbor Advertisements through the async TX queue, proactively broadcasting RA on inbound frames to ensure immediate iOS IPv6 default route setup and TCP SYN initiation (#243).
+
+See [v0.2.78 release notes](docs/RELEASE-NOTES-0.2.78.md) for validation and device-testing limits.
+
 # DiPlay 0.2.77 — 2026-10-19
 
 - Lone navigation audio focus & silent guidance fix: allow lone navigation tracks to acquire transient audio focus so head units that keep outputs muted without active audio focus open their physical audio paths, while continuing to overlay without ducking once media or call streams become active (#214).
