@@ -1,3 +1,11 @@
+# DiPlay 0.2.79 — 2026-10-19
+
+- External USB Bluetooth (CM390/Actions/Realtek) iPhone discovery & EIR broadcast fix: add 16-bit audio service UUIDs (Tag 2: 0x111E Handsfree + 0x1203 Generic Audio) to Extended Inquiry Response (EIR) to prevent iOS Bluetooth Settings filter from hiding the adapter; configure HCI inquiry/page scan activity (1.28s interval, 40ms window) for responsive scan matching; avoid continuous 5.12s paging timeout to unrelated native Bluetooth devices on initial pairing; align broadcast local name with UI display; auto-restore advertising after hardware self-test (#246).
+- Direct straight-angle display & margin elimination: adjust AirPlay viewport safeArea declarations to eliminate corner rounding and black borders on custom vehicle screens.
+- Legacy system version guard (realSdkInt): unify version checks across audio sinks, location provider, crypto suites, and hotspot monitors using realSdkInt to prevent misreported Android OS versions on Allwinner T3 from triggering NoSuchMethod exceptions.
+
+See [v0.2.79 release notes](docs/RELEASE-NOTES-0.2.79.md) for validation and device-testing limits.
+
 # DiPlay 0.2.78 — 2026-10-19
 
 - Wireless CarPlay Opus audio format declaration fix: unconditionally advertise Opus audio format (0x70000000) in AirPlay InfoPlist to prevent iOS from disabling wireless audio and dropping the CarPlay audio route option on Android 4.2/4.4 devices (#244).

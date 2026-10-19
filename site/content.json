@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.78 RELEASE",
+    "badge": "v0.2.79 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,11 +25,11 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.78",
+    "whats": "New in v0.2.79",
     "features": [
-      "Wireless CarPlay audio format declaration fix: unconditionally advertise Opus audio output capability (0x70000000) in AirPlay InfoPlist to prevent iOS from disabling wireless audio and dropping the CarPlay audio route (#244).",
-      "Allwinner T3 wired CarPlay re-enumeration deadlock elimination: increase KitKat/JellyBean USB permission settle delay to 400ms to eliminate kernel khubd descriptor race and D-state driver freeze (#243).",
-      "NCM network stack queueing & TCP handshake enhancement: decouple all mDNS answers, Router Advertisements, and Neighbor Advertisements through the async TX queue, proactively broadcasting RA on inbound frames to ensure immediate iOS IPv6 default route setup and TCP SYN initiation (#243)."
+      "External USB Bluetooth (CM390/Actions/Realtek) iPhone discovery & EIR broadcast fix: add 16-bit audio service UUIDs (Tag 2: 0x111E Handsfree + 0x1203 Generic Audio) to EIR to prevent iOS Bluetooth Settings filter from hiding the adapter; configure HCI inquiry/page scan activity (1.28s interval, 40ms window) for responsive scan matching; eliminate 5.12s paging timeout to unrelated native Bluetooth devices on initial pairing; align broadcast local name with UI display; auto-restore advertising after hardware self-test (#246).",
+      "Direct straight-angle display & margin elimination: adjust AirPlay viewport safeArea declarations to eliminate corner rounding and black borders on custom vehicle screens.",
+      "Legacy system version guard (realSdkInt): unify version checks across audio sinks, location provider, crypto suites, and hotspot monitors using realSdkInt to prevent misreported Android OS versions on Allwinner T3 from triggering NoSuchMethod exceptions."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -240,7 +240,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.78 发布版",
+    "badge": "v0.2.79 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -262,11 +262,11 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.78 更新亮点",
+    "whats": "v0.2.79 更新亮点",
     "features": [
-      "恢复无线 CarPlay 强制 Opus 音频声明：修复 Android 4.2/4.4 等低版本因缺少系统级 Opus 解码器导致 InfoPlist 丢弃 Opus 格式、进而引起 iOS 控制中心缺失 CarPlay 音频通道且无声的问题（#244）。",
-      "全志 T3 有线 CarPlay 重枚举死锁消除：将低版本系统授权后的设备建立延迟增至 400ms，避开 Linux 3.4 khubd 端口复位竞争，彻底消除二次插拔死锁与卡死重启（#243）。",
-      "NCM 网络栈全异步发包与主动路由通告：将 mDNS 应答、RA 路由通告与邻居应答全量纳入异步 TX 队列，杜绝阻塞 RX 读线程，并在收到首包与 mDNS 时主动宣告 IPv6 默认路由，确保 iPhone 立即发起 TCP 建链（#243）。"
+      "CM390 外置 USB 蓝牙 iPhone 搜索不可见修复：在 EIR 广播补充 16-bit 经典音频服务 UUID（Tag 2: 0x111E 与 0x1203），解决 iOS“设置 → 蓝牙”过滤隐藏该设备的问题；优化 Inquiry/Page 射频扫描参数至 1.28s 周期与 40ms 窗口提升发现命中率；空配对时避免向车机原生旧蓝牙设备死循环寻呼超时阻塞广播；统一广播设备名并支持自检后自动恢复广播（#246）。",
+      "直角画面显示与黑边消除：优化 AirPlay 视图协议层 safeArea 声明，移除无裁切要求下的边距约束，呈现无黑边直角全屏显示。",
+      "全志 T3 及老旧车机系统版本兼容（realSdkInt）：统一全模块系统版本校验至 realSdkInt 底层真实版本，防止部分定制 ROM 虚报版本误调高版本 API 引发崩溃。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",
