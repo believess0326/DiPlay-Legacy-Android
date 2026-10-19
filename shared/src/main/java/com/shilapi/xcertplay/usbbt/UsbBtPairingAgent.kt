@@ -150,11 +150,12 @@ class UsbBtPairingAgent(
      */
     private fun onIoCapabilityRequest(event: HciProtocol.HciEvent) {
         val bdAddr = bdAddrFrom(event) ?: return
-        val ioCap = if (uiCallback != null) IO_CAP_DISPLAY_YES_NO else IO_CAP_NO_INPUT_NO_OUTPUT
-        // Reply params: BD_ADDR(6) | io_capability(1) | oob_data(1)=0 | auth_req(1)
-        // auth_req: 0x04 = General Bonding, MITM Not Required (NoInputNoOutput / Just Works)
-        //           0x05 = General Bonding, MITM Protection Required (DisplayYesNo / Numeric Comparison)
-        val authReq = if (ioCap == IO_CAP_NO_INPUT_NO_OUTPUT) 0x04 else 0x05
+        // Apple CarPlay and iAP2 over Bluetooth require MITM protection and Numeric Comparison (DisplayYesNo).
+        // If a UI callback is present, the 6-digit number is presented to the driver;
+        // if no UI callback is present (e.g. background mode), we still declare DisplayYesNo and auto-confirm
+        // upon UserConfirmationRequest so the iPhone prompts the driver with the standard pairing dialog.
+        val ioCap = IO_CAP_DISPLAY_YES_NO
+        val authReq = 0x05 // General Bonding, MITM Protection Required
         val reply = event.params.copyOfRange(0, 6) +
             byteArrayOf(ioCap.toByte(), 0x00, authReq.toByte())
         when (val r = hci.sendCommand(OP_IO_CAPABILITY_REQUEST_REPLY, reply)) {

@@ -1568,6 +1568,71 @@ class CarPlayController(
                 return
             }
 
+            fun pollLateBluetoothBootstrap(deadline: Long, initialError: Throwable?) {
+                var lateStream: BlockingDuplexByteStream? = null
+                var lateChannel: Iap2Session? = null
+                var lateBootstrapDone = false
+                while (activeSession == null && !wirelessActiveReported.get() && System.currentTimeMillis() < deadline && !isStaleWirelessRun(generation)) {
+                    if (!lateBootstrapDone && hybridAdapter.isEnabled()) {
+                        val connectedDev = runCatching { hybridAdapter.getConnectedDevice() }.getOrNull()
+                        if (connectedDev != null && BluetoothAdapter.checkBluetoothAddress(connectedDev.address)) {
+                            debugLog("wireless incoming Bluetooth device detected: ${connectedDev.name} (${connectedDev.address}); bootstrapping iAP2 over RFCOMM")
+                            try {
+                                onStatus(CarPlayStatus.ConnectingBluetooth)
+                                stage = "Bluetooth RFCOMM connection (inbound/connected)"
+                                val s = hybridAdapter.openRfcommStream(connectedDev.address, IAP2_IPHONE_UUID)
+                                lateStream = s
+                                val ch = Iap2Session.openWireless(
+                                    s,
+                                    traceContext = "wireless-rfcomm-late",
+                                    onTrace = ::debugLog,
+                                    onArtwork = ::onArtworkTransfer,
+                                )
+                                synchronized(wirelessResourceLock) {
+                                    if (isStaleWirelessRun(generation)) {
+                                        ch.close()
+                                        return
+                                    }
+                                    csm = ch
+                                    lateChannel = ch
+                                }
+                                onStatus(CarPlayStatus.RunningWireless)
+                                startedHotspot?.validateReady()
+                                Iap2WirelessControlClient(
+                                    session = ch,
+                                    mfi = Iap2MfiAuthenticationClient(mfi),
+                                ).run(
+                                    identification = bootstrapIdentification,
+                                    endpoint = endpoint,
+                                    timeoutMillis = WIRELESS_BOOTSTRAP_TIMEOUT_MILLIS,
+                                    keepAliveAfterDeadline = { keepBluetoothControlAlive(generation) },
+                                    beforeStartSession = { startedHotspot?.validateReady() },
+                                    onStartSessionSent = { watchdog.startSessionSent(it.sentAtNanos) },
+                                    onIncoming = ::onRouteFrame,
+                                    onProgress = { message ->
+                                        diagnostics.controlProgress(message)
+                                        debugLog(message)
+                                    },
+                                )
+                                lateBootstrapDone = true
+                                debugLog("late Bluetooth bootstrap completed successfully for ${connectedDev.address}")
+                            } catch (e: Throwable) {
+                                debugLog("late Bluetooth bootstrap attempt failed: ${e.message}")
+                                runCatching { lateChannel?.close() }
+                                lateChannel = null
+                                runCatching { lateStream?.close() }
+                                lateStream = null
+                            }
+                        }
+                    }
+                    try {
+                        Thread.sleep(500L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }
+
             if (device != null) {
                 onStatus(CarPlayStatus.ConnectingBluetooth)
                 stage = "Bluetooth RFCOMM connection"
@@ -1726,14 +1791,7 @@ class CarPlayController(
                     }
                 } else {
                     debugLog("wireless Bluetooth bootstrap failed or unavailable (${lastBootstrapError?.message}); falling back to Wi-Fi discovery")
-                    val wifiWaitDeadline = System.currentTimeMillis() + 60000L
-                    while (activeSession == null && !wirelessActiveReported.get() && System.currentTimeMillis() < wifiWaitDeadline && !isStaleWirelessRun(generation)) {
-                        try {
-                            Thread.sleep(500L)
-                        } catch (_: InterruptedException) {
-                            break
-                        }
-                    }
+                    pollLateBluetoothBootstrap(System.currentTimeMillis() + 60000L, lastBootstrapError)
                     if (isStaleWirelessRun(generation)) {
                         closeWirelessStack(generation = generation)
                         return
@@ -1747,14 +1805,7 @@ class CarPlayController(
                 }
             } else {
                 debugLog("wireless Bluetooth bootstrap unavailable; waiting for AirPlay connection over Wi-Fi")
-                val wifiWaitDeadline = System.currentTimeMillis() + 60000L
-                while (activeSession == null && !wirelessActiveReported.get() && System.currentTimeMillis() < wifiWaitDeadline && !isStaleWirelessRun(generation)) {
-                    try {
-                        Thread.sleep(500L)
-                    } catch (_: InterruptedException) {
-                        break
-                    }
-                }
+                pollLateBluetoothBootstrap(System.currentTimeMillis() + 60000L, null)
                 if (isStaleWirelessRun(generation)) {
                     closeWirelessStack(generation = generation)
                     return
