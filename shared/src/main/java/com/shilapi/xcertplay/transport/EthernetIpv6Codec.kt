@@ -217,6 +217,7 @@ object EthernetIpv6Codec {
         hostIpv6: ByteArray,
         peerIpv6: ByteArray,
         solicited: Boolean = true,
+        isRouter: Boolean = false,
     ): ByteArray {
         require(hostMac.size == MAC_BYTES) { "hostMac must be $MAC_BYTES bytes" }
         require(peerMac.size == MAC_BYTES) { "peerMac must be $MAC_BYTES bytes" }
@@ -238,12 +239,54 @@ object EthernetIpv6Codec {
         // Flags: byte 4 of ICMPv6 (R=0x80, S=0x40, O=0x20).
         // Solicited NA sets Solicited (0x40) and Override (0x20) -> 0x60.
         // Unsolicited NA sets Override (0x20).
-        ipv6[icmpOffset + 4] = (if (solicited) 0x60 else 0x20).toByte()
+        // If isRouter is true, set Router (0x80).
+        ipv6[icmpOffset + 4] = ((if (solicited) 0x60 else 0x20) or (if (isRouter) 0x80 else 0)).toByte()
         hostIpv6.copyInto(ipv6, icmpOffset + 8)
 
         ipv6[icmpOffset + 24] = ICMPV6_TARGET_LINK_LAYER_OPTION.toByte()
         ipv6[icmpOffset + 25] = 1
         hostMac.copyInto(ipv6, icmpOffset + 26)
+
+        writeIcmpv6Checksum(ipv6)
+
+        return build(hostMac, peerMac, ipv6)
+    }
+
+    /**
+     * Builds a complete Ethernet II frame carrying an ICMPv6 Router Advertisement (RFC 4861 §4.2)
+     * with Source Link-Layer Address option and correct checksum.
+     */
+    fun buildRouterAdvertisement(
+        hostMac: ByteArray,
+        peerMac: ByteArray,
+        hostIpv6: ByteArray,
+        peerIpv6: ByteArray,
+        routerLifetimeSec: Int = 1800,
+    ): ByteArray {
+        require(hostMac.size == MAC_BYTES) { "hostMac must be $MAC_BYTES bytes" }
+        require(peerMac.size == MAC_BYTES) { "peerMac must be $MAC_BYTES bytes" }
+        require(hostIpv6.size == 16) { "hostIpv6 must be 16 bytes" }
+        require(peerIpv6.size == 16) { "peerIpv6 must be 16 bytes" }
+
+        val icmpPayloadBytes = 24
+        val ipv6 = ByteArray(IPV6_HEADER_BYTES + icmpPayloadBytes)
+        ipv6[0] = 0x60.toByte()
+        putU16(ipv6, IPV6_PAYLOAD_LENGTH_OFFSET, icmpPayloadBytes)
+        ipv6[IPV6_NEXT_HEADER_OFFSET] = ICMPV6_NEXT_HEADER.toByte()
+        ipv6[7] = 255.toByte()
+        hostIpv6.copyInto(ipv6, IPV6_SOURCE_OFFSET)
+        peerIpv6.copyInto(ipv6, IPV6_DESTINATION_OFFSET)
+
+        val icmpOffset = IPV6_HEADER_BYTES
+        ipv6[icmpOffset] = ICMPV6_ROUTER_ADVERTISEMENT.toByte()
+        ipv6[icmpOffset + 1] = 0
+        ipv6[icmpOffset + 4] = 64.toByte()
+        ipv6[icmpOffset + 5] = 0
+        putU16(ipv6, icmpOffset + 6, routerLifetimeSec)
+
+        ipv6[icmpOffset + 16] = 1.toByte()
+        ipv6[icmpOffset + 17] = 1.toByte()
+        hostMac.copyInto(ipv6, icmpOffset + 18)
 
         writeIcmpv6Checksum(ipv6)
 
@@ -264,6 +307,8 @@ object EthernetIpv6Codec {
     private const val IPV6_SOURCE_OFFSET = 8
     private const val IPV6_DESTINATION_OFFSET = 24
     private const val ICMPV6_NEXT_HEADER = 58
+    const val ICMPV6_ROUTER_SOLICITATION = 133
+    const val ICMPV6_ROUTER_ADVERTISEMENT = 134
     private const val ICMPV6_NEIGHBOR_SOLICITATION = 135
     private const val ICMPV6_NEIGHBOR_ADVERTISEMENT = 136
     private const val ICMPV6_NA_BYTES = 24

@@ -167,4 +167,31 @@ class EthernetIpv6CodecTest {
         org.junit.Assert.assertArrayEquals(targetIp, parsed.targetIp)
         org.junit.Assert.assertNull(parsed.sourceMac)
     }
+
+    @Test
+    fun `builds valid router advertisement with correct checksum and fields`() {
+        val hostMac = byteArrayOf(0x02, 0, 0, 0, 0, 1)
+        val peerMac = byteArrayOf(0x02, 0, 0, 0, 0, 2)
+        val hostIp = byteArrayOf(0xfe.toByte(), 0x80.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
+        val peerIp = byteArrayOf(0xfe.toByte(), 0x80.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)
+
+        val frame = EthernetIpv6Codec.buildRouterAdvertisement(hostMac, peerMac, hostIp, peerIp, routerLifetimeSec = 1800)
+
+        // 14 Ethernet + 40 IPv6 + 24 ICMPv6 RA = 78 bytes
+        assertEquals(78, frame.size)
+        val parsed = EthernetIpv6Codec.parseIpv6(frame)
+        org.junit.Assert.assertNotNull(parsed)
+        val ipv6 = parsed!!.ipv6
+        assertEquals(64, ipv6.size) // 40 IPv6 + 24 ICMPv6
+        assertEquals(134, ipv6[40].toInt() and 0xff) // ICMPv6 Type 134 (RA)
+        assertEquals(0, ipv6[41].toInt() and 0xff) // Code 0
+        assertEquals(64, ipv6[44].toInt() and 0xff) // Cur Hop Limit 64
+        assertEquals(0, ipv6[45].toInt() and 0xff) // Flags
+        val lifetime = ((ipv6[46].toInt() and 0xff) shl 8) or (ipv6[47].toInt() and 0xff)
+        assertEquals(1800, lifetime)
+        assertEquals(1, ipv6[56].toInt() and 0xff) // Option Type 1 (Source link-layer)
+        assertEquals(1, ipv6[57].toInt() and 0xff) // Option Length 1 (8 bytes)
+        assertArrayEquals(hostMac, ipv6.copyOfRange(58, 64))
+        assertEquals(0xffff, ipv6IcmpChecksumSum(ipv6))
+    }
 }

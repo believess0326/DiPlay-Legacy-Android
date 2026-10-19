@@ -225,6 +225,18 @@ class Ipv6NcmBridge(
                     reportInboundBudget--
                     runCatching { onDebugLog("ncm inbound diag ${frame.diagnosticSummary(ipv6.payloadOffset)}") }
                 }
+
+                if (inboundNextHeader == 58 && ipv6.payloadLength >= 48) {
+                    val icmpType = frame[ipv6.payloadOffset + 40].toInt() and 0xff
+                    if (icmpType == 133) {
+                        Log.i(TAG, "ncm inbound Router Solicitation from iPhone; sending RA and NA")
+                        runCatching { onDebugLog("ncm inbound RS from peer ${ipv6.sourceMac.macString()}; sending RA") }
+                        val peerSrcIp = frame.copyOfRange(ipv6.payloadOffset + 8, ipv6.payloadOffset + 24)
+                        sendRouterAdvertisement(targetMac = ipv6.sourceMac, targetIp = peerSrcIp)
+                        sendUnsolicitedNeighborAdvertisement(force = true, targetMac = ipv6.sourceMac)
+                    }
+                }
+
                 val isTcp = inboundNextHeader == 6
                 if (isTcp) {
                     val tcpCount = injectedTcpPackets.incrementAndGet()
@@ -332,6 +344,26 @@ class Ipv6NcmBridge(
      *   Target address (16 bytes)
      *   Option: Target Link-Layer Address (type=2, len=1, MAC: 6 bytes → 8 bytes total)
      */
+    fun sendRouterAdvertisement(targetMac: ByteArray? = null, targetIp: ByteArray? = null) {
+        if (!running.get()) return
+        try {
+            val dstMac = targetMac ?: peerMac ?: allNodesMac
+            val dstIp = targetIp ?: allNodesIpv6
+            val frame = EthernetIpv6Codec.buildRouterAdvertisement(
+                hostMac = hostMac,
+                peerMac = dstMac,
+                hostIpv6 = hostLinkLocalBytes,
+                peerIpv6 = dstIp,
+            )
+            ncm.send(frame, WRITE_TIMEOUT_MILLIS)
+            val raMsg = "ncm sent Router Advertisement for $hostLinkLocal to ${dstMac.macString()}"
+            Log.i(TAG, raMsg)
+            runCatching { onDebugLog(raMsg) }
+        } catch (error: Exception) {
+            Log.w(TAG, "ncm RA send failed: ${error.message}")
+        }
+    }
+
     fun sendUnsolicitedNeighborAdvertisement(force: Boolean = false, targetMac: ByteArray? = null) {
         if (!running.get()) return
         val now = System.nanoTime()

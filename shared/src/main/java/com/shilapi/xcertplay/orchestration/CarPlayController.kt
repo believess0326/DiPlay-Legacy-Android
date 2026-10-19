@@ -2146,19 +2146,24 @@ class CarPlayController(
                             if (realSdkInt() < 21) {
                                 val attempts = reenumerationAttempts
                                 val permissionGeneration = permissionPollGeneration
-                                iphoneHost.inspectCarPlayConfigurationAsync(result.device, executor) { configuration ->
-                                    mainHandler.post {
-                                        try {
-                                            if (!closed && reenumerationAttempts == attempts &&
-                                                permissionPollGeneration == permissionGeneration &&
-                                                (phase == Phase.REENUMERATION || phase == Phase.IPHONE)) {
-                                                useIphoneConfiguration(result.device, configuration)
+                                mainHandler.postDelayed({
+                                    if (closed || reenumerationAttempts != attempts ||
+                                        permissionPollGeneration != permissionGeneration ||
+                                        (phase != Phase.REENUMERATION && phase != Phase.IPHONE)) return@postDelayed
+                                    iphoneHost.inspectCarPlayConfigurationAsync(result.device, executor) { configuration ->
+                                        mainHandler.post {
+                                            try {
+                                                if (!closed && reenumerationAttempts == attempts &&
+                                                    permissionPollGeneration == permissionGeneration &&
+                                                    (phase == Phase.REENUMERATION || phase == Phase.IPHONE)) {
+                                                    useIphoneConfiguration(result.device, configuration)
+                                                }
+                                            } catch (error: Throwable) {
+                                                fail(error)
                                             }
-                                        } catch (error: Throwable) {
-                                            fail(error)
                                         }
                                     }
-                                }
+                                }, 150L)
                                 return
                             }
                             val configuration = runCatching { IphoneCarPlayConfiguration.find(result.device) }.getOrNull()
@@ -2598,9 +2603,9 @@ class CarPlayController(
             val carkit = try {
                 carKitClient.open(pairRecord, config.label)
             } catch (error: Throwable) {
-                if (savedPairRecord != null) {
-                    val rejection = rejectedPairRecordError(error) ?: error.javaClass.simpleName
-                    debugLog("saved Lockdown pair record failed error=$rejection; clearing and pairing again")
+                val rejection = rejectedPairRecordError(error)
+                if (savedPairRecord != null && rejection != null) {
+                    debugLog("saved Lockdown pair record rejected by iPhone ($rejection); clearing and pairing again")
                     clearPairRecord()
                     pairRecord = pairNewRecord(pairingClient)
                     carKitClient.open(pairRecord, config.label)
