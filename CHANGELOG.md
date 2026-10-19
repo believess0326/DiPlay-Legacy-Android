@@ -1,3 +1,10 @@
+# DiPlay 0.2.77 — 2026-10-19
+
+- Lone navigation audio focus & silent guidance fix: allow lone navigation tracks to acquire transient audio focus so head units that keep outputs muted without active audio focus open their physical audio paths, while continuing to overlay without ducking once media or call streams become active (#214).
+- External USB Bluetooth RFCOMM flow control & SSP pairing enhancements: introduce FreeAuto-inspired credit-based flow control and credit grant negotiation on RFCOMM DLCs; improve SSP (Secure Simple Pairing) pairing agent compatibility for external USB Bluetooth dongles; add automatic USB device default grant helper.
+
+See [v0.2.77 release notes](docs/RELEASE-NOTES-0.2.77.md) for validation and device-testing limits.
+
 # DiPlay 0.2.76 — 2026-10-18
 
 - Wired CarPlay secondary open deadlock & descriptor reuse fix: add kernel settle delay before reopening USB handle and reuse probed CarPlay configurations, bypassing redundant EP0 descriptor transfers to eliminate Linux kernel D-state deadlocks on legacy Allwinner T3 head units (#221, #227).

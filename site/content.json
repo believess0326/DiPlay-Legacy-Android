@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.76 RELEASE",
+    "badge": "v0.2.77 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,11 +25,11 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.76",
+    "whats": "New in v0.2.77",
     "features": [
-      "Wired connection secondary open deadlock fix (Allwinner T3): add kernel settle delay before reopening device and reuse probed CarPlay configurations, bypassing redundant EP0 descriptor transfers to eliminate Linux kernel D-state deadlocks (#221, #227).",
-      "Suppressed resetDevice ioctl on detach: prevent sending USBDEVFS_RESET ioctl to disconnected devices when write transfers fail during cable unplug, avoiding kernel panics and watchdog reboots (#227).",
-      "Suppressed periodic USB Bluetooth log spam: check adapter active state before disable/shutdown to eliminate repeating log messages when no external USB Bluetooth dongle is plugged in (#227, #229)."
+      "Lone navigation audio focus & silent guidance fix: allow lone navigation tracks to acquire transient focus so head units that mute output without focus open their physical audio paths, while continuing to overlay silently once media or calls start (#214).",
+      "External USB Bluetooth RFCOMM credit flow control: implement credit-based sliding window flow control and parameter negotiation for stable high-throughput wireless iAP2 transmission.",
+      "External USB Bluetooth SSP pairing & permission enhancements: optimize Secure Simple Pairing agent confirmation flow and add automatic USB device default grant helper."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -240,7 +240,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.76 发布版",
+    "badge": "v0.2.77 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -262,11 +262,11 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.76 更新亮点",
+    "whats": "v0.2.77 更新亮点",
     "features": [
-      "全志 T3 有线连接二次打开死锁与配置复用修复：在重新打开 USB 句柄前加入内核释放缓冲延时，并直接复用探查得到的 CarPlay 配置跳过重复 EP0 控制传输，根除 Linux 内核 usbfs D-state 死锁（#221, #227）。",
-      "拔出重置异常抑制：物理拔出 iPhone 触发批量传输失败时，严格抑制对断开设备执行 resetDevice ioctl 重置，避免向已失效描述符发送指令引发内核崩溃与看门狗重启（#227）。",
-      "USB 蓝牙关闭日志刷屏抑制：在未插入或未启动外置 USB 蓝牙适配器的车机上执行有线重试时，静默跳过周期性日志打印，保持调试日志清爽（#227, #229）。"
+      "独立导航播报音频焦点适配与静音修复：单独播放导航提示音时获取临时音频焦点，促使无焦点默认静音的车机打开音频输出通路，同时在伴随音乐时继续保持静默叠加（#214）。",
+      "外置 USB 蓝牙 RFCOMM 信用流控协商：引入基于信用（Credits）的滑动窗口流控与参数协商机制，彻底消除无线 iAP2 高吞吐数据传输丢包卡死。",
+      "外置 USB 蓝牙 SSP 配对与设备权限增强：完善 SSP 配对确认流程，大幅提升 Actions、Realtek、CSR 等芯片与 iOS 17/18 配对成功率，新增自动 USB 设备授权辅助。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",
