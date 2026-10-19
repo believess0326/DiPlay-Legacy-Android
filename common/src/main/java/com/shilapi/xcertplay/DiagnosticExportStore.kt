@@ -79,6 +79,7 @@ internal object DiagnosticExportStore {
         val target: File? = when {
             preferredRoot != null -> preferredRoot
             else -> firstWritableUsbVolume(context)
+                ?: firstAppPrivateUsbFallback(context)
                 ?: runCatching { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) }.getOrNull()
         }?.let { runCatching { it.canonicalFile }.getOrDefault(it) }
         if (target == null || !target.isDirectory || !target.canWrite()) return emptyList()
@@ -94,6 +95,55 @@ internal object DiagnosticExportStore {
             }
             listOf(destination.absolutePath)
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Issue #239 fallback: when no USB volume root is directly writable (old head units
+     * mount USB with restrictive permissions), write into the app-private subdirectory on
+     * the USB volume instead. Android always allows the app to write to its own
+     * `Android/data/<package>/files/` directory on any mounted volume — no storage
+     * permission needed, no root write required.
+     */
+    private fun firstAppPrivateUsbFallback(context: Context): File? {
+        val packageName = context.packageName
+        for (volume in allUsbVolumeCandidates(context)) {
+            val privateDir = File(volume, "Android/data/$packageName/files/DiPlay")
+            val ready = runCatching {
+                if (!privateDir.isDirectory && !privateDir.mkdirs()) return@runCatching false
+                privateDir.canWrite()
+            }.getOrDefault(false)
+            if (ready) return privateDir
+        }
+        return null
+    }
+
+    /** All USB-like volume roots, writable or not, for the app-private fallback. */
+    private fun allUsbVolumeCandidates(context: Context): List<File> {
+        val candidates = linkedSetOf<File>()
+        runCatching {
+            context.getExternalFilesDirs(null)?.drop(1)?.filterNotNull()?.forEach {
+                // The app-private dir itself is writable; its volume root is what we need.
+                var root: File? = it
+                // Walk up past Android/data/<package>/files to the volume root.
+                repeat(4) { root = root?.parentFile }
+                root?.let { candidates.add(it) }
+            }
+        }
+        val basePaths = listOf("/storage", "/mnt", "/mnt/media_rw")
+        val usbNames = Regex("(?i).*(usb|udisk|usbotg|otg|removable|external_usb).*")
+        for (base in basePaths) {
+            val dir = File(base)
+            for (child in dir.listFiles().orEmpty()) {
+                if (!child.isDirectory) continue
+                if (usbNames.matches(child.name)) candidates.add(child)
+                for (sub in child.listFiles().orEmpty()) {
+                    if (sub.isDirectory && (usbNames.matches(child.name) || usbNames.matches(sub.name))) {
+                        candidates.add(sub)
+                    }
+                }
+            }
+        }
+        return dedupeExportRoots(candidates.toList())
     }
 
     /** First writable USB-like volume, for the single-copy export. See [availableUsbVolumes]. */
