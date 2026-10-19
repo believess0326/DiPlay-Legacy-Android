@@ -1411,8 +1411,12 @@ class CarPlayController(
             val hybridAdapter = CarPlayBluetoothManager.get(appContext)
             if (adapter != null && !adapter.isEnabled) {
                 runCatching { adapter.enable() }
-                val enableDeadline = System.currentTimeMillis() + 2500L
+                // Upstream #822: wait only while the adapter is actually turning on;
+                // break early on other states instead of sleeping the full deadline.
+                val enableDeadline = System.currentTimeMillis() + 3000L
                 while (!adapter.isEnabled && System.currentTimeMillis() < enableDeadline) {
+                    val state = runCatching { adapter.state }.getOrNull()
+                    if (state != BluetoothAdapter.STATE_TURNING_ON) break
                     try {
                         Thread.sleep(200L)
                     } catch (_: InterruptedException) {
@@ -3002,6 +3006,15 @@ class CarPlayController(
                 return
             }
             val bondState = device.bondState
+            val adapterState = runCatching { bluetoothAdapter?.state }.getOrNull()?.let { state ->
+                when (state) {
+                    BluetoothAdapter.STATE_OFF -> "OFF"
+                    BluetoothAdapter.STATE_TURNING_ON -> "TURNING_ON"
+                    BluetoothAdapter.STATE_ON -> "ON"
+                    BluetoothAdapter.STATE_TURNING_OFF -> "TURNING_OFF"
+                    else -> "UNKNOWN($state)"
+                }
+            } ?: "unknown"
             val bondName = when (bondState) {
                 BluetoothDevice.BOND_NONE -> "NONE"
                 BluetoothDevice.BOND_BONDING -> "BONDING"
@@ -3013,6 +3026,7 @@ class CarPlayController(
             val service = UUID.fromString(IAP2_IPHONE_UUID)
             connectionDiagnostic(
                 "Bluetooth snapshot point=$point enabled=${bluetoothAdapter?.isEnabled} " +
+                    "adapterState=$adapterState " +
                     "bondState=$bondState bondName=$bondName cachedServicesReadable=${cachedServices.isSuccess} " +
                     "cachedServiceCount=${uuids?.size ?: "unknown"} " +
                     "cachedIap2Service=${uuids?.any { it.uuid == service } ?: "unknown"}",
