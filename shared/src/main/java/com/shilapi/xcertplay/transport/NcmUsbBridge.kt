@@ -40,7 +40,14 @@ class NcmUsbBridge internal constructor(
     private val readLock = Any()
     private val writeLock = Any()
     private var closed = false
+    @Volatile
+    private var isAbortedOrDetached = false
     private var failure: IphoneUsbException? = null
+
+    /** Marks the bridge aborted (e.g. iPhone detached) to suppress blocking writes and interface release ioctls. */
+    fun markAborted() {
+        isAbortedOrDetached = true
+    }
     private var sequence = 0
     private var loggedWriteTimeout = false
     private var inboundFrameSeen = false
@@ -77,6 +84,7 @@ class NcmUsbBridge internal constructor(
 
     /** Wraps one Ethernet frame in one NTB16 block and writes it to bulk OUT. */
     fun send(frame: ByteArray, timeoutMillis: Int) = synchronized(writeLock) {
+        if (closed || isAbortedOrDetached) return@synchronized
         checkOpen()
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         val sequence = synchronized(stateLock) {
@@ -171,11 +179,13 @@ class NcmUsbBridge internal constructor(
                 Thread.currentThread().interrupt()
             }
         }
-        for (usbInterface in claimedInterfaces.asReversed()) {
-            try {
-                connection.releaseInterface(usbInterface)
-            } catch (_: RuntimeException) {
-                // Best-effort release; the connection close below is authoritative.
+        if (!isAbortedOrDetached) {
+            for (usbInterface in claimedInterfaces.asReversed()) {
+                try {
+                    connection.releaseInterface(usbInterface)
+                } catch (_: RuntimeException) {
+                    // Best-effort release; the connection close below is authoritative.
+                }
             }
         }
         runCatching { legacyRestore?.invoke() }

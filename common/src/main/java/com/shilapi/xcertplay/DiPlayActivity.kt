@@ -4361,10 +4361,11 @@ class DiPlayActivity : ComponentActivity() {
     private fun runUsbBtSelfTest(resultLabel: TextView, onComplete: () -> Unit) {
         resultLabel.text = getString(R.string.settings_usb_bluetooth_testing)
         Thread({
+            val dongle = runCatching { CarPlayBluetoothManager.get(this).usbDongle }.getOrNull()
+            runCatching { dongle?.disable() }
             val report = UsbBtSelfTest.run(this)
             if (report.ok && AirPlayPersistence.loadWirelessEnabled(this)) {
                 runCatching {
-                    val dongle = CarPlayBluetoothManager.get(this).usbDongle
                     dongle?.enable()
                 }
             }

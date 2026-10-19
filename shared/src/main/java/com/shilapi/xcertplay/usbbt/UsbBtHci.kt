@@ -412,36 +412,52 @@ class UsbBtHci private constructor(
             step("Extended_Inquiry_Response written (${eirBytes.size} bytes)")
         }
 
-        // 14. Write_Inquiry_Scan_Type (interlaced)
-        timed(
+        // 14. Write_Inquiry_Scan_Type (interlaced, fallback to standard)
+        val inqType = timed(
             "Write_Inquiry_Scan_Type",
             UsbBtTiming.WRITE_POLICY,
             OP_WRITE_INQUIRY_SCAN_TYPE,
             encodeWriteScanType(true),
         )
+        if (inqType is HciResult.Failed) {
+            timed(
+                "Write_Inquiry_Scan_Type_Standard",
+                UsbBtTiming.WRITE_POLICY,
+                OP_WRITE_INQUIRY_SCAN_TYPE,
+                encodeWriteScanType(false),
+            )
+        }
 
-        // 14b. Write_Inquiry_Scan_Activity (1.28s interval, 40ms window for fast iPhone discovery)
+        // 14b. Write_Inquiry_Scan_Activity (640ms interval, 160ms window = 25% duty cycle for fast discovery)
         timed(
             "Write_Inquiry_Scan_Activity",
             UsbBtTiming.WRITE_POLICY,
             OP_WRITE_INQUIRY_SCAN_ACTIVITY,
-            encodeWriteScanActivity(0x0800, 0x0040),
+            encodeWriteScanActivity(0x0400, 0x0100),
         )
 
-        // 15. Write_Page_Scan_Type (interlaced)
-        timed(
+        // 15. Write_Page_Scan_Type (interlaced, fallback to standard)
+        val pageType = timed(
             "Write_Page_Scan_Type",
             UsbBtTiming.WRITE_POLICY,
             OP_WRITE_PAGE_SCAN_TYPE,
             encodeWriteScanType(true),
         )
+        if (pageType is HciResult.Failed) {
+            timed(
+                "Write_Page_Scan_Type_Standard",
+                UsbBtTiming.WRITE_POLICY,
+                OP_WRITE_PAGE_SCAN_TYPE,
+                encodeWriteScanType(false),
+            )
+        }
 
-        // 15b. Write_Page_Scan_Activity (1.28s interval, 40ms window)
+        // 15b. Write_Page_Scan_Activity (640ms interval, 80ms window)
         timed(
             "Write_Page_Scan_Activity",
             UsbBtTiming.WRITE_POLICY,
             OP_WRITE_PAGE_SCAN_ACTIVITY,
-            encodeWriteScanActivity(0x0800, 0x0040),
+            encodeWriteScanActivity(0x0400, 0x0080),
         )
 
         // 16. Write_Scan_Enable (Inquiry + Page)

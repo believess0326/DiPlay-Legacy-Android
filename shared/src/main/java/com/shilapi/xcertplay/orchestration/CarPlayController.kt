@@ -543,6 +543,10 @@ class CarPlayController(
         }
     }
 
+    /** Returns true if this wired controller is waiting for an iPhone to be plugged in or reconnected. */
+    fun isWiredWaitingForIphone(): Boolean =
+        config.transport == CarPlayTransport.WIRED && !closed && (phase == Phase.IPHONE || wiredAborted)
+
     fun sendTouch(contacts: List<AirPlayContact>): Boolean {
         if (closed) return false
         val session = activeSession ?: return false
@@ -2379,6 +2383,7 @@ class CarPlayController(
 
     private fun onIphoneAttached(device: UsbDevice) {
         wiredChain(1, "USB iPhone attached vid=0x${device.vendorId.toString(16)} pid=0x${device.productId.toString(16)}")
+        wiredAborted = false
         when (phase) {
             Phase.REENUMERATION, Phase.IPHONE -> {
                 availabilityPollGeneration.incrementAndGet()
@@ -2415,13 +2420,19 @@ class CarPlayController(
             Phase.IPHONE, Phase.DATAPATHS, Phase.CONTROL -> {
                 debugLog("wired iPhone detached; resetting to waiting for iPhone")
                 phase = Phase.IPHONE
-                abortActiveWiredSession()
+                wiredAborted = true
+                availabilityPollGeneration.incrementAndGet()
                 mainHandler.post {
                     if (!closed) {
-                        availabilityPollGeneration.incrementAndGet()
                         onStatus(CarPlayStatus.WaitingForIphone)
                         scheduleAvailabilityPoll(Phase.IPHONE, ::checkIphoneAvailability)
                     }
+                }
+                // Run teardown asynchronously so UI thread is never blocked by USB socket/thread joins.
+                try {
+                    executor.execute { abortActiveWiredSession() }
+                } catch (_: Exception) {
+                    abortActiveWiredSession()
                 }
             }
             else -> Unit
@@ -2449,7 +2460,7 @@ class CarPlayController(
         }
         if (config.transport == CarPlayTransport.WIRED) {
             closeBestEffort("VPN/NCM") {
-                vpnService?.detach()
+                vpnService?.detach(isAborted = true)
             }
         }
     }

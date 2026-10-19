@@ -35,7 +35,13 @@ class HciEventDispatcherTest {
     }
 
     @Test fun asyncLinkCommandsCompleteOnStatusAndKeepTheirFinalEvent() {
-        for (opcode in listOf(HciProtocol.OP_CREATE_CONNECTION, HciProtocol.OP_ACCEPT_CONNECTION_REQUEST, HciProtocol.OP_DISCONNECT)) {
+        for (opcode in listOf(
+            HciProtocol.OP_CREATE_CONNECTION,
+            HciProtocol.OP_ACCEPT_CONNECTION_REQUEST,
+            HciProtocol.OP_DISCONNECT,
+            HciProtocol.OP_AUTHENTICATION_REQUESTED,
+            HciProtocol.OP_SET_CONNECTION_ENCRYPTION,
+        )) {
             Fixture().use { f ->
                 f.onWrite = { f.incoming.offer(status(opcode)); f.incoming.offer(byteArrayOf(0x03, 0)) }
                 assertTrue(f.dispatcher.sendCommand(opcode, byteArrayOf(), 1_000).isSuccess)

@@ -29,8 +29,14 @@ internal class HciEventDispatcher(
 
     fun sendCommand(opcode: Int, params: ByteArray, timeoutMs: Int): Result<ByteArray> = synchronized(commandLock) {
         require(timeoutMs > 0)
-        val request = Pending(opcode, opcode == HciProtocol.OP_CREATE_CONNECTION ||
-            opcode == HciProtocol.OP_ACCEPT_CONNECTION_REQUEST || opcode == HciProtocol.OP_DISCONNECT)
+        val request = Pending(
+            opcode,
+            opcode == HciProtocol.OP_CREATE_CONNECTION ||
+                opcode == HciProtocol.OP_ACCEPT_CONNECTION_REQUEST ||
+                opcode == HciProtocol.OP_DISCONNECT ||
+                opcode == HciProtocol.OP_AUTHENTICATION_REQUESTED ||
+                opcode == HciProtocol.OP_SET_CONNECTION_ENCRYPTION,
+        )
         synchronized(pendingLock) {
             if (!running.get()) return Result.failure(IOException("HCI event reader is closed"))
             pending = request

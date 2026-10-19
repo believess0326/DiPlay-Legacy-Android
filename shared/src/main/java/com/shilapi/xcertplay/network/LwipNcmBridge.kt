@@ -325,8 +325,15 @@ class LwipNcmBridge(
         }
     }
 
+    fun markAborted() {
+        running.set(false)
+        txQueue.clear()
+        ncm.markAborted()
+    }
+
     override fun close() {
         if (!running.compareAndSet(true, false)) return
+        txQueue.clear()
         // Stop the TX thread first so no new USB writes start; remaining queued frames
         // are dropped with the link going down. Guard for a start() that threw before
         // the thread was created.
@@ -373,8 +380,8 @@ class LwipNcmBridge(
     private companion object {
         const val TAG = "xcertplay-usb"
         const val READ_TIMEOUT_MILLIS = 200L
-        const val WRITE_TIMEOUT_MILLIS = 2_000
-        const val JOIN_TIMEOUT_MILLIS = 2_000L
+        const val WRITE_TIMEOUT_MILLIS = 500
+        const val JOIN_TIMEOUT_MILLIS = 500L
         const val NA_RETRY_INTERVAL_NANOS = 500_000_000L
         const val TX_QUEUE_CAPACITY = 64
         const val TX_POLL_MILLIS = 200L

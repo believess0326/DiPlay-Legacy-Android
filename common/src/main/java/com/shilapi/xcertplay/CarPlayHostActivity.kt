@@ -4134,6 +4134,11 @@ class CarPlayHostActivity : ComponentActivity() {
                     }
                     activeScreenStreamTypes.clear()
                     ClusterActivityOutput.setStreamActive(false)
+                    if (controller?.isWiredWaitingForIphone() == true) {
+                        appendLog("Wired AirPlay session ended (USB detached); keeping controller waiting for iPhone")
+                        setConnectionStage(getString(R.string.waiting_for_iphone_over_usb))
+                        return@runOnUiThread
+                    }
                     setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
                     appendLog("AirPlay session ended; reconnecting from scratch")
                     reconnectAfterLoss("AirPlay session ended")
@@ -4150,6 +4155,11 @@ class CarPlayHostActivity : ComponentActivity() {
                     }
                     activeScreenStreamTypes.clear()
                     ClusterActivityOutput.setStreamActive(false)
+                    if (controller?.isWiredWaitingForIphone() == true) {
+                        appendLog("Wired transport error after USB detach ($message); keeping controller waiting for iPhone")
+                        setConnectionStage(getString(R.string.waiting_for_iphone_over_usb))
+                        return@runOnUiThread
+                    }
                     setConnectionStage(getString(R.string.transport_error_reconnecting))
                     appendLog("CarPlay transport error: $message; reconnecting from scratch")
                     reconnectAfterLoss("CarPlay transport error: $message")
