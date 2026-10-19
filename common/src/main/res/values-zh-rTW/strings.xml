@@ -669,7 +669,7 @@
     <string name="settings_dock_auto_hide">自動隱藏側邊欄</string>
     <string name="settings_dock_auto_hide_description">全螢幕顯示右側應用區域，從螢幕左側邊緣向右滑動即可呼出應用側邊欄</string>
     <string name="settings_force_square_corners">強制直角顯示</string>
-    <string name="settings_force_square_corners_description">停用 CarPlay 畫面的圓角切角；在直角車機螢幕上開啟，避免邊緣內容被遮擋</string>
+    <string name="settings_force_square_corners_description">停用 CarPlay 畫面的圓角切角；在直角車機螢幕上開啟，避免邊緣內容被遮擋。下次連線時生效。</string>
     <string name="carplay_dock_hint">CarPlay 顯示應用程式、時鐘與狀態的位置。在「駕駛側」和「底部」之間切換會立即生效；「自動」由 iPhone 決定，重新連線後生效。</string>
     <string name="carplay_rotation">旋轉螢幕時同步旋轉 CarPlay，無須重新連線</string>
     <string name="carplay_rotation_description">適用於螢幕可旋轉的車機。CarPlay 會接收包含橫向和直向畫面的方形影像，旋轉螢幕時可直接重繪，無須重新連線。較大的方形影像可能增加影片處理負擔並降低流暢度，尤其在大螢幕上選擇「較清晰」時。若很少旋轉螢幕，關閉此選項可能更合適。自訂安全區域不適用於方形影像。下次連線時生效。</string>

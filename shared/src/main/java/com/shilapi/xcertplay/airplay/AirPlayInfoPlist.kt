@@ -249,26 +249,31 @@ object AirPlayInfoPlist {
             "originYPixels" to view.top,
         )
         area?.dockEdge?.let { result["viewAreaStatusBarEdge"] = it }
-        val displaySafe = display.safeArea ?: AirPlayInsets()
-        val clipped = if (area == null) displaySafe else AirPlayInsets(
-            top = maxOf(displaySafe.top, view.top),
-            bottom = maxOf(displaySafe.bottom, view.bottom),
-            left = maxOf(displaySafe.left, view.left),
-            right = maxOf(displaySafe.right, view.right),
-        )
-        // A valid saved mapping can lie wholly outside a smaller view area. In that case the
-        // intersection is empty: use this area's bounds instead of advertising negative/zero sizes.
-        val safe = if (area != null &&
-            (clipped.left + clipped.right >= width || clipped.top + clipped.bottom >= height)
-        ) view else clipped
-        val safeArea = linkedMapOf<String, Any?>(
-            "widthPixels" to (width - safe.left - safe.right),
-            "heightPixels" to (height - safe.top - safe.bottom),
-            "originXPixels" to safe.left,
-            "originYPixels" to safe.top,
-            "drawUIOutsideSafeArea" to (display.safeAreaDrawOutside ?: true),
-        )
-        result["safeArea"] = safeArea
+        // Issue #240 & #247: If forceSquareCorners is enabled, do not declare safeArea in /info.
+        // In the Apple CarPlay protocol, omitting safeArea signals that the display is a standard
+        // rectangular frame without safe-area padding or rounded-corner masking in iOS SpringBoard stream rendering.
+        if (!display.forceSquareCorners) {
+            val displaySafe = display.safeArea ?: AirPlayInsets()
+            val clipped = if (area == null) displaySafe else AirPlayInsets(
+                top = maxOf(displaySafe.top, view.top),
+                bottom = maxOf(displaySafe.bottom, view.bottom),
+                left = maxOf(displaySafe.left, view.left),
+                right = maxOf(displaySafe.right, view.right),
+            )
+            // A valid saved mapping can lie wholly outside a smaller view area. In that case the
+            // intersection is empty: use this area's bounds instead of advertising negative/zero sizes.
+            val safe = if (area != null &&
+                (clipped.left + clipped.right >= width || clipped.top + clipped.bottom >= height)
+            ) view else clipped
+            val safeArea = linkedMapOf<String, Any?>(
+                "widthPixels" to (width - safe.left - safe.right),
+                "heightPixels" to (height - safe.top - safe.bottom),
+                "originXPixels" to safe.left,
+                "originYPixels" to safe.top,
+                "drawUIOutsideSafeArea" to (display.safeAreaDrawOutside ?: true),
+            )
+            result["safeArea"] = safeArea
+        }
         return result
     }
 }

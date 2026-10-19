@@ -1572,16 +1572,30 @@ class CarPlayController(
                 var lateStream: BlockingDuplexByteStream? = null
                 var lateChannel: Iap2Session? = null
                 var lateBootstrapDone = false
+                var lastOutgoingAttemptMillis = 0L
+                val outgoingRetryIntervalMillis = 3500L
                 while (activeSession == null && !wirelessActiveReported.get() && System.currentTimeMillis() < deadline && !isStaleWirelessRun(generation)) {
                     if (!lateBootstrapDone && hybridAdapter.isEnabled()) {
                         val connectedDev = runCatching { hybridAdapter.getConnectedDevice() }.getOrNull()
                         val targetDev = connectedDev ?: run {
-                            // If no device was connected yet but the USB adapter just came online (e.g. after USB permission grant),
-                            // pick a paired iPhone to initiate outgoing connection if we didn't have a target initially.
-                            if (device == null) {
-                                val paired = runCatching { hybridAdapter.getPairedDevices() }.getOrDefault(emptyList())
-                                paired.firstOrNull { it.name.contains("iPhone", ignoreCase = true) }
-                                    ?: (if (paired.size == 1) paired.first() else null)
+                            // Issue #247: If no device is connected yet or connection dropped while iPhone was asleep,
+                            // periodically retry connecting to target device (or a paired iPhone) to send Bluetooth paging
+                            // packets that wake up iOS power-management Bluetooth background sleep state without requiring
+                            // the user to manually toggle Bluetooth off and on on the phone.
+                            val now = System.currentTimeMillis()
+                            if (now - lastOutgoingAttemptMillis >= outgoingRetryIntervalMillis) {
+                                lastOutgoingAttemptMillis = now
+                                if (device != null) {
+                                    com.shilapi.xcertplay.bluetooth.CarPlayBluetoothDevice(
+                                        name = runCatching { device.name }.getOrNull() ?: "iPhone (${device.address})",
+                                        address = device.address,
+                                        isConnected = false,
+                                    )
+                                } else {
+                                    val paired = runCatching { hybridAdapter.getPairedDevices() }.getOrDefault(emptyList())
+                                    paired.firstOrNull { it.name.contains("iPhone", ignoreCase = true) }
+                                        ?: (if (paired.size == 1) paired.first() else null)
+                                }
                             } else null
                         }
                         if (targetDev != null && BluetoothAdapter.checkBluetoothAddress(targetDev.address)) {
@@ -1658,7 +1672,7 @@ class CarPlayController(
                 var controlResult: Iap2WirelessControlResult? = null
                 var lastBootstrapError: Throwable? = null
                 var attempt = 0
-                val maxAttempts = 3
+                val maxAttempts = 4
 
                 while (attempt < maxAttempts && !isStaleWirelessRun(generation)) {
                     attempt++
@@ -1742,7 +1756,7 @@ class CarPlayController(
                         }
                         if (attempt < maxAttempts) {
                             try {
-                                Thread.sleep(1200L)
+                                Thread.sleep(1500L)
                             } catch (_: InterruptedException) {
                                 break
                             }

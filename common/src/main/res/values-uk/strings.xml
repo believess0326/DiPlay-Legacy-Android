@@ -620,7 +620,7 @@
     <string name="settings_dock_auto_hide">Автоприховування панелі Dock</string>
     <string name="settings_dock_auto_hide_description">Повноекранний режим програми; проведіть від краю екрана, щоб відкрити панель Dock</string>
     <string name="settings_force_square_corners">Примусово прямі кути</string>
-    <string name="settings_force_square_corners_description">Вимкнути заокруглення кутів екрана CarPlay; використовуйте на прямокутних екранах, де обрізаються краї</string>
+    <string name="settings_force_square_corners_description">Вимкнути заокруглення кутів екрана CarPlay; використовуйте на прямокутних екранах, де обрізаються краї. Застосовується з наступного підключення.</string>
     <string name="carplay_dock_hint">Де CarPlay показує програми, годинник і стан. Між «З боку водія» і «Знизу» перемикається одразу; «Автоматично» залишає вибір iPhone і діє після перепідключення.</string>
     <string name="split_screen_areas">CarPlay у розділеному екрані</string>
     <string name="split_screen_areas_description">Коли головний пристрій показує DiPlay у розділеному екрані, CarPlay перемальовується під це вікно, а не зменшується з чорними смугами, і повертається на весь екран без перепідключення. Розмір вікна запам’ятовується першого разу, тож з наступного підключення картинка точно за розміром. Якщо панель програм на «Автоматично», CarPlay тоді ставить її знизу. Застосовується з наступного підключення.</string>

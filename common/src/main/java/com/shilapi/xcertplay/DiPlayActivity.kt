@@ -1471,6 +1471,7 @@ class DiPlayActivity : ComponentActivity() {
                 getString(R.string.settings_force_square_corners_description),
                 AirPlayPersistence.loadForceSquareCorners(this)) {
                 AirPlayPersistence.saveForceSquareCorners(this, it)
+                markReconnectNeeded()
             }
             addSystemBarControls(
                 hideTopBar = AirPlayPersistence.loadHideTopBar(this),

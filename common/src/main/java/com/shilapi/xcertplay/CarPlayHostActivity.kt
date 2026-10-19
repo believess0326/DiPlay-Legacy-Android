@@ -3783,15 +3783,17 @@ class CarPlayHostActivity : ComponentActivity() {
             }
         }
         appendLog("CarPlay size=${CarPlayUiScale.label(uiScalePercent)} canvas=${scaledDisplay.widthPixels}x${scaledDisplay.heightPixels}")
+        val forceSquareCorners = AirPlayPersistence.loadForceSquareCorners(this)
         val display = scaledDisplay.copy(
-            safeArea = AirPlaySafeArea.toInsets(
+            safeArea = if (forceSquareCorners) null else AirPlaySafeArea.toInsets(
                 mapping = AirPlayPersistence.loadSafeAreaRect(this, size.width, size.height),
                 activityWidthPixels = size.width,
                 activityHeightPixels = size.height,
                 displayWidthPixels = scaledDisplay.widthPixels,
                 displayHeightPixels = scaledDisplay.heightPixels,
             ),
-            safeAreaDrawOutside = safeAreaDrawOutside,
+            safeAreaDrawOutside = if (forceSquareCorners) null else safeAreaDrawOutside,
+            forceSquareCorners = forceSquareCorners,
         )
         // A fixed dock, split-screen support or a turning screen declares several areas the car switches
         // between live. A session that starts in split screen sizes its canvas to that window, so it keeps

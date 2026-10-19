@@ -35,6 +35,23 @@ class AirPlayInfoPlistTest {
     }
 
     @Test
+    fun forceSquareCornersOmitsSafeAreaToEliminateRoundedCornerMask() {
+        val info = AirPlayInfoPlist.build(
+            AirPlayConfig(
+                deviceName = "test",
+                deviceId = "02:00:00:00:00:02",
+                btMac = "02:00:00:00:00:02",
+                sourceVersion = "366.0",
+                main = AirPlayDisplayConfig(widthPixels = 1280, heightPixels = 720, forceSquareCorners = true),
+            ),
+        )
+
+        val display = (info["displays"] as List<*>).single() as Map<*, *>
+        val view = (display["viewAreas"] as List<*>).single() as Map<*, *>
+        assertFalse(view.containsKey("safeArea"))
+    }
+
+    @Test
     fun hevcCapabilityIsAdvertisedOnlyWhenEnabled() {
         val base = AirPlayConfig(
             deviceName = "test",

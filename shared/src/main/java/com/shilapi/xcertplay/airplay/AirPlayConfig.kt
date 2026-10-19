@@ -29,6 +29,11 @@ data class AirPlayDisplayConfig(
     val viewAreas: List<AirPlayViewArea>? = null,
     /** The area CarPlay starts in, an index into [viewAreas]. */
     val initialViewArea: Int = 0,
+    /**
+     * When true, omits safeArea declarations in /info viewAreas so iOS SpringBoard stream rendering
+     * does not apply rounded corner masks on rectangular displays.
+     */
+    val forceSquareCorners: Boolean = false,
 )
 
 /**
