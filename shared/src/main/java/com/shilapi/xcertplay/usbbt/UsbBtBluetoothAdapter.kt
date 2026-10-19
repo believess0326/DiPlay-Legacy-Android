@@ -96,6 +96,9 @@ class UsbBtBluetoothAdapter(
     /** ACL handle -> active inbound or outbound RFCOMM stream. */
     private val activeStreams = ConcurrentHashMap<Int, UsbBtRfcommStream>()
 
+    /** Handles of inbound ACL connections created by the peer. */
+    private val inboundHandles = ConcurrentHashMap.newKeySet<Int>()
+
     private data class PendingAcl(
         val latch: CountDownLatch = CountDownLatch(1),
         @Volatile var handle: Int = -1,
@@ -363,6 +366,7 @@ class UsbBtBluetoothAdapter(
         // 1) ACL connection (reused when already up for this peer).
         val handle = createAclConnection(h, deviceAddress)
         val freshAcl = aclRefCount[handle]?.get() == 1
+        val isInbound = inboundHandles.contains(handle)
         try {
             // 2) L2CAP layer on this handle + ACL receive pump hookup.
             // One L2CAP instance per ACL handle, shared by all streams on it.
@@ -377,6 +381,18 @@ class UsbBtBluetoothAdapter(
             activeStreams[handle]?.let { existing ->
                 UsbBtLog.log(appContext, TAG, "openRfcommStream: reusing existing inbound stream for $deviceAddress")
                 return existing
+            }
+
+            if (isInbound) {
+                // If peer just connected inbound, give iOS a brief window (up to 2.5s) to open its inbound iAP2 DLC
+                val waitDeadline = System.currentTimeMillis() + 2500L
+                while (System.currentTimeMillis() < waitDeadline && isEnabled()) {
+                    activeStreams[handle]?.let { existing ->
+                        UsbBtLog.log(appContext, TAG, "openRfcommStream: peer opened inbound iAP2 stream for $deviceAddress; reusing")
+                        return existing
+                    }
+                    try { Thread.sleep(100L) } catch (_: InterruptedException) { break }
+                }
             }
 
             // 3) SDP: find the iAP2 RFCOMM channel.
@@ -426,8 +442,8 @@ class UsbBtBluetoothAdapter(
             return stream
         } catch (t: Throwable) {
             UsbBtLog.warn(appContext, TAG, "openRfcommStream failed for $deviceAddress", t)
-            // Only tear down the ACL when we created it for this call.
-            if (freshAcl) teardown(handle) else releaseAclRef(handle)
+            // Only tear down the ACL when we created it fresh for this call AND it is not an inbound connection from peer.
+            if (freshAcl && !isInbound) teardown(handle) else releaseAclRef(handle)
             throw t
         }
     }
@@ -528,13 +544,17 @@ class UsbBtBluetoothAdapter(
             rfcommLayers.remove(handle)?.let { runCatching { it.close() } }
             activeStreams.remove(handle)?.let { runCatching { it.close() } }
             l2capLayers.remove(handle)?.let { runCatching { it.close() } }
-            val h = synchronized(lock) { hci } ?: return
-            runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
-            Log.i(TAG, "ACL down: handle=0x${handle.toString(16)}")
+            val wasInbound = inboundHandles.remove(handle)
+            if (!wasInbound) {
+                val h = synchronized(lock) { hci } ?: return
+                runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
+            }
+            Log.i(TAG, "ACL down: handle=0x${handle.toString(16)} wasInbound=$wasInbound")
         }
     }
 
     private fun onPeerDisconnected(handle: Int) {
+        inboundHandles.remove(handle)
         aclRefCount.remove(handle)
         aclHandleByAddr.entries.find { it.value == handle }?.let { entry ->
             aclHandleByAddr.remove(entry.key)
@@ -615,6 +635,10 @@ class UsbBtBluetoothAdapter(
                                 aclHandleByAddr[key] = cc.handle
                                 connectedOrder.remove(key)
                                 connectedOrder.addLast(key)
+                                if (pendingAcl[key] == null) {
+                                    inboundHandles.add(cc.handle)
+                                    aclRefCount.getOrPut(cc.handle) { AtomicInteger(0) }.incrementAndGet()
+                                }
                                 if (cc.encryptionEnabled) {
                                     encryptedHandles[cc.handle] = true
                                 }
