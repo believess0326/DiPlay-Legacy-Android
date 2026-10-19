@@ -23,6 +23,8 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_INQUIRY_SCAN_TYPE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_LOCAL_NAME
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_AUTHENTICATION_ENABLE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_PAGE_SCAN_TYPE
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_INQUIRY_SCAN_ACTIVITY
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_PAGE_SCAN_ACTIVITY
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SCAN_ENABLE
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SIMPLE_PAIRING_MODE
 import com.shilapi.xcertplay.usbbt.HciProtocol.SCAN_INQUIRY_AND_PAGE
@@ -37,6 +39,7 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteClassOfDevice
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteDefaultLinkPolicy
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteExtendedInquiryResponse
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteInquiryMode
+import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteScanActivity
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeWriteScanType
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseBdAddr
 import com.shilapi.xcertplay.usbbt.HciProtocol.parseBufferSize
@@ -78,6 +81,7 @@ class UsbBtHci private constructor(
         val bufferSize: HciProtocol.BufferSize?,
         /** Human-readable step log for diagnostics. */
         val steps: List<String>,
+        val advertisingName: String = "",
     )
 
     companion object {
@@ -321,17 +325,19 @@ class UsbBtHci private constructor(
             encodeSetEventMask(),
         )
 
-        // 7. Write_Local_Name (set name as early as possible so inquiry shows DiPlay immediately)
+        // 7. Write_Local_Name (set name as early as possible so inquiry shows DiPlay-XXXX immediately)
+        val suffix = bdAddr?.takeLast(5)?.replace(":", "") ?: "BT"
+        val effectiveName = if (localName == "DiPlay") "DiPlay-$suffix" else localName
         val name = timed(
             "Write_Local_Name",
             UsbBtTiming.WRITE_POLICY,
             OP_WRITE_LOCAL_NAME,
-            encodeLocalName(localName),
+            encodeLocalName(effectiveName),
         )
         if (name is HciResult.Failed) {
             step("Write_Local_Name failed (non-fatal): ${name.reason}")
         } else {
-            step("Local_Name=$localName ok")
+            step("Local_Name=$effectiveName ok")
         }
 
         // 8. Write_Simple_Pairing_Mode (enable SSP for seamless pairing with iPhone)
@@ -373,7 +379,7 @@ class UsbBtHci private constructor(
         )
 
         // 11. Write_Class_Of_Device (Handsfree car audio: 0x200408)
-        val btIdentity = UsbBtIdentity(name = localName)
+        val btIdentity = UsbBtIdentity(name = effectiveName)
         val cod = timed(
             "Write_Class_Of_Device",
             UsbBtTiming.WRITE_POLICY,
@@ -414,12 +420,28 @@ class UsbBtHci private constructor(
             encodeWriteScanType(true),
         )
 
+        // 14b. Write_Inquiry_Scan_Activity (1.28s interval, 40ms window for fast iPhone discovery)
+        timed(
+            "Write_Inquiry_Scan_Activity",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_INQUIRY_SCAN_ACTIVITY,
+            encodeWriteScanActivity(0x0800, 0x0040),
+        )
+
         // 15. Write_Page_Scan_Type (interlaced)
         timed(
             "Write_Page_Scan_Type",
             UsbBtTiming.WRITE_POLICY,
             OP_WRITE_PAGE_SCAN_TYPE,
             encodeWriteScanType(true),
+        )
+
+        // 15b. Write_Page_Scan_Activity (1.28s interval, 40ms window)
+        timed(
+            "Write_Page_Scan_Activity",
+            UsbBtTiming.WRITE_POLICY,
+            OP_WRITE_PAGE_SCAN_ACTIVITY,
+            encodeWriteScanActivity(0x0800, 0x0040),
         )
 
         // 16. Write_Scan_Enable (Inquiry + Page)
@@ -433,7 +455,7 @@ class UsbBtHci private constructor(
             return HciResult.Failed("Write_Scan_Enable failed: ${scan.reason}")
         }
 
-        return HciResult.Ok(InitResult(bdAddr = bdAddr, bufferSize = bufferSize, steps = steps))
+        return HciResult.Ok(InitResult(bdAddr = bdAddr, bufferSize = bufferSize, steps = steps, advertisingName = effectiveName))
     }
 
     override fun close() {

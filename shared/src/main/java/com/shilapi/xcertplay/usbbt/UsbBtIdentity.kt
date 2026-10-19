@@ -37,6 +37,8 @@ data class UsbBtIdentity(
         val IAP2_IPHONE_UUID: UUID = UUID.fromString("00000000-deca-fade-deca-deafdecacafe")
         val CARPLAY_UUID: UUID = UUID.fromString("ec884348-cd41-40a2-9727-575d50bf1fd3")
 
+        const val EIR_INCOMPLETE_16_BIT_UUIDS = 2
+        const val EIR_COMPLETE_16_BIT_UUIDS = 3
         const val EIR_INCOMPLETE_128_BIT_UUIDS = 6
         const val EIR_COMPLETE_128_BIT_UUIDS = 7
         const val EIR_SHORTENED_LOCAL_NAME = 8
@@ -50,6 +52,11 @@ data class UsbBtIdentity(
      */
     fun extendedInquiryResponse(txPowerLevel: Int? = null): ByteArray {
         val nonNamePayload = ByteArrayOutputStream()
+
+        // 0. Tag 2: Incomplete 16-bit Service Class UUIDs
+        // iOS Settings > Bluetooth scans for Handsfree (0x111E) and Audio services.
+        // Without 16-bit audio UUIDs in EIR, iOS Settings > Bluetooth filters out devices with CoD 0x200408.
+        writeEirField(nonNamePayload, EIR_INCOMPLETE_16_BIT_UUIDS, byteArrayOf(0x1E.toByte(), 0x11.toByte(), 0x03.toByte(), 0x12.toByte()))
 
         // 1. Tag 6: Incomplete 128-bit UUIDs (iAP2 accessory UUID in both big-endian and little-endian)
         val iap2Be = uuidBigEndian(IAP2_ACCESSORY_UUID)

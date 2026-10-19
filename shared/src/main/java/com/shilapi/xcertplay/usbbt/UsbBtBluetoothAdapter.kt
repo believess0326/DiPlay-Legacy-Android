@@ -195,7 +195,8 @@ class UsbBtBluetoothAdapter(
                     pairingAgent = UsbBtPairingAgent(opened, linkKeys, pairingUiCallback, appContext).also { it.start() }
                     startPump(opened)
                     awaitingPermission.set(false)
-                    val enableMsg = "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel} advertising=DiPlay-${localBdAddr?.takeLast(5)?.replace(":", "") ?: "BT"}"
+                    val advName = init.value.advertisingName.ifEmpty { "DiPlay-${localBdAddr?.takeLast(5)?.replace(":", "") ?: "BT"}" }
+                    val enableMsg = "USB Bluetooth enabled: bdAddr=$localBdAddr vendor=${dongle.vendorLabel} advertising=$advName"
                     UsbBtLog.log(appContext, TAG, enableMsg)
                     return true
                 }
@@ -305,7 +306,8 @@ class UsbBtBluetoothAdapter(
                         if (device != null) {
                             val currentActive = synchronized(lock) { activeDevice }
                             val isTargetDongle = if (currentActive != null) {
-                                device.deviceId == currentActive.deviceId || device.deviceName == currentActive.deviceName
+                                (device.vendorId == currentActive.vendorId && device.productId == currentActive.productId) &&
+                                    (device.deviceId == currentActive.deviceId || device.deviceName == currentActive.deviceName)
                             } else {
                                 detector.identify(device) != null
                             }

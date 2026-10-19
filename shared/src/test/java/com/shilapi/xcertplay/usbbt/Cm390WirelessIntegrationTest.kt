@@ -118,9 +118,11 @@ class Cm390WirelessIntegrationTest {
         assertTrue("EIR must fit in standard 240 bytes", eir.size <= 240)
 
         // Verify EIR contains:
+        // Tag 2 (16-bit Service Class UUIDs: 0x111E Handsfree + 0x1203 Generic Audio)
         // Tag 6 (iAP2 128-bit UUIDs)
         // Tag 7 (CarPlay 128-bit UUID)
         // Tag 9 (Complete Local Name)
+        var has16BitUuid = false
         var hasIap2Uuid = false
         var hasCarPlayUuid = false
         var hasDeviceName = false
@@ -132,6 +134,11 @@ class Cm390WirelessIntegrationTest {
             val tag = eir[cursor + 1].toInt() and 0xFF
             val data = eir.copyOfRange(cursor + 2, cursor + 1 + length)
             when (tag) {
+                UsbBtIdentity.EIR_INCOMPLETE_16_BIT_UUIDS -> {
+                    assertEquals(4, data.size)
+                    assertArrayEquals(byteArrayOf(0x1E.toByte(), 0x11.toByte(), 0x03.toByte(), 0x12.toByte()), data)
+                    has16BitUuid = true
+                }
                 UsbBtIdentity.EIR_INCOMPLETE_128_BIT_UUIDS -> {
                     assertEquals(32, data.size)
                     val be = uuidBigEndian(UsbBtIdentity.IAP2_ACCESSORY_UUID)
@@ -151,6 +158,7 @@ class Cm390WirelessIntegrationTest {
             cursor += 1 + length
         }
 
+        assertTrue("EIR must contain 16-bit Audio/Handsfree UUIDs (Tag 2) for iPhone BT discovery", has16BitUuid)
         assertTrue("EIR must contain Apple iAP2 Accessory UUID", hasIap2Uuid)
         assertTrue("EIR must contain Apple CarPlay UUID", hasCarPlayUuid)
         assertTrue("EIR must contain Complete Local Name", hasDeviceName)

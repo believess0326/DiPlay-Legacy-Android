@@ -4091,6 +4091,24 @@ class DiPlayActivity : ComponentActivity() {
             }
         }
 
+        // 4. Query USB Bluetooth dongle paired & connected devices
+        runCatching {
+            val dongle = CarPlayBluetoothManager.get(this).usbDongle
+            if (dongle != null && dongle.isSupported()) {
+                val dongleConnected = dongle.getConnectedDevice()
+                if (dongleConnected != null) {
+                    val addr = dongleConnected.address.uppercase(java.util.Locale.US)
+                    result[addr] = DiscoveredBluetoothDevice(addr, "${dongleConnected.name} (USB BT)", isConnected = true)
+                }
+                for (dev in dongle.getPairedDevices()) {
+                    val addr = dev.address.uppercase(java.util.Locale.US)
+                    if (!result.containsKey(addr)) {
+                        result[addr] = DiscoveredBluetoothDevice(addr, "${dev.name} (USB BT)", isConnected = false)
+                    }
+                }
+            }
+        }
+
         return result.values.sortedWith(
             compareByDescending<DiscoveredBluetoothDevice> { it.isConnected }
                 .thenByDescending { it.name.contains("iPhone", ignoreCase = true) }
@@ -4343,6 +4361,12 @@ class DiPlayActivity : ComponentActivity() {
         resultLabel.text = getString(R.string.settings_usb_bluetooth_testing)
         Thread({
             val report = UsbBtSelfTest.run(this)
+            if (report.ok && AirPlayPersistence.loadWirelessEnabled(this)) {
+                runCatching {
+                    val dongle = CarPlayBluetoothManager.get(this).usbDongle
+                    dongle?.enable()
+                }
+            }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val summary = if (report.ok) {

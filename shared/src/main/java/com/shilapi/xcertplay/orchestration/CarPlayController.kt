@@ -2945,6 +2945,40 @@ class CarPlayController(
     }
 
     private fun selectWirelessBluetoothDevice(adapter: BluetoothAdapter): BluetoothDevice {
+        val hybridBt = CarPlayBluetoothManager.get(appContext)
+        val usbDongle = hybridBt.usbDongle
+        val dongleActive = usbDongle != null && usbDongle.isEnabled()
+
+        if (dongleActive) {
+            val connected = usbDongle.getConnectedDevice()
+            if (connected != null && BluetoothAdapter.checkBluetoothAddress(connected.address)) {
+                Log.i(
+                    IphoneCarPlayConfiguration.TAG,
+                    "Using connected device from USB dongle: ${connected.name} (${connected.address})",
+                )
+                return adapter.getRemoteDevice(connected.address)
+            }
+            val paired = usbDongle.getPairedDevices()
+            config.wirelessBluetoothDeviceAddress?.let { selected ->
+                paired.firstOrNull { it.address.equals(selected, ignoreCase = true) }?.let {
+                    return adapter.getRemoteDevice(it.address)
+                }
+            }
+            if (paired.isNotEmpty()) {
+                val pairedIPhones = paired.filter { it.name.contains("iPhone", ignoreCase = true) }
+                if (pairedIPhones.size == 1 && BluetoothAdapter.checkBluetoothAddress(pairedIPhones.single().address)) {
+                    return adapter.getRemoteDevice(pairedIPhones.single().address)
+                }
+                if (paired.size == 1 && BluetoothAdapter.checkBluetoothAddress(paired.first().address)) {
+                    return adapter.getRemoteDevice(paired.first().address)
+                }
+            }
+            // USB dongle is active and waiting for initial pairing/inbound connection from iPhone.
+            // Do not pick an unrelated audio-only device from Android native Bluetooth, which would
+            // cause continuous 5s Page Timeouts and block the USB dongle from answering inquiry scans.
+            throw IOException("USB Bluetooth dongle active; waiting for initial iPhone pairing to ${usbDongle.getStatus().localBdAddr ?: "dongle"}")
+        }
+
         val bonded = adapter.bondedDevices.orEmpty()
         config.wirelessBluetoothDeviceAddress?.let { selected ->
             bonded.firstOrNull { it.address.equals(selected, ignoreCase = true) }?.let { return it }
@@ -2984,7 +3018,6 @@ class CarPlayController(
                     "connect one iPhone and retry",
             )
         }
-        val hybridBt = CarPlayBluetoothManager.get(appContext)
         val connectedDevice = hybridBt.getConnectedDevice()
         if (connectedDevice != null && BluetoothAdapter.checkBluetoothAddress(connectedDevice.address)) {
             Log.i(

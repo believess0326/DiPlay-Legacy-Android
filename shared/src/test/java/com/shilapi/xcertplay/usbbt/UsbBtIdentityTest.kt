@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.usbbt
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -15,6 +16,7 @@ class UsbBtIdentityTest {
 
         // EIR is composed of TLV chunks: [length (1 byte), tag (1 byte), data...]
         var pos = 0
+        var foundTag2 = false
         var foundTag6 = false
         var foundTag7 = false
         var foundTag9 = false
@@ -26,6 +28,12 @@ class UsbBtIdentityTest {
             val tag = eir[pos + 1].toInt() and 0xFF
             val data = eir.copyOfRange(pos + 2, pos + 1 + len)
             when (tag) {
+                UsbBtIdentity.EIR_INCOMPLETE_16_BIT_UUIDS -> {
+                    foundTag2 = true
+                    // Contains 4 bytes: 0x111E (Handsfree: 1E 11) + 0x1203 (Audio: 03 12) in LE
+                    assertEquals(4, data.size)
+                    assertArrayEquals(byteArrayOf(0x1E.toByte(), 0x11.toByte(), 0x03.toByte(), 0x12.toByte()), data)
+                }
                 UsbBtIdentity.EIR_INCOMPLETE_128_BIT_UUIDS -> {
                     foundTag6 = true
                     // Must contain 32 bytes: iAP2 accessory UUID in big-endian (16) + little-endian (16)
@@ -54,6 +62,7 @@ class UsbBtIdentityTest {
             pos += 1 + len
         }
 
+        assertTrue("Tag 2 (16-bit UUIDs) must be in EIR", foundTag2)
         assertTrue("Tag 6 (iAP2 UUID) must be in EIR", foundTag6)
         assertTrue("Tag 7 (CarPlay UUID) must be in EIR", foundTag7)
         assertTrue("Tag 9 (Complete Local Name) must be in EIR", foundTag9)

@@ -46,6 +46,8 @@ object HciProtocol {
     val OP_WRITE_INQUIRY_MODE = opcode(0x03, 0x0045)
     val OP_WRITE_INQUIRY_SCAN_TYPE = opcode(0x03, 0x0043)
     val OP_WRITE_PAGE_SCAN_TYPE = opcode(0x03, 0x0047)
+    val OP_WRITE_PAGE_SCAN_ACTIVITY = opcode(0x03, 0x001C)
+    val OP_WRITE_INQUIRY_SCAN_ACTIVITY = opcode(0x03, 0x001E)
     val OP_WRITE_DEFAULT_LINK_POLICY = opcode(0x02, 0x000F)
     val OP_READ_INQUIRY_RESPONSE_TX_POWER = opcode(0x03, 0x0058)
     val OP_WRITE_EXTENDED_INQUIRY_RESPONSE = opcode(0x03, 0x0052)
@@ -191,6 +193,17 @@ object HciProtocol {
     /** Encode Write_Inquiry_Scan_Type or Write_Page_Scan_Type: 1=interlaced, 0=standard. */
     fun encodeWriteScanType(interlaced: Boolean): ByteArray =
         byteArrayOf(if (interlaced) 1 else 0)
+
+    /**
+     * Encode Write_Inquiry_Scan_Activity or Write_Page_Scan_Activity:
+     * interval (2 bytes LE) + window (2 bytes LE). Range: 0x0012 to 0x1000.
+     */
+    fun encodeWriteScanActivity(interval: Int, window: Int): ByteArray = byteArrayOf(
+        (interval and 0xFF).toByte(),
+        ((interval ushr 8) and 0xFF).toByte(),
+        (window and 0xFF).toByte(),
+        ((window ushr 8) and 0xFF).toByte(),
+    )
 
     /** Encode Write_Inquiry_Mode: 0=standard, 1=with RSSI, 2=Extended Inquiry Result or RSSI. */
     fun encodeWriteInquiryMode(mode: Int): ByteArray =
