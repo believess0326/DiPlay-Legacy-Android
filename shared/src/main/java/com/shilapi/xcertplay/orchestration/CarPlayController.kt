@@ -1575,13 +1575,23 @@ class CarPlayController(
                 while (activeSession == null && !wirelessActiveReported.get() && System.currentTimeMillis() < deadline && !isStaleWirelessRun(generation)) {
                     if (!lateBootstrapDone && hybridAdapter.isEnabled()) {
                         val connectedDev = runCatching { hybridAdapter.getConnectedDevice() }.getOrNull()
-                        if (connectedDev != null && BluetoothAdapter.checkBluetoothAddress(connectedDev.address)) {
-                            debugLog("wireless incoming Bluetooth device detected: ${connectedDev.name} (${connectedDev.address}); bootstrapping iAP2 over RFCOMM")
+                        val targetDev = connectedDev ?: run {
+                            // If no device was connected yet but the USB adapter just came online (e.g. after USB permission grant),
+                            // pick a paired iPhone to initiate outgoing connection if we didn't have a target initially.
+                            if (device == null) {
+                                val paired = runCatching { hybridAdapter.getPairedDevices() }.getOrDefault(emptyList())
+                                paired.firstOrNull { it.name.contains("iPhone", ignoreCase = true) }
+                                    ?: (if (paired.size == 1) paired.first() else null)
+                            } else null
+                        }
+                        if (targetDev != null && BluetoothAdapter.checkBluetoothAddress(targetDev.address)) {
+                            debugLog("wireless incoming/paired Bluetooth device detected: ${targetDev.name} (${targetDev.address}); bootstrapping iAP2 over RFCOMM")
                             try {
                                 onStatus(CarPlayStatus.ConnectingBluetooth)
                                 stage = "Bluetooth RFCOMM connection (inbound/connected)"
-                                val s = hybridAdapter.openRfcommStream(connectedDev.address, IAP2_IPHONE_UUID)
+                                val s = hybridAdapter.openRfcommStream(targetDev.address, IAP2_IPHONE_UUID)
                                 lateStream = s
+                                try { Thread.sleep(150L) } catch (_: InterruptedException) { if (isStaleWirelessRun(generation)) break }
                                 val ch = Iap2Session.openWireless(
                                     s,
                                     traceContext = "wireless-rfcomm-late",
@@ -1615,7 +1625,7 @@ class CarPlayController(
                                     },
                                 )
                                 lateBootstrapDone = true
-                                debugLog("late Bluetooth bootstrap completed successfully for ${connectedDev.address}")
+                                debugLog("late Bluetooth bootstrap completed successfully for ${targetDev.address}")
                             } catch (e: Throwable) {
                                 debugLog("late Bluetooth bootstrap attempt failed: ${e.message}")
                                 runCatching { lateChannel?.close() }

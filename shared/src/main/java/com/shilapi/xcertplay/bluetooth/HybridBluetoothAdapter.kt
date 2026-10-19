@@ -106,13 +106,6 @@ class HybridBluetoothAdapter(
         var tried = false
         val dongle = usbDongle
         val dongleActive = dongle != null && dongle.isSupported() && dongle.isEnabled()
-        val pairedOnDongle = dongleActive && dongle!!.getPairedDevices().any {
-            it.address.equals(deviceAddress, ignoreCase = true)
-        }
-        val pairedOnAndroid = android.isSupported() && android.isEnabled() && android.getPairedDevices().any {
-            it.address.equals(deviceAddress, ignoreCase = true)
-        }
-        val preferAndroidOverDongle = pairedOnAndroid && !pairedOnDongle
 
         fun tryDongle(): BlockingDuplexByteStream? {
             if (!dongleActive) return null
@@ -144,12 +137,17 @@ class HybridBluetoothAdapter(
             return null
         }
 
-        if (preferAndroidOverDongle) {
-            tryAndroid()?.let { return it }
+        // Priority: When USB dongle is active, ALWAYS prefer USB dongle for CarPlay data paths.
+        // On head units like Allwinner T3, the native Android stack is a proprietary GOC/serial
+        // hands-free module that cannot transport iAP2 RFCOMM data (channel=-1 close).
+        // Car owners frequently have their phones paired with the native system for OEM phone calls;
+        // preferring native Android over USB dongle in that case causes fatal connection failures.
+        if (dongleActive) {
             tryDongle()?.let { return it }
+            tryAndroid()?.let { return it }
         } else {
-            tryDongle()?.let { return it }
             tryAndroid()?.let { return it }
+            tryDongle()?.let { return it }
         }
         if (hsae.isSupported()) {
             com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying HSAE Bluetooth stack for $deviceAddress")

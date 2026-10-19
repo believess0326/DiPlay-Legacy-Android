@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.usbbt
 import android.util.Log
 import com.shilapi.xcertplay.usbbt.HciProtocol.L2CAP_PSM_RFCOMM
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_DLCI_CONTROL
+import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_DISC
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_DM
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_MCC_MSC
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_MCC_PN
@@ -404,6 +405,19 @@ class RfcommLayer(
             RFCOMM_DM -> {
                 Log.w(TAG, "DM received (dlci=$dlci); peer refused")
                 pendingUa[dlci]?.countDown()
+            }
+            RFCOMM_DISC -> {
+                Log.i(TAG, "DISC received (dlci=$dlci); answering UA")
+                sendFrame(dlci, RFCOMM_UA, command = !cr, pf = true)
+                if (dlci == RFCOMM_DLCI_CONTROL) {
+                    sessionOpen = false
+                    close()
+                } else {
+                    val serverChannel = dlci ushr 1
+                    activeDlcs.remove(serverChannel)
+                    dataHandlers.remove(dlci)
+                    dlcFlows.remove(dlci)
+                }
             }
             RFCOMM_SABM -> {
                 // Peer wants a DLC; answer UA as response (command = false, pf = true).

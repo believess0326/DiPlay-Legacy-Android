@@ -622,6 +622,21 @@ class UsbBtBluetoothAdapter(
                                 val msg = "ACL up: $key handle=0x${cc.handle.toString(16)} encrypted=${cc.encryptionEnabled}"
                                 Log.i(TAG, msg)
                                 UsbBtLog.log(appContext, TAG, msg)
+
+                                // Proactively authenticate and encrypt inbound connection if not already encrypted.
+                                // Otherwise iOS expects security establishment and disconnects with reason 0x13 after 17s.
+                                if (!cc.encryptionEnabled) {
+                                    Thread({
+                                        runCatching {
+                                            authenticateAndEncrypt(h, cc.handle)
+                                        }.onFailure {
+                                            UsbBtLog.warn(appContext, TAG, "inbound authenticateAndEncrypt failed for $key", it)
+                                        }
+                                    }, "UsbBtInboundAuth").apply {
+                                        isDaemon = true
+                                        start()
+                                    }
+                                }
                             } else {
                                 val msg = "ACL connection failed: $key status=0x${cc.status.toString(16)}"
                                 Log.w(TAG, msg)
@@ -642,6 +657,12 @@ class UsbBtBluetoothAdapter(
                             Log.i(TAG, msg)
                             UsbBtLog.log(appContext, TAG, msg)
                             authLatches[handle]?.countDown()
+                            // Automatically enable link encryption once authentication succeeds
+                            if (status == 0 && encryptedHandles[handle] != true) {
+                                runCatching {
+                                    h.sendCommand(OP_SET_CONNECTION_ENCRYPTION, encodeSetConnectionEncryption(handle, true))
+                                }
+                            }
                         }
                     }
                     EVT_ENCRYPTION_CHANGE -> {

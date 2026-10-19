@@ -275,6 +275,18 @@ class Cm390WirelessIntegrationTest {
     }
 
     // -------------------------------------------------------------------------
+    // 6. RFCOMM DISC Frame & Hybrid USB Preference
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun testRfcommDisconnectFrameHandling() {
+        // TS 07.10: DISC frame control byte is 0x43 (or 0x53 with P/F bit)
+        assertEquals(0x43, HciProtocol.RFCOMM_DISC)
+        val discWithPf = HciProtocol.RFCOMM_DISC or 0x10
+        assertEquals(0x53, discWithPf)
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

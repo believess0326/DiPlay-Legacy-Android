@@ -383,6 +383,7 @@ object HciProtocol {
     const val RFCOMM_SABM = 0x2F
     const val RFCOMM_UA = 0x63
     const val RFCOMM_DM = 0x0F
+    const val RFCOMM_DISC = 0x43
     const val RFCOMM_UIH = 0xEF
     const val RFCOMM_MCC = 0x33
 
