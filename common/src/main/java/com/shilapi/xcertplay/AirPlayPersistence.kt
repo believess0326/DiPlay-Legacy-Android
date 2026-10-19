@@ -99,6 +99,7 @@ object AirPlayPersistence {
     private const val KEY_HIDE_TOP_BAR = "hide_top_bar"
     private const val KEY_HIDE_BOTTOM_BAR = "hide_bottom_bar"
     private const val KEY_DOCK_AUTO_HIDE = "dock_auto_hide"
+    private const val KEY_FORCE_SQUARE_CORNERS = "force_square_corners"
     private const val KEY_HARMAN_FULLSCREEN = "harman_fullscreen"
     private const val KEY_SAFE_AREA_DRAW_OUTSIDE = "safe_area_draw_outside"
     private const val KEY_ADAPT_PIP_RESOLUTION = "adapt_pip_resolution"
@@ -924,6 +925,16 @@ object AirPlayPersistence {
     fun saveDockAutoHide(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_DOCK_AUTO_HIDE, enabled)
+            .apply()
+    }
+
+    fun loadForceSquareCorners(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_FORCE_SQUARE_CORNERS, false)
+
+    fun saveForceSquareCorners(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_FORCE_SQUARE_CORNERS, enabled)
             .apply()
     }
 

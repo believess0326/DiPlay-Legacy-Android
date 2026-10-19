@@ -1544,6 +1544,15 @@ class CarPlayHostActivity : ComponentActivity() {
         val video = TextureView(this).apply {
             isOpaque = false
             surfaceTextureListener = textureListener
+            // Issue #240: on rectangular head-unit screens the system or theme may apply
+            // rounded-corner clipping that cuts off CarPlay edges. The toggle forces a
+            // flat right-angle fill instead.
+            if (AirPlayPersistence.loadForceSquareCorners(this@CarPlayHostActivity)) {
+                if (realSdkInt() >= 21) {
+                    outlineProvider = null
+                    clipToOutline = false
+                }
+            }
         }
         pictureBinding = CarPlayPicture.Binding(video)
         val gestureLayer = View(this).apply {
@@ -5059,7 +5068,13 @@ class CarPlayHostActivity : ComponentActivity() {
         val root = texture.parent as? FrameLayout ?: return
         val index = root.indexOfChild(texture)
         val viewport = FrameLayout(this).apply { clipChildren = true }
-        val surfaceView = SurfaceView(this)
+        val surfaceView = SurfaceView(this).apply {
+            // Same square-corner treatment as the TextureView path (issue #240).
+            if (AirPlayPersistence.loadForceSquareCorners(this@CarPlayHostActivity) && realSdkInt() >= 21) {
+                outlineProvider = null
+                clipToOutline = false
+            }
+        }
         pictureBinding?.close()
         pictureBinding = null
         // Detach our wrapper before removing its TextureView; a late destruction callback

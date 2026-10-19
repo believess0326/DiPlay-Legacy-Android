@@ -1467,6 +1467,11 @@ class DiPlayActivity : ComponentActivity() {
                 AirPlayPersistence.loadDockAutoHide(this)) {
                 AirPlayPersistence.saveDockAutoHide(this, it)
             }
+            toggle(card, getString(R.string.settings_force_square_corners),
+                getString(R.string.settings_force_square_corners_description),
+                AirPlayPersistence.loadForceSquareCorners(this)) {
+                AirPlayPersistence.saveForceSquareCorners(this, it)
+            }
             addSystemBarControls(
                 hideTopBar = AirPlayPersistence.loadHideTopBar(this),
                 hideBottomBar = AirPlayPersistence.loadHideBottomBar(this),

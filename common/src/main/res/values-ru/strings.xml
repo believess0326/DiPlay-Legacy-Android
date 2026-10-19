@@ -607,6 +607,8 @@
     <string name="carplay_dock_bottom">Снизу</string>
     <string name="settings_dock_auto_hide">Автоскрытие панели Dock</string>
     <string name="settings_dock_auto_hide_description">Полноэкранный режим приложения; проведите от края экрана, чтобы открыть панель Dock</string>
+    <string name="settings_force_square_corners">Принудительно прямые углы</string>
+    <string name="settings_force_square_corners_description">Отключить скругление углов экрана CarPlay; используйте на прямоугольных экранах, где обрезаются края</string>
     <string name="carplay_dock_hint">Где CarPlay показывает приложения, часы и состояние. Между «Со стороны водителя» и «Снизу» переключается сразу; «Автоматически» оставляет выбор iPhone и действует после переподключения.</string>
     <string name="split_screen_areas">CarPlay в разделённом экране</string>
     <string name="split_screen_areas_description">Когда головное устройство показывает DiPlay в разделённом экране, CarPlay перерисовывается под это окно, а не уменьшается с чёрными полосами, и возвращается на весь экран без переподключения. Размер окна запоминается в первый раз, поэтому со следующего подключения картинка точно по размеру. Если панель приложений на «Автоматически», CarPlay тогда ставит её снизу. Применяется со следующего подключения.</string>
