@@ -96,16 +96,21 @@ class LwipNcmBridge(
         lwipNative.registerPort(port, isTcp)
     }
 
-    private fun onLwipTxFrame(frame: ByteArray) {
-        if (!running.get()) return
-        // Non-blocking: never stall the native lwIP worker thread on USB I/O (issue #187).
-        if (!txQueue.offer(frame)) {
+    private fun enqueueTxFrame(frame: ByteArray, tag: String = "lwip"): Boolean {
+        if (!running.get()) return false
+        val queued = txQueue.offer(frame)
+        if (!queued) {
             droppedTxFrames.incrementAndGet()
             if (txDropLogBudget > 0) {
                 txDropLogBudget--
-                runCatching { onDebugLog("ncm lwip tx queue full; dropping frame bytes=${frame.size}") }
+                runCatching { onDebugLog("ncm $tag tx queue full; dropping frame bytes=${frame.size}") }
             }
         }
+        return queued
+    }
+
+    private fun onLwipTxFrame(frame: ByteArray) {
+        enqueueTxFrame(frame, tag = "lwip")
     }
 
     private fun runNcmTx() {
@@ -160,7 +165,7 @@ class LwipNcmBridge(
                             peerIpv6 = replyDstIp,
                             solicited = !isDad,
                         )
-                        ncm.send(naFrame, WRITE_TIMEOUT_MILLIS)
+                        enqueueTxFrame(naFrame, tag = "na-reply")
                         val targetStr = runCatching { InetAddress.getByAddress(ns.targetIp).hostAddress }.getOrDefault("unknown")
                         val peerStr = runCatching { InetAddress.getByAddress(replyDstIp).hostAddress }.getOrDefault("unknown")
                         val naMsg = "ncm replied ${if (isDad) "unsolicited" else "solicited"} NA for $targetStr to $peerStr (${replyDstMac.macString()})"
@@ -179,7 +184,7 @@ class LwipNcmBridge(
                 ) ?: emptyList()
                 if (mdnsAnswers.isNotEmpty()) {
                     for (mdnsAnswer in mdnsAnswers) {
-                        ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                        enqueueTxFrame(mdnsAnswer, tag = "mdns")
                     }
                     if (mdnsAnswerLogBudget > 0) {
                         mdnsAnswerLogBudget--
@@ -188,6 +193,8 @@ class LwipNcmBridge(
                         Log.i(TAG, answerMsg)
                         runCatching { onDebugLog(answerMsg) }
                     }
+                    sendRouterAdvertisement(targetMac = ipv6.sourceMac)
+                    sendUnsolicitedNeighborAdvertisement(force = true, targetMac = ipv6.sourceMac)
                     continue
                 }
 
@@ -204,6 +211,7 @@ class LwipNcmBridge(
                     val inMsg = "ncm first inbound ipv6 bytes=${ipv6.payloadLength} peer=${ipv6.sourceMac.macString()}"
                     Log.i(TAG, inMsg)
                     runCatching { onDebugLog(inMsg) }
+                    sendRouterAdvertisement(targetMac = ipv6.sourceMac)
                     sendUnsolicitedNeighborAdvertisement(force = true, targetMac = ipv6.sourceMac)
                 }
 
@@ -283,12 +291,12 @@ class LwipNcmBridge(
                 hostIpv6 = hostLinkLocalBytes,
                 peerIpv6 = dstIp,
             )
-            ncm.send(frame, WRITE_TIMEOUT_MILLIS)
-            val raMsg = "ncm sent Router Advertisement for $hostLinkLocal to ${dstMac.macString()}"
+            enqueueTxFrame(frame, tag = "ra")
+            val raMsg = "ncm queued Router Advertisement for $hostLinkLocal to ${dstMac.macString()}"
             Log.i(TAG, raMsg)
             runCatching { onDebugLog(raMsg) }
         } catch (error: Exception) {
-            Log.w(TAG, "ncm RA send failed: ${error.message}")
+            Log.w(TAG, "ncm RA queue failed: ${error.message}")
         }
     }
 
@@ -308,12 +316,12 @@ class LwipNcmBridge(
                 peerIpv6 = allNodesIpv6,
                 solicited = false,
             )
-            ncm.send(frame, WRITE_TIMEOUT_MILLIS)
-            val naMsg = "ncm sent unsolicited neighbor advertisement for $hostLinkLocal"
+            enqueueTxFrame(frame, tag = "unsolicited-na")
+            val naMsg = "ncm queued unsolicited neighbor advertisement for $hostLinkLocal"
             Log.i(TAG, naMsg)
             runCatching { onDebugLog(naMsg) }
         } catch (error: Exception) {
-            Log.w(TAG, "ncm unsolicited NA send failed: ${error.message}")
+            Log.w(TAG, "ncm unsolicited NA queue failed: ${error.message}")
         }
     }
 

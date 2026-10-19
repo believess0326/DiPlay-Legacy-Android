@@ -2163,7 +2163,7 @@ class CarPlayController(
                                             }
                                         }
                                     }
-                                }, 150L)
+                                }, 400L)
                                 return
                             }
                             val configuration = runCatching { IphoneCarPlayConfiguration.find(result.device) }.getOrNull()
