@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.airplay
 
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 import org.bouncycastle.crypto.Digest
 import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.generators.HKDFBytesGenerator
@@ -154,14 +155,15 @@ object AirPlayCrypto {
         nonce: ByteArray,
         input: ByteArray,
         aad: ByteArray,
-        useDirectBuffers: Boolean = Build.VERSION.SDK_INT >= 31,
+        useDirectBuffers: Boolean = realSdkInt() >= 31,
     ): ByteArray? {
         val state = platformState.get() ?: return null
         // Cipher.updateAAD() only exists on API 19+ and may be missing on vendor-stripped or
         // pseudo-4.4 ROMs (e.g. Android 4.2/4.3 retrofits, #170, #178, #189).
         // If AAD is present and the platform Cipher does not have updateAAD(),
         // immediately fall back to the bundled BouncyCastle ChaCha20-Poly1305.
-        if (aad.isNotEmpty() && (!hasUpdateAAD || Build.VERSION.SDK_INT in 1 until Build.VERSION_CODES.KITKAT)) return null
+        // Use realSdkInt(): T3 head units fake API 27 while running 4.4.
+        if (aad.isNotEmpty() && (!hasUpdateAAD || realSdkInt() in 1 until Build.VERSION_CODES.KITKAT)) return null
         return try {
             val cipher = state.cipher
             cipher.init(mode, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(nonce))

@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.media
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.os.Build
+import com.shilapi.xcertplay.compat.realSdkInt
 
 /**
  * Whether this head unit can decode Opus for CarPlay audio playback.
@@ -14,13 +15,13 @@ import android.os.Build
  */
 object OpusDecoderSupport {
     fun isAvailable(): Boolean = try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (realSdkInt() >= Build.VERSION_CODES.Q) {
             MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
                 !info.isEncoder && info.supportedTypes.any {
                     it.equals(MediaFormat.MIMETYPE_AUDIO_OPUS, ignoreCase = true)
                 }
             }
-        } else if (Build.VERSION.SDK_INT >= 21) {
+        } else if (realSdkInt() >= 21) {
             @Suppress("DEPRECATION")
             (0 until MediaCodecList.getCodecCount()).any { i ->
                 @Suppress("DEPRECATION")

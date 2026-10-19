@@ -8,6 +8,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Looper
+import com.shilapi.xcertplay.compat.realSdkInt
 import android.util.Log
 import com.shilapi.xcertplay.transport.CarPlayLocationFix
 import com.shilapi.xcertplay.transport.Iap2LocationProvider
@@ -28,7 +29,7 @@ class AndroidCarPlayLocationProvider(
     private val stateLock = Any()
     private val preferredProviders = buildList {
         add(LocationManager.GPS_PROVIDER)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (realSdkInt() >= Build.VERSION_CODES.S) {
             add(LocationManager.FUSED_PROVIDER)
         }
         add(LocationManager.NETWORK_PROVIDER)
