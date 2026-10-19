@@ -305,6 +305,9 @@ class UsbBtDongleDetector(private val appContext: Context) {
      */
     fun ensurePermission(usbManager: UsbManager, dongle: Dongle): PermissionState {
         if (usbManager.hasPermission(dongle.device)) return PermissionState.Granted
+        if (UsbDefaultGrant.tryGrantWithRoot(appContext, dongle.device)) {
+            if (usbManager.hasPermission(dongle.device)) return PermissionState.Granted
+        }
         val intent = Intent(permissionAction(appContext.packageName))
             .setPackage(appContext.packageName)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or

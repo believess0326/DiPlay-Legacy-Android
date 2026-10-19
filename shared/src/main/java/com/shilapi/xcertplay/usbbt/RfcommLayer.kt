@@ -4,7 +4,6 @@ import android.util.Log
 import com.shilapi.xcertplay.usbbt.HciProtocol.L2CAP_PSM_RFCOMM
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_DLCI_CONTROL
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_DM
-import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_MCC
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_MCC_MSC
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_MCC_PN
 import com.shilapi.xcertplay.usbbt.HciProtocol.RFCOMM_SABM
@@ -22,15 +21,15 @@ import java.util.concurrent.TimeUnit
  * iAP2:
  * - session establishment on DLCI 0 (SABM/UA)
  * - DLC establishment to a server channel: PN negotiation -> SABM/UA -> MSC
- * - UIH data frames with single-byte length (payloads < 128 bytes per frame;
- *   larger writes are fragmented)
- * - inbound UIH dispatch to per-DLC handlers; inbound SABM on a DLC is
- *   answered with UA (we only initiate as a client, but tolerate it)
+ * - Credit-based flow control (PN convergence layer 15/14, P/F bit with credit
+ *   octets, replenishment and credit tracking)
+ * - UIH data frames with 1-byte or 2-byte length
+ * - FCS calculation per TS 07.10 (Address + Control for UIH; + Length for non-UIH)
+ * - Inbound UIH dispatch to per-DLC handlers; inbound SABM on a DLC is
+ *   answered with UA
  *
  * All public methods block the calling thread; use from a background thread.
  * One instance per L2CAP RFCOMM channel.
- *
- * Clean-room: derived from the public Bluetooth Core Specification.
  */
 class RfcommLayer(
     private val l2cap: L2capLayer,
@@ -49,6 +48,8 @@ class RfcommLayer(
         private const val TAG = "RfcommLayer"
         private const val HANDSHAKE_TIMEOUT_MS = 5_000L
         private const val MAX_UIH_PAYLOAD = 100 // keep frames small for old dongles
+        private const val INITIAL_CREDITS = 7
+        private const val CREDIT_REPLENISH_THRESHOLD = 3
     }
 
     /** dlci -> pending UA latch (for SABM we sent). */
@@ -59,6 +60,9 @@ class RfcommLayer(
 
     /** dlci -> data handler. */
     private val dataHandlers = ConcurrentHashMap<Int, (ByteArray) -> Unit>()
+
+    /** dlci -> credit-based flow control state. */
+    private val dlcFlows = ConcurrentHashMap<Int, DlcFlowControl>()
 
     /** serverChannel -> active Dlc. */
     val activeDlcs = ConcurrentHashMap<Int, Dlc>()
@@ -74,6 +78,65 @@ class RfcommLayer(
     }
 
     // ------------------------------------------------------------------
+    // Flow control helper.
+    // ------------------------------------------------------------------
+
+    private class DlcFlowControl(val dlci: Int, private val sendTopUp: (Int) -> Unit) {
+        @Volatile var creditBased = true
+        var rxCredits = INITIAL_CREDITS
+        var txCredits = INITIAL_CREDITS
+        private val lock = java.lang.Object()
+
+        fun addTxCredits(c: Int) {
+            synchronized(lock) {
+                txCredits += c
+                lock.notifyAll()
+            }
+        }
+
+        fun consumeRxCredit() {
+            var topUp = 0
+            synchronized(lock) {
+                if (creditBased) {
+                    rxCredits = maxOf(0, rxCredits - 1)
+                    if (rxCredits <= CREDIT_REPLENISH_THRESHOLD) {
+                        topUp = INITIAL_CREDITS - rxCredits
+                        rxCredits += topUp
+                    }
+                }
+            }
+            if (topUp > 0) {
+                sendTopUp(topUp)
+            }
+        }
+
+        fun takeTxCredit(timeoutMs: Long = 1000L): Boolean {
+            if (!creditBased) return true
+            val deadline = System.currentTimeMillis() + timeoutMs
+            synchronized(lock) {
+                while (txCredits <= 0) {
+                    val wait = deadline - System.currentTimeMillis()
+                    if (wait <= 0) return false
+                    try {
+                        lock.wait(wait)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return false
+                    }
+                }
+                txCredits--
+                return true
+            }
+        }
+
+        fun release() {
+            synchronized(lock) {
+                lock.notifyAll()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Frame encoding.
     // ------------------------------------------------------------------
 
@@ -81,17 +144,25 @@ class RfcommLayer(
     private fun addressField(dlci: Int, command: Boolean): Byte =
         (0x01 or (if (command) 0x02 else 0x00) or (dlci shl 2)).toByte()
 
-    /** Length field with EA=1 (single byte, max 127). */
+    /** Length field: 1 byte (EA=1, <=127) or 2 bytes (EA=0, <=32767). */
     private fun lengthField(len: Int): ByteArray {
-        require(len in 0..127) { "length $len exceeds single-byte field" }
-        return byteArrayOf(((len shl 1) or 0x01).toByte())
+        return if (len <= 127) {
+            byteArrayOf(((len shl 1) or 0x01).toByte())
+        } else {
+            byteArrayOf(((len and 0x7F) shl 1).toByte(), (len ushr 7).toByte())
+        }
     }
 
-    /** FCS over address+control+length(+data) using the CRC-8 from TS 07.10. */
-    private fun fcs(bytes: ByteArray): Byte {
+    /**
+     * FCS CRC-8 from TS 07.10 section 5.2.3:
+     * - For UIH frames, calculated only over Address and Control fields (2 bytes).
+     * - For other frames (SABM, UA, DM, DISC), calculated over Address, Control, and Length fields.
+     */
+    private fun fcs(bytes: ByteArray, len: Int = bytes.size): Byte {
         var crc = 0xFF
-        for (b in bytes) {
-            crc = crc xor (b.toInt() and 0xFF)
+        val end = minOf(len, bytes.size)
+        for (i in 0 until end) {
+            crc = crc xor (bytes[i].toInt() and 0xFF)
             repeat(8) {
                 crc = if (crc and 0x01 != 0) (crc ushr 1) xor 0xE0 else crc ushr 1
             }
@@ -99,19 +170,38 @@ class RfcommLayer(
         return (0xFF - crc).toByte()
     }
 
-    /** Build a complete RFCOMM frame: address | control | length | [data] | fcs. */
-    private fun buildFrame(dlci: Int, control: Int, data: ByteArray = byteArrayOf(), command: Boolean = true): ByteArray {
+    /**
+     * Build a complete RFCOMM frame:
+     * address | control | length | [credits if UIH with P/F=1] | [data] | fcs
+     */
+    private fun buildFrame(
+        dlci: Int,
+        control: Int,
+        data: ByteArray = byteArrayOf(),
+        credits: Int? = null,
+        command: Boolean = true,
+        pf: Boolean = false,
+    ): ByteArray {
         val addr = addressField(dlci, command = command)
-        val ctrl = (control and 0xFF).toByte()
+        val hasPf = pf || (credits != null)
+        val ctrl = (((if (hasPf) 0x10 else 0x00) or (control and 0xEF)) and 0xFF).toByte()
         val len = lengthField(data.size)
         val header = byteArrayOf(addr, ctrl) + len
-        val frame = header + data
-        return frame + fcs(frame)
+        val fcsByte = fcs(header, if ((control and 0xEF) == RFCOMM_UIH) 2 else header.size)
+        val creditBytes = if (credits != null) byteArrayOf((credits and 0xFF).toByte()) else byteArrayOf()
+        return header + creditBytes + data + fcsByte
     }
 
-    private fun sendFrame(dlci: Int, control: Int, data: ByteArray = byteArrayOf(), command: Boolean = true): Boolean {
+    private fun sendFrame(
+        dlci: Int,
+        control: Int,
+        data: ByteArray = byteArrayOf(),
+        credits: Int? = null,
+        command: Boolean = true,
+        pf: Boolean = false,
+    ): Boolean {
         if (closed) return false
-        return l2cap.send(channel, buildFrame(dlci, control, data, command = command))
+        return l2cap.send(channel, buildFrame(dlci, control, data, credits = credits, command = command, pf = pf))
     }
 
     // ------------------------------------------------------------------
@@ -127,7 +217,7 @@ class RfcommLayer(
         val latch = CountDownLatch(1)
         pendingUa[RFCOMM_DLCI_CONTROL] = latch
         try {
-            if (!sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_SABM)) {
+            if (!sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_SABM, command = true, pf = true)) {
                 return RfcommResult.Failed("failed to send SABM (session)")
             }
             if (!latch.await(HANDSHAKE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
@@ -155,15 +245,21 @@ class RfcommLayer(
         val pnLatch = CountDownLatch(1)
         pendingPn[dlci] = pnLatch
         try {
-            // PN request: MCC type 0x20, length 8: dlci | frame_type=UIH | priority
-            // | ack_timer | max_frame_size(2 LE) | max_retrans | credits
+            // PN request: MCC type 0x20, length 8:
+            // dlci | convergence=15(0xF0) | priority | ack_timer | max_frame_size(2 LE) | max_retrans | credits
+            val maxFrame = 504
             val pnReq = mccFrame(
                 RFCOMM_MCC_PN,
                 byteArrayOf(
-                    dlci.toByte(), RFCOMM_UIH.toByte(), 0x00, 0x00,
-                    0xF8.toByte(), 0x01, // max frame 504
-                    0x00, 0x07, // no retransmissions, 7 initial credits
+                    (dlci and 0x3F).toByte(),
+                    0xF0.toByte(), // convergence layer = 15 (credit flow control), frame_type = 0
+                    0x00, 0x00,
+                    (maxFrame and 0xFF).toByte(),
+                    ((maxFrame ushr 8) and 0xFF).toByte(),
+                    0x00,
+                    INITIAL_CREDITS.toByte(),
                 ),
+                command = true,
             )
             if (!sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, pnReq)) {
                 return RfcommResult.Failed("failed to send PN (ch=$serverChannel)")
@@ -179,7 +275,7 @@ class RfcommLayer(
         val uaLatch = CountDownLatch(1)
         pendingUa[dlci] = uaLatch
         try {
-            if (!sendFrame(dlci, RFCOMM_SABM)) {
+            if (!sendFrame(dlci, RFCOMM_SABM, command = true, pf = true)) {
                 return RfcommResult.Failed("failed to send SABM (ch=$serverChannel)")
             }
             if (!uaLatch.await(HANDSHAKE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
@@ -194,9 +290,10 @@ class RfcommLayer(
             RFCOMM_MCC_MSC,
             byteArrayOf(
                 // MSC: dlci | V.24 signals (EA=1, RTC=1, RTR=1, DV=1)
-                ((dlci shl 2) or 0x01).toByte(),
+                ((dlci shl 2) or 0x03).toByte(),
                 0x8D.toByte(),
             ),
+            command = true,
         )
         sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, msc)
 
@@ -207,23 +304,28 @@ class RfcommLayer(
     }
 
     /**
-     * Wrap an MCC payload: type(1) | length(1, EA=1) | value.
-     * The C/R bit of the type byte is set for commands.
+     * Wrap an MCC payload according to TS 07.10 section 5.4.6.3:
+     * Type byte: (type << 2) | (C/R << 1) | EA(1)
+     * Length byte: (length << 1) | EA(1)
      */
-    private fun mccFrame(type: Int, value: ByteArray): ByteArray {
-        val header = byteArrayOf(
-            ((type and 0xFF) or 0x01).toByte(), // C/R = command
-            (((value.size shl 1) or 0x01) and 0xFF).toByte(),
-        )
-        return header + value
+    private fun mccFrame(type: Int, value: ByteArray, command: Boolean = true): ByteArray {
+        val typeByte = (((type and 0x3F) shl 2) or (if (command) 0x02 else 0x00) or 0x01).toByte()
+        val lenByte = (((value.size shl 1) or 0x01) and 0xFF).toByte()
+        return byteArrayOf(typeByte, lenByte) + value
     }
 
-    /** Send [data] on [dlc], fragmenting into small UIH frames. */
+    /** Send [data] on [dlc], fragmenting into small UIH frames with credit-based flow control. */
     fun send(dlc: Dlc, data: ByteArray): Boolean {
         if (closed) return false
+        val flow = dlcFlows.getOrPut(dlc.dlci) {
+            DlcFlowControl(dlc.dlci) { topUp ->
+                sendFrame(dlc.dlci, RFCOMM_UIH, data = byteArrayOf(), credits = topUp)
+            }
+        }
         var offset = 0
         while (offset < data.size) {
             val end = minOf(offset + MAX_UIH_PAYLOAD, data.size)
+            flow.takeTxCredit()
             if (!sendFrame(dlc.dlci, RFCOMM_UIH, data.copyOfRange(offset, end))) return false
             offset = end
         }
@@ -243,6 +345,8 @@ class RfcommLayer(
         pendingPn.clear()
         dataHandlers.clear()
         activeDlcs.clear()
+        dlcFlows.values.forEach { it.release() }
+        dlcFlows.clear()
     }
 
     // ------------------------------------------------------------------
@@ -251,24 +355,48 @@ class RfcommLayer(
 
     fun onRfcommFrame(payload: ByteArray) {
         if (payload.size < 4) return // addr+ctrl+len+fcs minimum
-        val dlci = (payload[0].toInt() ushr 2) and 0x3F
-        val control = payload[1].toInt() and 0xFF
+        val addr = payload[0].toInt() and 0xFF
+        if ((addr and 0x01) == 0) return // EA bit must be 1 for single-byte DLCI
+        val dlci = (addr ushr 2) and 0x3F
+        val cr = (addr and 0x02) != 0
+
+        val ctrl = payload[1].toInt() and 0xFF
+        val frameType = ctrl and 0xEF // mask off P/F bit 0x10
+        val pf = (ctrl and 0x10) != 0
+
         var at = 2
-        var length = (payload[at].toInt() and 0xFF) ushr 1
-        val ea = payload[at].toInt() and 0x01
+        val len0 = payload[at].toInt() and 0xFF
         at += 1
-        if (ea == 0) {
-            // Two-byte length; we only sent single-byte, but tolerate it.
+        var length = len0 ushr 1
+        if ((len0 and 0x01) == 0) { // 2-byte length
             if (at >= payload.size) return
             length = length or ((payload[at].toInt() and 0xFF) shl 7)
             at += 1
         }
-        if (at + length + 1 > payload.size) {
-            Log.w(TAG, "truncated RFCOMM frame (dlci=$dlci)")
+
+        val headerLen = at
+        val remaining = payload.size - headerLen - 1 // bytes between header and FCS
+        if (remaining < length) {
+            Log.w(TAG, "truncated RFCOMM frame (dlci=$dlci expected=$length remaining=$remaining)")
             return
         }
+
+        // Verify FCS (TS 07.10 section 5.2.3)
+        val expectedFcs = fcs(payload, if (frameType == RFCOMM_UIH) 2 else headerLen)
+        val actualFcs = payload[payload.size - 1]
+        if (expectedFcs != actualFcs) {
+            Log.w(TAG, "RFCOMM FCS mismatch (dlci=$dlci expected=0x%02X actual=0x%02X)".format(expectedFcs, actualFcs))
+            return
+        }
+
+        var credits: Int? = null
+        if (remaining == length + 1 && frameType == RFCOMM_UIH && pf && dlci != 0) {
+            credits = payload[at].toInt() and 0xFF
+            at += 1
+        }
+
         val data = payload.copyOfRange(at, at + length)
-        when (control) {
+        when (frameType) {
             RFCOMM_UA -> {
                 pendingUa[dlci]?.countDown()
                 if (dlci != RFCOMM_DLCI_CONTROL) Log.i(TAG, "UA received (dlci=$dlci)")
@@ -278,8 +406,8 @@ class RfcommLayer(
                 pendingUa[dlci]?.countDown()
             }
             RFCOMM_SABM -> {
-                // Peer wants a DLC; answer UA as response (command = false).
-                sendFrame(dlci, RFCOMM_UA, command = false)
+                // Peer wants a DLC; answer UA as response (command = false, pf = true).
+                sendFrame(dlci, RFCOMM_UA, command = !cr, pf = true)
                 if (dlci == RFCOMM_DLCI_CONTROL) {
                     sessionOpen = true
                 } else {
@@ -294,39 +422,73 @@ class RfcommLayer(
                 if (dlci == RFCOMM_DLCI_CONTROL) {
                     onMcc(data)
                 } else {
-                    dataHandlers[dlci]?.let { handler ->
-                        runCatching { handler(data) }
-                            .onFailure { Log.w(TAG, "RFCOMM data handler failed", it) }
+                    val flow = dlcFlows.getOrPut(dlci) {
+                        DlcFlowControl(dlci) { topUp ->
+                            sendFrame(dlci, RFCOMM_UIH, data = byteArrayOf(), credits = topUp)
+                        }
                     }
+                    if (credits != null) {
+                        flow.addTxCredits(credits)
+                    }
+                    if (data.isNotEmpty()) {
+                        dataHandlers[dlci]?.let { handler ->
+                            runCatching { handler(data) }
+                                .onFailure { Log.w(TAG, "RFCOMM data handler failed", it) }
+                        }
+                    }
+                    flow.consumeRxCredit()
                 }
             }
-            else -> Log.w(TAG, "unhandled RFCOMM control 0x${control.toString(16)}")
+            else -> Log.w(TAG, "unhandled RFCOMM frameType 0x${frameType.toString(16)}")
         }
     }
 
     private fun onMcc(data: ByteArray) {
         if (data.size < 2) return
-        val type = data[0].toInt() and 0xFE // mask off C/R
+        val typeByte = data[0].toInt() and 0xFF
+        val type = (typeByte ushr 2) and 0x3F
+        val command = (typeByte and 0x02) != 0
         val len = (data[1].toInt() and 0xFF) ushr 1
         if (2 + len > data.size) return
         val value = data.copyOfRange(2, 2 + len)
         when (type) {
             RFCOMM_MCC_PN -> {
-                // Peer PN request: echo it back as the response (accept defaults).
-                val rsp = mccFrame(RFCOMM_MCC_PN, value)
-                sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp, command = false)
-                // If we have a pending PN for a matching DLCI, release it.
                 if (value.isNotEmpty()) {
-                    val dlci = value[0].toInt() and 0xFF
-                    pendingPn[dlci]?.countDown()
+                    val dlci = value[0].toInt() and 0x3F
+                    if (command) {
+                        val peerConvergence = if (value.size >= 2) (value[1].toInt() and 0xF0) ushr 4 else 0
+                        val peerFrameSize = if (value.size >= 6) {
+                            (value[4].toInt() and 0xFF) or ((value[5].toInt() and 0xFF) shl 8)
+                        } else 504
+                        val frameSize = minOf(peerFrameSize, 504)
+                        val creditBased = peerConvergence == 15
+                        val convergenceResp = if (creditBased) 0xE0.toByte() else 0x00.toByte()
+                        val creditsResp = if (creditBased) INITIAL_CREDITS.toByte() else 0x00.toByte()
+                        val priority = if (value.size >= 3) (value[2].toInt() and 0x3F).toByte() else 0.toByte()
+                        val rspValue = byteArrayOf(
+                            (dlci and 0x3F).toByte(),
+                            convergenceResp,
+                            priority,
+                            0x00,
+                            (frameSize and 0xFF).toByte(),
+                            ((frameSize ushr 8) and 0xFF).toByte(),
+                            0x00,
+                            creditsResp,
+                        )
+                        val rsp = mccFrame(RFCOMM_MCC_PN, rspValue, command = false)
+                        sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp)
+                    } else {
+                        pendingPn[dlci]?.countDown()
+                    }
                 }
             }
             RFCOMM_MCC_MSC -> {
-                // Modem status: acknowledge with our own MSC response.
-                val rsp = mccFrame(RFCOMM_MCC_MSC, value)
-                sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp, command = false)
+                if (command) {
+                    val rsp = mccFrame(RFCOMM_MCC_MSC, value, command = false)
+                    sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_UIH, rsp)
+                }
             }
-            else -> Log.w(TAG, "unhandled RFCOMM MCC 0x${type.toString(16)}")
+            else -> Log.w(TAG, "unhandled RFCOMM MCC type 0x${type.toString(16)} (command=$command)")
         }
     }
 }

@@ -152,12 +152,14 @@ class UsbBtPairingAgent(
         val bdAddr = bdAddrFrom(event) ?: return
         val ioCap = if (uiCallback != null) IO_CAP_DISPLAY_YES_NO else IO_CAP_NO_INPUT_NO_OUTPUT
         // Reply params: BD_ADDR(6) | io_capability(1) | oob_data(1)=0 | auth_req(1)
-        // auth_req: bit0 = MITM not required, bit2 = general bonding.
+        // auth_req: 0x04 = General Bonding, MITM Not Required (NoInputNoOutput / Just Works)
+        //           0x05 = General Bonding, MITM Protection Required (DisplayYesNo / Numeric Comparison)
+        val authReq = if (ioCap == IO_CAP_NO_INPUT_NO_OUTPUT) 0x04 else 0x05
         val reply = event.params.copyOfRange(0, 6) +
-            byteArrayOf(ioCap.toByte(), 0x00, 0x04)
+            byteArrayOf(ioCap.toByte(), 0x00, authReq.toByte())
         when (val r = hci.sendCommand(OP_IO_CAPABILITY_REQUEST_REPLY, reply)) {
             is UsbBtHci.HciResult.Ok ->
-                UsbBtLog.log(context, TAG, "IO capability replied ($ioCap) for $bdAddr")
+                UsbBtLog.log(context, TAG, "IO capability replied ($ioCap, authReq=0x%02X) for $bdAddr".format(authReq))
             is UsbBtHci.HciResult.Failed ->
                 UsbBtLog.warn(context, TAG, "IO capability reply failed for $bdAddr: ${r.reason}")
         }

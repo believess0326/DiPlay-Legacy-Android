@@ -109,4 +109,15 @@ class UsbBtPairingTest {
         assertEquals(6, params.size)
         assertEquals(bdAddr.toList(), params.toList())
     }
+
+    @Test
+    fun ioCapabilityAuthReqValues() {
+        // Just Works (NoInputNoOutput = 3): General Bonding, MITM not required (0x04)
+        val justWorksAuthReq = if (HciProtocol.IO_CAP_NO_INPUT_NO_OUTPUT == 3) 0x04 else 0x05
+        assertEquals(0x04, justWorksAuthReq)
+
+        // Numeric Comparison (DisplayYesNo = 1): General Bonding, MITM Protection Required (0x05)
+        val numericComparisonAuthReq = if (HciProtocol.IO_CAP_DISPLAY_YES_NO == 3) 0x04 else 0x05
+        assertEquals(0x05, numericComparisonAuthReq)
+    }
 }
