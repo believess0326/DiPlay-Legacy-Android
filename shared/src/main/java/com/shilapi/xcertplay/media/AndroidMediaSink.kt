@@ -110,7 +110,12 @@ internal class AudioFocusCoordinator(
 
     @Synchronized
     fun acquire(track: AudioTrack, channel: AudioChannel, attributes: Any?) {
-        if (closed || !enabled || manager == null || channel == AudioChannel.NAVIGATION) return
+        if (closed || !enabled || manager == null) return
+        // Issue #214: navigation alone gets no sound on some head units because the audio
+        // output stays muted without focus. Let a lone navigation track take focus to open
+        // the path; when media/phone is already active, navigation still overlays silently.
+        if (channel == AudioChannel.NAVIGATION &&
+            active.values.any { it.channel != AudioChannel.NAVIGATION }) return
         active[track] = Entry(channel, attributes)
         refreshRequest()
         applyMediaVolume(track, active.getValue(track))
@@ -154,7 +159,9 @@ internal class AudioFocusCoordinator(
             AudioChannel.MEDIA -> AudioManager.AUDIOFOCUS_GAIN
             AudioChannel.PHONE -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             AudioChannel.ASSISTANT -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-            AudioChannel.NAVIGATION -> return
+            // Lone navigation takes transient focus so the head unit opens its audio path
+            // (#214); it never ducks because nothing else is playing.
+            AudioChannel.NAVIGATION -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
         }
         currentListener = listenerFor(focusGeneration)
         val next: Any? = if (realSdkInt() >= 26) AudioFocusRequest.Builder(gain)
@@ -1875,15 +1882,13 @@ private class AudioRenderer(
 
     /**
      * Shares a sink-level focus request across all active non-navigation renderers.
-     * Navigation guidance intentionally takes no focus: it overlays media without ducking it.
+     * Navigation normally takes no focus so it overlays media without ducking it, but a
+     * lone navigation track takes focus so head units that mute output without focus
+     * still play guidance (#214); the coordinator drops it again once media/phone starts.
      */
     private fun requestAudioFocus() {
         val channel = mappedChannel ?: return
         val attributes = trackAttributes
-        if (channel == AudioChannel.NAVIGATION) {
-            Log.i(TAG, "audio focus skipped channel=NAVIGATION; overlays without ducking")
-            return
-        }
         track?.let { audioFocusCoordinator.acquire(it, channel, attributes) }
     }
 
