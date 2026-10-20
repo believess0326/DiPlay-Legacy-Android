@@ -53,10 +53,6 @@ class IphoneUsbMatcher private constructor(
 
         /** Discovers every Apple device, matching only the vendor ID confirmed by LIVI. */
         fun appleVendor(): IphoneUsbMatcher = IphoneUsbMatcher(null, allowAnyAppleProduct = true)
-
-        /** Issue #256: claim retry budget for head units whose kernel settles slowly. */
-        private const val USB_CLAIM_MAX_ATTEMPTS = 4
-        private const val USB_CLAIM_RETRY_DELAY_MILLIS = 400L
     }
 }
 
@@ -493,6 +489,9 @@ class IphoneUsbHost(
     }
 
     companion object {
+        /** Issue #256: claim retry budget for head units whose kernel settles slowly. */
+        private const val USB_CLAIM_MAX_ATTEMPTS = 4
+        private const val USB_CLAIM_RETRY_DELAY_MILLIS = 400L
         private const val USB_VENDOR_DEVICE_IN = 0xc0
         private const val CARPLAY_CONFIGURATION_REQUEST = 0x52
         private const val CARPLAY_CONFIGURATION_INDEX = 0x0004

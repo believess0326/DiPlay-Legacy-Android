@@ -59,6 +59,7 @@ class ScreenStream(
         val body: ByteArray,
         val stats: StreamReceiveStats,
         val arrivalNanos: Long,
+        val frameNonce: Long,
     )
     private val decryptQueue = LinkedBlockingQueue<PendingFrame>(DECRYPT_QUEUE_CAPACITY)
     @Volatile private var decryptThread: Thread? = null
@@ -151,12 +152,12 @@ class ScreenStream(
     private fun onMessage(header: ByteArray, body: ByteArray, stats: StreamReceiveStats, arrivalNanos: Long) {
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
-                // Enqueue for the decrypt worker; the receive loop must not block on slow
-                // software decryption (#249). Drop when full: a live stream prefers a fresh
-                // frame over a stale backlog.
-                if (!decryptQueue.offer(PendingFrame(header, body, stats, arrivalNanos))) {
+                // Every received video frame from iPhone advances the ChaCha nonce by 1.
+                // We capture the nonce at reception time so each frame keeps its exact
+                // nonce regardless of worker queue depth, delays, or dropped frames (#249).
+                val frameNonce = frameCounter.getAndIncrement()
+                if (!decryptQueue.offer(PendingFrame(header, body, stats, arrivalNanos, frameNonce))) {
                     val dropped = droppedFrames.incrementAndGet()
-                    frameCounter.incrementAndGet()
                     if (dropped == 1L || dropped % 60L == 0L) {
                         onDiagnostic("video decrypt queue full; dropped frames=$dropped")
                     }
@@ -177,25 +178,23 @@ class ScreenStream(
         val body = pending.body
         val stats = pending.stats
         val arrivalNanos = pending.arrivalNanos
+        val frameNonce = pending.frameNonce
         val payload = if (body.size >= ScreenCodec.TAG_SIZE) {
             val start = System.nanoTime()
             try {
-                ScreenCodec.decryptFrame(key, frameCounter.get(), header, body)
+                ScreenCodec.decryptFrame(key, frameNonce, header, body)
                     .also {
                         stats.decrypted(System.nanoTime() - start, body.size)
-                        frameCounter.incrementAndGet()
                         decryptFailures.set(0)
                     }
             } catch (error: Exception) {
                 // A single corrupt frame (transient USB bit error, #180) must not
-                // kill the whole screen stream: the per-frame nonce is an
-                // independent counter, so consuming this frame's nonce keeps us in
-                // sync with the iPhone and the stream survives. A systematic
-                // desync still fails every frame, so cap consecutive skips and end
-                // the stream as before once the cap is hit.
+                // kill the whole screen stream: the per-frame nonce is already
+                // assigned, so skipping this frame keeps us in sync with the iPhone
+                // and the stream survives. A systematic desync still fails every frame,
+                // so cap consecutive skips and end the stream as before once the cap is hit.
                 val consecutive = decryptFailures.incrementAndGet()
-                frameCounter.incrementAndGet()
-                Log.w(TAG, "video frame auth failed, skipping frame (consecutive=$consecutive)", error)
+                Log.w(TAG, "video frame auth failed, skipping frame (consecutive=$consecutive, nonce=$frameNonce)", error)
                 onDiagnostic("video frame auth failed, skipped consecutive=$consecutive")
                 if (consecutive >= MAX_CONSECUTIVE_DECRYPT_FAILURES) throw error
                 return
