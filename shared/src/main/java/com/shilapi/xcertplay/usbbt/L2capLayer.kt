@@ -68,6 +68,15 @@ class L2capLayer(
 
     /** signal id -> pending connection (for matching responses). */
     private val pendingConnects = ConcurrentHashMap<Int, PendingConnect>()
+    private class Configuration {
+        @Volatile var localAccepted = false
+        @Volatile var peerAccepted = false
+        @Volatile var rejected = false
+        val done = java.util.concurrent.CountDownLatch(1)
+        fun signal() { if (rejected || (localAccepted && peerAccepted)) done.countDown() }
+    }
+    private val configurations = ConcurrentHashMap<Int, Configuration>()
+    private val configRequests = ConcurrentHashMap<Int, Int>()
 
     /** Incoming data callbacks per local CID. */
     private val dataHandlers = ConcurrentHashMap<Int, (ByteArray) -> Unit>()
@@ -152,7 +161,8 @@ class L2capLayer(
             // Minimal configuration exchange: send our Config Request, accept theirs.
             // Many stacks work with default parameters; we send an empty config.
             if (!exchangeConfig(channel)) {
-                Log.w(TAG, "L2CAP config exchange failed for psm=0x${psm.toString(16)}; continuing anyway")
+                disconnect(channel)
+                return L2capResult.Failed("L2CAP configuration failed (psm=0x${psm.toString(16)})")
             }
             Log.i(TAG, "L2CAP channel up: psm=0x${psm.toString(16)} localCid=0x${localCid.toString(16)} remoteCid=0x${pending.remoteCid.toString(16)}")
             return L2capResult.Ok(channel)
@@ -162,17 +172,20 @@ class L2capLayer(
     }
 
     private fun exchangeConfig(channel: Channel): Boolean {
+        val state = configurations.getOrPut(channel.localCid) { Configuration() }
         val signalId = nextSignalId()
+        configRequests[signalId] = channel.localCid
         // Config Request: code=0x04 id len=4 | DCID(2) | flags(2)=0 (no options)
         val req = byteArrayOf(
             L2CAP_CMD_CONFIG_REQ.toByte(),
             signalId.toByte(),
             0x04, 0x00,
         ) + u16le(channel.remoteCid) + u16le(0)
-        if (!hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, req))) return false
-        // We don't strictly wait for the response; the peer's own Config Request
-        // (handled in onSignaling) completes the handshake. Give it a moment.
-        return true
+        try {
+            if (!hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, req))) return false
+            return state.done.await(CONFIG_TIMEOUT_MS.toLong(), java.util.concurrent.TimeUnit.MILLISECONDS) &&
+                !closed && !state.rejected && state.localAccepted && state.peerAccepted
+        } finally { configRequests.remove(signalId) }
     }
 
     /**
@@ -234,8 +247,9 @@ class L2capLayer(
                 L2CAP_CMD_CONNECTION_REQ -> onConnectionRequest(id, data)
                 L2CAP_CMD_CONNECTION_RSP -> onConnectionResponse(id, data)
                 L2CAP_CMD_CONFIG_REQ -> onConfigRequest(id, data)
-                L2CAP_CMD_CONFIG_RSP -> { /* accepted; nothing to do */ }
+                L2CAP_CMD_CONFIG_RSP -> onConfigResponse(id, data)
                 L2CAP_CMD_DISCONNECTION_REQ -> onDisconnectionRequest(id, data)
+                L2CAP_CMD_DISCONNECTION_RSP -> Unit
                 else -> Log.w(TAG, "unhandled L2CAP signaling code 0x${code.toString(16)}")
             }
             at += 4 + len
@@ -262,6 +276,7 @@ class L2capLayer(
         val localCid = allocCid()
         val channel = Channel(localCid = localCid, remoteCid = scid, psm = psm)
         channels[localCid] = channel
+        configurations[localCid] = Configuration()
         val handler = factory(channel)
         dataHandlers[localCid] = handler
 
@@ -275,6 +290,7 @@ class L2capLayer(
 
         // Send our Configuration Request to peer
         val sigId = nextSignalId()
+        configRequests[sigId] = localCid
         val configReq = byteArrayOf(
             L2CAP_CMD_CONFIG_REQ.toByte(),
             sigId.toByte(),
@@ -294,6 +310,12 @@ class L2capLayer(
         if (pending.localCid != scid) return
         pending.remoteCid = dcid
         pending.result = result
+        if (result == L2CAP_CONN_SUCCESS) {
+            // Publish before waking connect(): the peer can send its Config
+            // Request immediately after this Connection Response.
+            channels[scid] = Channel(scid, dcid, pending.psm)
+            configurations.putIfAbsent(scid, Configuration())
+        }
         if (result == L2CAP_CONN_SUCCESS || result != L2CAP_CONN_PENDING) {
             pending.done.countDown()
         }
@@ -304,13 +326,29 @@ class L2capLayer(
         // Request: DCID(2) | flags(2) | options...  Reply with success, no options.
         if (data.size < 4) return
         val dcid = readU16(data, 0) ?: return
+        val channel = channels[dcid] ?: return
         // Config Response: code=0x05 id len=6 | SCID(2)=dcid | flags(2)=0 | result(2)=0
         val rsp = byteArrayOf(
             L2CAP_CMD_CONFIG_RSP.toByte(),
             id.toByte(),
             0x06, 0x00,
-        ) + u16le(dcid) + u16le(0) + u16le(0)
-        hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, rsp))
+        ) + u16le(channel.remoteCid) + u16le(0) + u16le(0)
+        if (hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, rsp))) {
+            configurations[dcid]?.let { it.peerAccepted = true; it.signal() }
+        }
+    }
+
+    private fun onConfigResponse(id: Int, data: ByteArray) {
+        if (data.size < 6) return
+        val cid = configRequests[id] ?: return
+        if (readU16(data, 0) != cid) return
+        val state = configurations[cid] ?: return
+        if (readU16(data, 2) != 0) return // wait for the final response fragment
+        when (readU16(data, 4)) {
+            0 -> { state.localAccepted = true; configRequests.remove(id); state.signal() }
+            4 -> Unit // configuration pending
+            else -> { state.rejected = true; configRequests.remove(id); state.signal() }
+        }
     }
 
     private fun onDisconnectionRequest(id: Int, data: ByteArray) {
@@ -338,6 +376,7 @@ class L2capLayer(
         ) + u16le(channel.remoteCid) + u16le(channel.localCid)
         hci.sendAcl(aclHandle, encodeL2cap(L2CAP_CID_SIGNALING, req))
         channels.remove(channel.localCid)
+        configurations.remove(channel.localCid)?.done?.countDown()
         dataHandlers.remove(channel.localCid)
     }
 
@@ -350,5 +389,8 @@ class L2capLayer(
         dataHandlers.clear()
         pendingConnects.values.forEach { it.done.countDown() }
         pendingConnects.clear()
+        configurations.values.forEach { it.done.countDown() }
+        configurations.clear()
+        configRequests.clear()
     }
 }

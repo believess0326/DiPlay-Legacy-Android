@@ -20,7 +20,7 @@ class HybridBluetoothAdapter(
         hsae.isSupported() || android.isSupported() || usbDongle?.isSupported() == true
 
     override fun isEnabled(): Boolean {
-        if (usbDongle?.isEnabled() == true) return true
+        if (usbDongle?.isSupported() == true) return usbDongle.isEnabled()
         if (hsae.isSupported() && hsae.isEnabled()) return true
         return android.isEnabled()
     }
@@ -36,7 +36,7 @@ class HybridBluetoothAdapter(
         // but audio-only) the dongle was never enabled and wireless could
         // never reach it (P0-1). Plugging in a dongle is itself the opt-in.
         if (usbDongle?.isSupported() == true) {
-            if (usbDongle.enable()) ok = true
+            return usbDongle.enable()
         }
         return ok
     }
@@ -98,68 +98,25 @@ class HybridBluetoothAdapter(
     }
 
     override fun openRfcommStream(deviceAddress: String, uuid: String): BlockingDuplexByteStream {
-        // Priority: USB dongle -> Android -> HSAE.
-        //
-        // However, if the target device is bonded to Android native Bluetooth
-        // and NOT bonded to the USB dongle, trying the dongle first would block for
-        var lastError: Throwable? = null
-        var tried = false
         val dongle = usbDongle
-        val dongleActive = dongle != null && dongle.isSupported() && dongle.isEnabled()
-
-        fun tryDongle(): BlockingDuplexByteStream? {
-            if (!dongleActive) return null
-            tried = true
-            com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying USB dongle stack for $deviceAddress")
-            val result = runCatching { dongle!!.openRfcommStream(deviceAddress, uuid) }
-            val stream = result.getOrNull()
-            if (stream != null) {
-                com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: USB dongle stream connected")
-                return stream
+        if (dongle?.isSupported() == true) {
+            if (!dongle.isEnabled()) throw java.io.IOException("USB Bluetooth not enabled")
+            // An iAP2 advertisement and bond belong to one local adapter address.
+            // Switching to GOC/HSAE cannot resume the dongle's connection.
+            return dongle.openRfcommStream(deviceAddress, uuid)
+        }
+        var failure: Exception? = null
+        if (android.isSupported() && android.isEnabled()) {
+            try {
+                return android.openRfcommStream(deviceAddress, uuid)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw interrupted
+            } catch (error: Exception) {
+                failure = error
             }
-            lastError = result.exceptionOrNull()
-            com.shilapi.xcertplay.usbbt.UsbBtLog.warn(null, TAG, "USB dongle RFCOMM stream failed", lastError)
-            return null
         }
-
-        fun tryAndroid(): BlockingDuplexByteStream? {
-            if (!android.isSupported() || !android.isEnabled()) return null
-            tried = true
-            com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying Android Bluetooth stack for $deviceAddress")
-            val result = runCatching { android.openRfcommStream(deviceAddress, uuid) }
-            val stream = result.getOrNull()
-            if (stream != null) {
-                com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: Android Bluetooth stream connected")
-                return stream
-            }
-            lastError = result.exceptionOrNull()
-            com.shilapi.xcertplay.usbbt.UsbBtLog.warn(null, TAG, "Android RFCOMM stream failed", lastError)
-            return null
-        }
-
-        // Priority: When USB dongle is active, ALWAYS prefer USB dongle for CarPlay data paths.
-        // On head units like Allwinner T3, the native Android stack is a proprietary GOC/serial
-        // hands-free module that cannot transport iAP2 RFCOMM data (channel=-1 close).
-        // Car owners frequently have their phones paired with the native system for OEM phone calls;
-        // preferring native Android over USB dongle in that case causes fatal connection failures.
-        if (dongleActive) {
-            tryDongle()?.let { return it }
-            tryAndroid()?.let { return it }
-        } else {
-            tryAndroid()?.let { return it }
-            tryDongle()?.let { return it }
-        }
-        if (hsae.isSupported()) {
-            com.shilapi.xcertplay.usbbt.UsbBtLog.log(null, TAG, "openRfcommStream: trying HSAE Bluetooth stack for $deviceAddress")
-            return hsae.openRfcommStream(deviceAddress, uuid)
-        }
-        val error = lastError
-        if (tried && error != null) {
-            throw java.io.IOException(
-                "Bluetooth RFCOMM unavailable: ${error.message ?: error.javaClass.simpleName}",
-                error,
-            )
-        }
-        throw java.io.IOException("no Bluetooth stack available")
+        if (hsae.isSupported()) return hsae.openRfcommStream(deviceAddress, uuid)
+        throw java.io.IOException("Bluetooth RFCOMM unavailable: ${failure?.message ?: "no Bluetooth stack available"}", failure)
     }
 }

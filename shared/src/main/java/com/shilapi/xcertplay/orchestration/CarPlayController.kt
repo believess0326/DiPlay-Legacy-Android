@@ -230,6 +230,10 @@ class CarPlayController(
     @Volatile private var closed = false
     @Volatile private var phase = Phase.IDLE
     @Volatile private var wiredAborted = false
+    private val wiredTeardownPending = AtomicBoolean(false)
+    private val wiredGeneration = AtomicInteger(0)
+    @Volatile private var wiredUsbSession: Iap2UsbSession? = null
+    @Volatile private var wiredNcm: NcmUsbBridge? = null
     @Volatile private var ch341Host: Ch341UsbHost? = null
     @Volatile private var mfiSession: MfiSession? = null
     @Volatile private var mux: Iap2UsbMuxHost? = null
@@ -314,6 +318,7 @@ class CarPlayController(
 
     private val sessionListener = object : AirPlaySessionListener {
         override fun onSessionActive(session: AirPlaySession) {
+            if (closed || (config.transport == CarPlayTransport.WIRED && wiredAborted)) return
             val replacement = activeSession !== session
             if (replacement) {
                 BydNavigationOutputs.start(appContext)
@@ -361,6 +366,9 @@ class CarPlayController(
         }
 
         override fun onSessionEnded(session: AirPlaySession) {
+            // A closing reader can report its end after a replacement session
+            // is active. It must not clear that session's UI or playback state.
+            if (activeSession !== session) return
             if (activeSession === session) {
                 activeSession = null
                 BydNavigationOutputs.endNow(preserveTurnOverlay = !closed && config.transport == CarPlayTransport.WIRELESS)
@@ -2110,6 +2118,7 @@ class CarPlayController(
 
     private fun checkIphoneAvailability() {
         if (closed || phase != Phase.IPHONE) return
+        if (wiredTeardownPending.get()) return // teardown completion resumes discovery
         val device = iphoneHost.discover().firstOrNull()
         if (device == null) {
             onStatus(CarPlayStatus.WaitingForIphone)
@@ -2130,7 +2139,7 @@ class CarPlayController(
     }
 
     private fun doRequestIphonePermission(device: UsbDevice) {
-        if (closed) return
+        if (closed || wiredTeardownPending.get()) return
         try {
             when (val request = iphoneHost.requestPermission(device)) {
                 is IphoneUsbHost.PermissionRequest.AlreadyGranted -> {
@@ -2151,6 +2160,7 @@ class CarPlayController(
     }
 
     private fun onIphonePermission(result: IphoneUsbHost.PermissionResult) {
+        if (closed || wiredTeardownPending.get()) return
         try {
             when (result) {
                 is IphoneUsbHost.PermissionResult.Granted -> {
@@ -2383,7 +2393,7 @@ class CarPlayController(
 
     private fun onIphoneAttached(device: UsbDevice) {
         wiredChain(1, "USB iPhone attached vid=0x${device.vendorId.toString(16)} pid=0x${device.productId.toString(16)}")
-        wiredAborted = false
+        if (closed || wiredTeardownPending.get()) return
         when (phase) {
             Phase.REENUMERATION, Phase.IPHONE -> {
                 availabilityPollGeneration.incrementAndGet()
@@ -2392,9 +2402,7 @@ class CarPlayController(
             Phase.DATAPATHS, Phase.CONTROL -> {
                 debugLog("wired iPhone attached while in $phase; aborting stale session and requesting permission")
                 phase = Phase.IPHONE
-                abortActiveWiredSession()
-                availabilityPollGeneration.incrementAndGet()
-                requestIphonePermission(device)
+                beginWiredTeardown()
             }
             Phase.WIRELESS, Phase.IDLE -> {
                 debugLog("wired iPhone attached while in $phase; transport=${config.transport}")
@@ -2420,23 +2428,47 @@ class CarPlayController(
             Phase.IPHONE, Phase.DATAPATHS, Phase.CONTROL -> {
                 debugLog("wired iPhone detached; resetting to waiting for iPhone")
                 phase = Phase.IPHONE
-                wiredAborted = true
-                availabilityPollGeneration.incrementAndGet()
+                beginWiredTeardown()
                 mainHandler.post {
                     if (!closed) {
                         onStatus(CarPlayStatus.WaitingForIphone)
-                        scheduleAvailabilityPoll(Phase.IPHONE, ::checkIphoneAvailability)
                     }
-                }
-                // Run teardown asynchronously so UI thread is never blocked by USB socket/thread joins.
-                try {
-                    executor.execute { abortActiveWiredSession() }
-                } catch (_: Exception) {
-                    abortActiveWiredSession()
                 }
             }
             else -> Unit
         }
+    }
+
+    private fun beginWiredTeardown() {
+        if (!wiredTeardownPending.compareAndSet(false, true)) return
+        wiredAborted = true
+        wiredGeneration.incrementAndGet()
+        availabilityPollGeneration.incrementAndGet()
+        permissionPollGeneration++
+        permissionGrant.set(false)
+        wiredUsbSession?.markAborted()
+        wiredNcm?.markAborted()
+        mux?.markAborted()
+        vpnService?.markWiredAborted()
+        // The single control executor is running the long-lived iAP2 loop.
+        // Enqueuing teardown there waits behind the loop it must stop.
+        Thread({
+            abortActiveWiredSession()
+            try {
+                // Barrier: the old runStack must exit before a new USB open.
+                executor.execute {
+                    mainHandler.post {
+                        wiredTeardownPending.set(false)
+                        if (!closed) {
+                            phase = Phase.IPHONE
+                            checkIphoneAvailability()
+                        }
+                    }
+                }
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                wiredTeardownPending.set(false)
+            }
+        }, "wired-detach-teardown").apply { isDaemon = true }.start()
     }
 
     private fun abortActiveWiredSession() {
@@ -2444,7 +2476,7 @@ class CarPlayController(
         debugLog("wired abortActiveWiredSession: closing active wired session, csm, mux, and vpn")
         closeBestEffort("activeSession") {
             val session = activeSession
-            activeSession = null
+            if (session != null) sessionListener.onSessionEnded(session)
             session?.close()
         }
         closeBestEffort("CSM") {
@@ -2463,6 +2495,10 @@ class CarPlayController(
                 vpnService?.detach(isAborted = true)
             }
         }
+        wiredNcm?.let { closeBestEffort("detached NCM") { it.close() } }
+        wiredNcm = null
+        wiredUsbSession?.let { closeBestEffort("detached USB") { it.close() } }
+        wiredUsbSession = null
     }
 
     /**
@@ -2511,6 +2547,9 @@ class CarPlayController(
     }
 
     private fun openDataPaths(device: UsbDevice, knownConfiguration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration? = null) {
+        if (closed || wiredTeardownPending.get()) return
+        wiredAborted = false
+        val generation = wiredGeneration.incrementAndGet()
         phase = Phase.DATAPATHS
         availabilityPollGeneration.incrementAndGet()
         debugLog("wired opening iPhone USB data paths")
@@ -2519,16 +2558,32 @@ class CarPlayController(
         iphoneHost.openIap2UsbSessionAsync(device, executor, knownConfiguration) { result ->
             when (result) {
                 is IphoneUsbHost.Iap2SessionResult.Connected -> {
+                    wiredUsbSession = result.session
+                    if (closed || wiredAborted || generation != wiredGeneration.get()) {
+                        result.session.markAborted()
+                        result.session.close()
+                        return@openIap2UsbSessionAsync
+                    }
                     wiredChain(3, "iAP2 USB session opened (USBMUX fd ready)")
                     try {
                         val ncm = openNcm(device, result.session)
+                        wiredNcm = ncm
+                        if (closed || wiredAborted || generation != wiredGeneration.get()) {
+                            ncm.markAborted()
+                            ncm.close()
+                            result.session.markAborted()
+                            result.session.close()
+                            return@openIap2UsbSessionAsync
+                        }
                         runStack(result.session, ncm)
                     } catch (error: Throwable) {
                         result.session.close()
-                        fail(error)
+                        if (!closed && !wiredAborted && generation == wiredGeneration.get()) fail(error)
                     }
                 }
-                is IphoneUsbHost.Iap2SessionResult.Failed -> fail(result.error)
+                is IphoneUsbHost.Iap2SessionResult.Failed -> {
+                    if (!closed && !wiredAborted && generation == wiredGeneration.get()) fail(result.error)
+                }
             }
         }
     }
@@ -2570,10 +2625,9 @@ class CarPlayController(
 
     private fun runStack(usbSession: Iap2UsbSession, ncm: NcmUsbBridge) {
         phase = Phase.CONTROL
-        wiredAborted = false
         var ncmOwnedLocally = true
         try {
-            if (closed) return
+            if (closed || wiredAborted) return
             val mux = Iap2UsbMuxHost.open(usbSession, onDiagnostic = ::connectionDiagnostic)
             this.mux = mux
             wiredChain(6, "USBMUX host opened")
@@ -2696,6 +2750,7 @@ class CarPlayController(
             debugLog("wired iAP2 CSM channel opened")
 
             val ncmHostMac = ncm.hostMac ?: config.hostMac
+            if (closed || wiredAborted) return
             debugLog("ncm using hostMac=${ncmHostMac.macString()}")
             val vpnAttachError = attachVpn(ncm, ncmHostMac)
             if (vpnAttachError != null) {

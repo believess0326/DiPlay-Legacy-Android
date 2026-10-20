@@ -798,4 +798,8 @@
     <string name="settings_usb_bluetooth_running">Running · MAC: %1$s · Name: %2$s</string>
     <string name="settings_usb_bluetooth_self_test">Run Bluetooth Hardware Self-Test</string>
     <string name="settings_usb_bluetooth_testing">Running self-test…</string>
+    <string name="settings_usb_pairing_title">Confirm Bluetooth pairing</string>
+    <string name="settings_usb_pairing_message">Bluetooth pairing request from %1$s.\nConfirm the number matches your iPhone:</string>
+    <string name="settings_usb_pairing_countdown">Auto-confirm in %1$d s</string>
+    <string name="settings_usb_bluetooth_diagnostic_description">USB Bluetooth diagnostic: tests adapter permissions and HCI hardware, then restores the wireless service. Disconnect CarPlay before testing. A hardware pass does not verify iPhone pairing or CarPlay; save the report after reproducing a connection failure.</string>
 </resources>

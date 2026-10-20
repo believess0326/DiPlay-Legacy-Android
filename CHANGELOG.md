@@ -1,3 +1,14 @@
+# DiPlay 0.2.82 — 2026-10-21
+
+- Fix CM390 SDP UUID search encoding, L2CAP configuration channel IDs and handshake completion, and RFCOMM session direction/C/R bits; retain explicit discovery and peer-refusal errors.
+- Serialize Bluetooth authentication per ACL and allow time for driver confirmation; keep dongle data on its own adapter rather than falling back to T3 GOC audio sockets.
+- Localize USB pairing dialogs in all seven locales and unify Bluetooth diagnostics, restoring the external adapter service after hardware checks.
+- Skip system VPN consent for the existing userspace wired network path.
+- Stop detached wired resources outside the busy control executor, gate reconnect until the old run exits, release aborted network bridges, and avoid USB interface teardown during in-flight I/O or after detach.
+- Ignore stale session-end callbacks after a replacement session starts.
+
+See [v0.2.82 release notes](docs/RELEASE-NOTES-0.2.82.md) for verification and hardware-testing boundaries.
+
 # DiPlay 0.2.81 — 2026-10-20
 
 - Car Bluetooth audio bypass mode (#261): add option to withhold CarPlay audio declaration so audio, navigation, and telephony route entirely through the iPhone's Bluetooth connection with the vehicle; add detection warning when an external USB Bluetooth dongle is connected without A2DP capability.

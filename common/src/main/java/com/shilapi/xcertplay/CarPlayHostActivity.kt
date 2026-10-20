@@ -802,6 +802,14 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun requestVpnConsent() {
         if (awaitingVpnConsent) return
+        // The userspace NCM path creates no system VPN. Do not ask for an
+        // unrelated, reboot-scoped KitKat VPN grant before starting it.
+        if (createRuntimeConfig().userspaceNetworkEnabled) {
+            vpnReady = true
+            appendLog("Wired userspace network selected; system VPN consent is not required")
+            maybeStartCarPlay()
+            return
+        }
         val consent = try {
             CarPlayVpnService.prepare(this)
         } catch (e: Exception) {

@@ -175,10 +175,10 @@ class HciProtocolTest {
 
     @Test
     fun rfcommDlciEncoding() {
-        // Server channel 1, initiator -> DLCI 3.
-        assertEquals(3, HciProtocol.rfcommDlci(1, initiator = true))
-        // Server channel 2, acceptor -> DLCI 4.
-        assertEquals(4, HciProtocol.rfcommDlci(2, initiator = false))
+        // Session initiator opens the peer's channel with direction bit 0.
+        assertEquals(2, HciProtocol.rfcommDlci(1, initiator = true))
+        // Session responder uses direction bit 1 for an outbound DLC.
+        assertEquals(5, HciProtocol.rfcommDlci(2, initiator = false))
         assertEquals(HciProtocol.RFCOMM_DLCI_CONTROL, 0)
     }
 }

@@ -61,6 +61,14 @@ class Iap2UsbMuxHost private constructor(
     /** Marks the connection aborted (e.g. iPhone detached) to suppress resetDevice ioctl. */
     fun markAborted() {
         pipe.markAborted()
+        val error = IphoneUsbException.DeviceUnavailable("iPhone USB detached")
+        val streams = synchronized(stateLock) {
+            failure = failure ?: error
+            connections.values.toList()
+        }
+        // Wake iAP2/TLS readers immediately. Native USB closure is deferred to
+        // the teardown worker, after the bounded bulk read can finish.
+        streams.forEach { it.closeFromHost(error) }
     }
 
     override fun close() {
@@ -161,7 +169,7 @@ class Iap2UsbMuxHost private constructor(
         val deadline = System.nanoTime() + timeoutMillis * NANOS_PER_MILLISECOND
         while (true) {
             synchronized(stateLock) {
-                if (closed) throw IphoneUsbException.DeviceUnavailable("USBMUX host is closed")
+                checkOpenLocked()
                 receiveFrames.takeFrame()?.let { frame ->
                     // LIVI only trusts the length field on receive: iPhone replies do not
                     // carry the 0xFEEDFACE word in the header's fourth field.

@@ -351,7 +351,7 @@ class CarPlayHostSettingsTest {
         assertNull(shadowOf(activity).nextStartedActivity)
     }
 
-    @Test fun switchingToUsbRequestsVpnConsentAndDoesNotRepeatPendingConsent() {
+    @Test fun switchingToUsbUserspaceDoesNotRequestUnneededSystemVpnConsent() {
         org.robolectric.shadows.ShadowVpnService.setPrepareResult(Intent("test.VPN_CONSENT"))
         attachController()
         AirPlayPersistence.saveWirelessEnabled(activity, true)
@@ -362,10 +362,10 @@ class CarPlayHostSettingsTest {
         val intent = Intent(UsbManager.ACTION_USB_DEVICE_ATTACHED).putExtra(UsbManager.EXTRA_DEVICE, device)
         val method = activity.javaClass.getDeclaredMethod("onNewIntent", Intent::class.java).apply { isAccessible = true }
         method.invoke(activity, intent)
-        assertTrue(field("awaitingVpnConsent") as Boolean)
-        assertFalse(field("vpnReady") as Boolean)
+        assertFalse(field("awaitingVpnConsent") as Boolean)
+        assertTrue(field("vpnReady") as Boolean)
         assertNull(field("controller"))
-        assertEquals("test.VPN_CONSENT", shadowOf(activity).nextStartedActivityForResult.intent.action)
+        assertNull(shadowOf(activity).nextStartedActivityForResult)
         method.invoke(activity, intent)
         assertNull(shadowOf(activity).nextStartedActivityForResult)
         assertFalse(activity.isFinishing)

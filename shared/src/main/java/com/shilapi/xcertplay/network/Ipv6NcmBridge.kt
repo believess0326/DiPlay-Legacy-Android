@@ -128,15 +128,21 @@ class Ipv6NcmBridge(
         }
     }
 
+    fun markAborted() {
+        running.set(false)
+        ncm.markAborted()
+    }
+
+    private val closed = AtomicBoolean(false)
     override fun close() {
-        if (!running.compareAndSet(true, false)) return
+        if (!closed.compareAndSet(false, true)) return
+        running.set(false)
         // Final mDNS tally for the report (#262): survives even when nothing else logged.
         if (mdnsAnswerCalls.get() > 0 || mdnsUnmatchedQueries.get() > 0) {
             val msg = mdnsDiagSummary()
             Log.i(TAG, msg)
             runCatching { onDebugLog(msg) }
         }
-        ncm.close()
         // Issue #168: do NOT close the TUN here. Its lifecycle belongs to
         // CarPlayVpnService, which deliberately keeps it open across wired
         // attempts (reuseTun skips establish() to avoid leaking the 4.4 netd
@@ -145,6 +151,8 @@ class Ipv6NcmBridge(
         // CarPlayVpnService.onDestroy().
         join(ncmToTunThread)
         join(tunToNcmThread)
+        // Finish the bounded bulk read before releasing its USB interfaces.
+        ncm.close()
     }
 
     private fun runNcmToTun() {

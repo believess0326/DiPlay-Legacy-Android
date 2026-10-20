@@ -9,6 +9,8 @@ import android.widget.TextView
 import com.shilapi.xcertplay.bluetooth.HybridBluetoothAdapter
 import com.shilapi.xcertplay.usbbt.UsbBtPairingAgent
 import java.lang.ref.WeakReference
+import java.util.Locale
+import com.shilapi.xcertplay.host.R
 
 /**
  * Application-level router: delivers USB-Bluetooth Numeric Comparison
@@ -108,14 +110,13 @@ object UsbBtPairingDialog {
             }
         }
 
-        val number = "%06d".format(sixDigitNumber)
+        val number = String.format(Locale.US, "%06d", sixDigitNumber)
         val layout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 32, 48, 16)
         }
         val messageView = TextView(activity).apply {
-            text = "Bluetooth pairing request from $bdAddr.\n" +
-                "Confirm the number matches your iPhone:"
+            text = activity.getString(R.string.settings_usb_pairing_message, bdAddr)
             textSize = 15f
         }
         val numberView = TextView(activity).apply {
@@ -135,7 +136,7 @@ object UsbBtPairingDialog {
         var dialog: AlertDialog? = null
         val timer = object : CountDownTimer(COUNTDOWN_MS, 1_000) {
             override fun onTick(millisUntilFinished: Long) {
-                countdownView.text = "Auto-confirm in ${millisUntilFinished / 1000}s"
+                countdownView.text = activity.getString(R.string.settings_usb_pairing_countdown, millisUntilFinished / 1000)
             }
 
             override fun onFinish() {
@@ -144,7 +145,7 @@ object UsbBtPairingDialog {
             }
         }
         dialog = AlertDialog.Builder(activity)
-            .setTitle("Confirm Bluetooth pairing")
+            .setTitle(activity.getString(R.string.settings_usb_pairing_title))
             .setView(layout)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 timer.cancel()

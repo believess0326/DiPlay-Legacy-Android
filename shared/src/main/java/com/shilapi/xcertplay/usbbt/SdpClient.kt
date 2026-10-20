@@ -234,6 +234,10 @@ class SdpClient(
             val remaining = deadline - System.currentTimeMillis()
             val pdu = responses.poll(remaining.coerceAtMost(1_000), TimeUnit.MILLISECONDS)
                 ?: continue
+            if (pdu.size >= 7 && pdu[0] == 0x01.toByte() &&
+                ((pdu[1].toInt() and 0xff) shl 8 or (pdu[2].toInt() and 0xff)) == tid) {
+                return SdpResult.Failed("SDP error=0x${((pdu[5].toInt() and 0xff) shl 8 or (pdu[6].toInt() and 0xff)).toString(16)}")
+            }
             val parsed = parseResponse(pdu, tid) ?: continue
             return when (val channelNum = extractRfcommChannel(parsed)) {
                 null -> SdpResult.Failed("iAP2 service found but no RFCOMM channel in descriptor list")
@@ -276,9 +280,9 @@ class SdpClient(
      * Service Search Attribute Request for the iAP2 128-bit UUID, asking only
      * for the Protocol Descriptor List attribute.
      */
-    private fun buildSearchAttrRequest(transactionId: Int): ByteArray {
+    internal fun buildSearchAttrRequest(transactionId: Int): ByteArray {
         // ServiceSearchPattern: DES (0x35) len | UUID128 (0x1C) + 16 bytes
-        val searchPattern = byteArrayOf(0x35, 0x13, 0x1C) + targetUuidBytes
+        val searchPattern = byteArrayOf(0x35, 0x11, 0x1C) + targetUuidBytes
         // AttributeIDList: DES (0x35) len=3 | UINT16 (0x09) 0x0004
         val attrList = byteArrayOf(0x35, 0x03, 0x09, 0x00, 0x04)
         val params = searchPattern +

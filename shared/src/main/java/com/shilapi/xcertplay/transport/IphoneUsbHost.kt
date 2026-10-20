@@ -673,7 +673,13 @@ class Iap2UsbSession internal constructor(
             readRequest
         }
         val cancelled = runCatching { requestToCancel?.cancel() }.getOrNull() == true
-        runCatching { connection.releaseInterface(claimedInterface) }
+        // Never issue RELEASEINTERFACE against a detached device, or while a
+        // synchronous bulk ioctl still owns this fd on a legacy USB host.
+        synchronized(readLock) {
+            synchronized(writeLock) {
+                if (!isAbortedOrDetached) runCatching { connection.releaseInterface(claimedInterface) }
+            }
+        }
         // Android 4.x: a cancelled URB is reaped by the wait worker asynchronously.
         // Freeing the request before that completion hands freed memory to REAPURB
         // and libc aborts. Wait for the completion; if it is not observed on legacy

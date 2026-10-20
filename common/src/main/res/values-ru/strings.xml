@@ -685,4 +685,8 @@
     <string name="settings_usb_bluetooth_running">Работает · MAC: %1$s · Имя: %2$s</string>
     <string name="settings_usb_bluetooth_self_test">Самодиагностика оборудования Bluetooth</string>
     <string name="settings_usb_bluetooth_testing">Выполняется проверка…</string>
+    <string name="settings_usb_pairing_title">Подтверждение сопряжения Bluetooth</string>
+    <string name="settings_usb_pairing_message">Запрос сопряжения Bluetooth от %1$s.\nУбедитесь, что код совпадает с кодом на iPhone:</string>
+    <string name="settings_usb_pairing_countdown">Автоподтверждение через %1$d с</string>
+    <string name="settings_usb_bluetooth_diagnostic_description">Диагностика USB Bluetooth: проверка разрешений и оборудования HCI с восстановлением беспроводной службы. Сначала отключите CarPlay. Успешный тест оборудования не подтверждает сопряжение iPhone или подключение CarPlay. Сохраните отчёт после сбоя подключения.</string>
 </resources>

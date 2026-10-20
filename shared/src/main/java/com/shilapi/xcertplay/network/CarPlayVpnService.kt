@@ -461,11 +461,14 @@ class CarPlayVpnService : VpnService() {
     }
 
     /** Releases the active AirPlay listener and whichever VPN/NCM transport resources are active. */
+    fun markWiredAborted() {
+        bridge?.markAborted()
+        lwipBridge?.markAborted()
+    }
+
     @Synchronized
     fun detach(isAborted: Boolean = false) {
-        if (isAborted) {
-            lwipBridge?.markAborted()
-        }
+        if (isAborted) markWiredAborted()
         releaseLocked()
     }
 

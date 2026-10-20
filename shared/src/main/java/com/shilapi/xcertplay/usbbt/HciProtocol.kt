@@ -407,9 +407,9 @@ object HciProtocol {
     /** DLCI 0 is the RFCOMM session control channel. */
     const val RFCOMM_DLCI_CONTROL = 0
 
-    /** RFCOMM server channel from a DLCI: dlci = channel * 2 (+1 for initiator). */
+    /** Outbound DLC direction is 0 for the session initiator, 1 for its responder. */
     fun rfcommDlci(serverChannel: Int, initiator: Boolean): Int =
-        serverChannel * 2 + if (initiator) 1 else 0
+        serverChannel * 2 + if (initiator) 0 else 1
 
     // ------------------------------------------------------------------
     // SDP (Bluetooth Core Spec Vol 3, Part B).

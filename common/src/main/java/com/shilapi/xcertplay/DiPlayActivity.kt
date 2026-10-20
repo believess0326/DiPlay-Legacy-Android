@@ -52,7 +52,6 @@ import com.shilapi.xcertplay.adb.LocalAdb
 import com.shilapi.xcertplay.bluetooth.BluetoothAddressResolver
 import com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager
 import com.shilapi.xcertplay.usbbt.UsbBtDongleDetector
-import com.shilapi.xcertplay.usbbt.UsbBtSelfTest
 import com.shilapi.xcertplay.airplay.CarPlayClusterDisplay
 import com.shilapi.xcertplay.airplay.CarPlayDisplayScale
 import com.shilapi.xcertplay.airplay.ClusterTurnCardOverlay
@@ -1356,7 +1355,7 @@ class DiPlayActivity : ComponentActivity() {
             card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(10, 60))
             // 蓝牙诊断：SDP/RFCOMM 有界探针，排查原生蓝牙配对冲突类问题（port 自 xiaomiren/DiPlay）。
             card.addView(button(getString(R.string.settings_bluetooth_diagnostic), false) {
-                runCatching { startActivity(Intent(this, BluetoothDiagnosticActivity::class.java)) }
+                openBluetoothDiagnostics()
             }, matchButton(10, 60))
             val destination = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getString(R.string.reports_save_to_downloads_diplay) else getString(R.string.choose_where_to_save_your_report)
             card.addView(label(destination + getString(R.string.nothing_is_sent_automatically_protocol_payloads_and_creden), 14, MUTED).apply { setPadding(0, dp(12), 0, 0) })
@@ -4323,10 +4322,11 @@ class DiPlayActivity : ComponentActivity() {
         }
         card.addView(actionLayout)
 
-        val selfTestResultLabel = label("", 13, MUTED).apply {
-            setPadding(0, dp(6), 0, 0)
+        fun addDiagnosticAction() {
+            actionLayout.addView(button(getString(R.string.settings_bluetooth_diagnostic), false) {
+                openBluetoothDiagnostics()
+            }, matchButton(8, 60))
         }
-        card.addView(selfTestResultLabel)
 
         fun refreshCard() {
             if (isFinishing || isDestroyed) return
@@ -4340,10 +4340,7 @@ class DiPlayActivity : ComponentActivity() {
 
             if (!isSupported || dev == null) {
                 statusLabel.text = getString(R.string.settings_usb_bluetooth_not_detected)
-                val testBtn = button(getString(R.string.settings_usb_bluetooth_self_test), false) {
-                    runUsbBtSelfTest(selfTestResultLabel, ::refreshCard)
-                }
-                actionLayout.addView(testBtn, matchButton(8, 60))
+                addDiagnosticAction()
                 return
             }
 
@@ -4378,8 +4375,10 @@ class DiPlayActivity : ComponentActivity() {
                         setPadding(0, dp(2), 0, dp(4))
                     })
                     val stopBtn = button(getString(R.string.settings_usb_bluetooth_stop), false) {
-                        usbDongle.shutdown()
-                        refreshCard()
+                        Thread({
+                            usbDongle.shutdown()
+                            runOnUiThread { refreshCard() }
+                        }, "diplay-stop-usbbt").start()
                     }
                     actionLayout.addView(stopBtn, matchButton(8, 60))
                 } else {
@@ -4393,13 +4392,18 @@ class DiPlayActivity : ComponentActivity() {
                 }
             }
 
-            val testBtn = button(getString(R.string.settings_usb_bluetooth_self_test), false) {
-                runUsbBtSelfTest(selfTestResultLabel, ::refreshCard)
-            }
-            actionLayout.addView(testBtn, matchButton(8, 60))
+            addDiagnosticAction()
         }
 
         refreshCard()
+        val refresh = object : Runnable {
+            override fun run() {
+                if (isFinishing || isDestroyed || card.windowToken == null) return
+                refreshCard()
+                card.postDelayed(this, 1_000L)
+            }
+        }
+        card.postDelayed(refresh, 1_000L)
     }
 
     /** True when a USB Bluetooth dongle is plugged in; used to warn before audio is routed away. */
@@ -4408,38 +4412,8 @@ class DiPlayActivity : ComponentActivity() {
         UsbBtDongleDetector(applicationContext).findDongles(usbManager).isNotEmpty()
     }.getOrDefault(false)
 
-    private fun runUsbBtSelfTest(resultLabel: TextView, onComplete: () -> Unit) {
-        resultLabel.text = getString(R.string.settings_usb_bluetooth_testing)
-        Thread({
-            val dongle = runCatching { CarPlayBluetoothManager.get(this).usbDongle }.getOrNull()
-            runCatching { dongle?.disable() }
-            val report = UsbBtSelfTest.run(this)
-            if (report.ok && AirPlayPersistence.loadWirelessEnabled(this)) {
-                runCatching {
-                    dongle?.enable()
-                }
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                val summary = if (report.ok) {
-                    "✅ ${report.message}\n${report.details.joinToString("\n")}"
-                } else {
-                    "❌ ${report.message}\n${report.details.joinToString("\n")}"
-                }
-                resultLabel.text = summary
-                val reportDev = report.device
-                if (report.needsPermission && reportDev != null) {
-                    val mgr = getSystemService(Context.USB_SERVICE) as? UsbManager
-                    if (mgr != null) {
-                        UsbBtDongleDetector(applicationContext).ensurePermission(
-                            mgr,
-                            UsbBtDongleDetector.Dongle(reportDev, report.vendorLabel ?: "", false)
-                        )
-                    }
-                }
-                onComplete()
-            }
-        }, "diplay-usbbt-selftest").start()
+    private fun openBluetoothDiagnostics() {
+        runCatching { startActivity(Intent(this, BluetoothDiagnosticActivity::class.java)) }
     }
 
     private fun wirelessHelp() {

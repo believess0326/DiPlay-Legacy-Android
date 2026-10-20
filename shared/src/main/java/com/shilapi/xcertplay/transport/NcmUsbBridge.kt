@@ -179,12 +179,16 @@ class NcmUsbBridge internal constructor(
                 Thread.currentThread().interrupt()
             }
         }
-        if (!isAbortedOrDetached) {
-            for (usbInterface in claimedInterfaces.asReversed()) {
-                try {
-                    connection.releaseInterface(usbInterface)
-                } catch (_: RuntimeException) {
-                    // Best-effort release; the connection close below is authoritative.
+        synchronized(readLock) {
+            synchronized(writeLock) {
+                if (!isAbortedOrDetached) {
+                    for (usbInterface in claimedInterfaces.asReversed()) {
+                        try {
+                            connection.releaseInterface(usbInterface)
+                        } catch (_: RuntimeException) {
+                            // Best-effort release; connection close is authoritative.
+                        }
+                    }
                 }
             }
         }
@@ -450,6 +454,7 @@ class NcmUsbBridge internal constructor(
 
     private fun checkOpenLocked() {
         failure?.let { throw it }
+        if (isAbortedOrDetached) throw IphoneUsbException.DeviceUnavailable("NCM USB detached")
         if (closed) throw IphoneUsbException.DeviceUnavailable("NCM bridge is closed")
     }
 

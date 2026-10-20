@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class UsbBtPairingAgent(
     private val hci: UsbBtHci,
     private val linkKeys: LinkKeyStore,
-    private val uiCallback: PairingUiCallback? = null,
+    @Volatile var uiCallback: PairingUiCallback? = null,
     private val context: Context? = null,
 ) {
 

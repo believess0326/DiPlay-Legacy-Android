@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit
 class RfcommLayer(
     private val l2cap: L2capLayer,
     private val channel: L2capLayer.Channel,
+    private val initiator: Boolean = true,
 ) {
 
     /** An open RFCOMM data link connection to a server channel. */
@@ -55,6 +56,7 @@ class RfcommLayer(
 
     /** dlci -> pending UA latch (for SABM we sent). */
     private val pendingUa = ConcurrentHashMap<Int, CountDownLatch>()
+    private val refusedDlcs = ConcurrentHashMap.newKeySet<Int>()
 
     /** dlci -> pending PN response latch. */
     private val pendingPn = ConcurrentHashMap<Int, CountDownLatch>()
@@ -143,7 +145,7 @@ class RfcommLayer(
 
     /** Address field: EA=1, C/R bit, DLCI (6 bits). */
     private fun addressField(dlci: Int, command: Boolean): Byte =
-        (0x01 or (if (command) 0x02 else 0x00) or (dlci shl 2)).toByte()
+        (0x01 or (if (command == initiator) 0x02 else 0x00) or (dlci shl 2)).toByte()
 
     /** Length field: 1 byte (EA=1, <=127) or 2 bytes (EA=0, <=32767). */
     private fun lengthField(len: Int): ByteArray {
@@ -216,6 +218,7 @@ class RfcommLayer(
         if (sessionOpen) return RfcommResult.Ok(Unit)
         if (closed) return RfcommResult.Failed("RFCOMM closed")
         val latch = CountDownLatch(1)
+        refusedDlcs.remove(RFCOMM_DLCI_CONTROL)
         pendingUa[RFCOMM_DLCI_CONTROL] = latch
         try {
             if (!sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_SABM, command = true, pf = true)) {
@@ -224,6 +227,7 @@ class RfcommLayer(
             if (!latch.await(HANDSHAKE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
                 return RfcommResult.Failed("SABM/UA timeout (session)")
             }
+            if (closed || RFCOMM_DLCI_CONTROL in refusedDlcs) return RfcommResult.Failed("RFCOMM session refused or closed")
             sessionOpen = true
             Log.i(TAG, "RFCOMM session open")
             return RfcommResult.Ok(Unit)
@@ -240,7 +244,7 @@ class RfcommLayer(
         activeDlcs[serverChannel]?.let { return RfcommResult.Ok(it) }
         val session = openSession()
         if (session is RfcommResult.Failed) return session
-        val dlci = rfcommDlci(serverChannel, initiator = true)
+        val dlci = rfcommDlci(serverChannel, initiator = initiator)
 
         // 1) Parameter Negotiation (MCC PN).
         val pnLatch = CountDownLatch(1)
@@ -274,6 +278,7 @@ class RfcommLayer(
 
         // 2) SABM/UA on the DLC.
         val uaLatch = CountDownLatch(1)
+        refusedDlcs.remove(dlci)
         pendingUa[dlci] = uaLatch
         try {
             if (!sendFrame(dlci, RFCOMM_SABM, command = true, pf = true)) {
@@ -282,6 +287,7 @@ class RfcommLayer(
             if (!uaLatch.await(HANDSHAKE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
                 return RfcommResult.Failed("SABM/UA timeout (ch=$serverChannel)")
             }
+            if (closed || dlci in refusedDlcs) return RfcommResult.Failed("RFCOMM DLC refused or closed (ch=$serverChannel)")
         } finally {
             pendingUa.remove(dlci)
         }
@@ -404,11 +410,12 @@ class RfcommLayer(
             }
             RFCOMM_DM -> {
                 Log.w(TAG, "DM received (dlci=$dlci); peer refused")
+                refusedDlcs.add(dlci)
                 pendingUa[dlci]?.countDown()
             }
             RFCOMM_DISC -> {
                 Log.i(TAG, "DISC received (dlci=$dlci); answering UA")
-                sendFrame(dlci, RFCOMM_UA, command = !cr, pf = true)
+                sendFrame(dlci, RFCOMM_UA, command = false, pf = true)
                 if (dlci == RFCOMM_DLCI_CONTROL) {
                     sessionOpen = false
                     close()
@@ -421,7 +428,7 @@ class RfcommLayer(
             }
             RFCOMM_SABM -> {
                 // Peer wants a DLC; answer UA as response (command = false, pf = true).
-                sendFrame(dlci, RFCOMM_UA, command = !cr, pf = true)
+                sendFrame(dlci, RFCOMM_UA, command = false, pf = true)
                 if (dlci == RFCOMM_DLCI_CONTROL) {
                     sessionOpen = true
                 } else {

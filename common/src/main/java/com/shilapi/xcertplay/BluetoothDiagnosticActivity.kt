@@ -1,5 +1,8 @@
 package com.shilapi.xcertplay
 
+import com.shilapi.xcertplay.host.R
+import com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager
+import com.shilapi.xcertplay.usbbt.UsbBtSelfTest
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
@@ -70,17 +73,20 @@ class BluetoothDiagnosticActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
+        val usingUsb = CarPlayBluetoothManager.get(this).usbDongle?.isSupported() == true
         layout.addView(TextView(this).apply {
-            text = "完整蓝牙诊断\n一次采集权限、蓝牙状态、服务发现、两种连接及前后系统日志。每种连接最多 45 秒，只打开通道，不发送数据；超时后自动释放独立诊断进程。无需热点。系统日志需要已授权的本机 ADB；不可用时会明确注明。完成后在本页保存完整报告。"
+            text = if (usingUsb) getString(R.string.settings_usb_bluetooth_diagnostic_description) else "完整蓝牙诊断\n一次采集权限、蓝牙状态、服务发现、两种连接及前后系统日志。每种连接最多 45 秒，只打开通道，不发送数据；超时后自动释放独立诊断进程。无需热点。系统日志需要已授权的本机 ADB；不可用时会明确注明。完成后在本页保存完整报告。"
         })
         modeSelector = Spinner(this).apply {
             adapter = ArrayAdapter(this@BluetoothDiagnosticActivity, android.R.layout.simple_spinner_dropdown_item,
                 listOf("两种连接（安全优先）", "仅安全连接", "仅非安全连接（不发送数据）"))
         }
+        modeSelector.visibility = if (usingUsb) android.view.View.GONE else android.view.View.VISIBLE
         layout.addView(modeSelector)
         adbApproval = CheckBox(this).apply { text = "尝试请求本机 ADB 授权（需开启网络 ADB 5555；可跳过）" }
+        adbApproval.visibility = if (usingUsb) android.view.View.GONE else android.view.View.VISIBLE
         layout.addView(adbApproval)
-        start = Button(this).apply { text = "一键完整诊断（约 2–4 分钟）"; setOnClickListener { requestProbe() } }
+        start = Button(this).apply { text = if (usingUsb) getString(R.string.settings_usb_bluetooth_self_test) else "一键完整诊断（约 2–4 分钟）"; setOnClickListener { requestProbe() } }
         layout.addView(start)
         layout.addView(Button(this).apply { text = "停止诊断"; setOnClickListener { cancel() } })
         layout.addView(Button(this).apply { text = "保存完整诊断报告"; setOnClickListener { saveReport() } })
@@ -105,8 +111,49 @@ class BluetoothDiagnosticActivity : ComponentActivity() {
             record("请先在 DiPlay 主页面断开当前会话，避免两个连接互相干扰。")
             return
         }
+        if (CarPlayBluetoothManager.get(this).usbDongle?.isSupported() == true) {
+            beginUsbDiagnostic()
+            return
+        }
         if (Build.VERSION.SDK_INT >= 31) permissions.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN))
         else begin()
+    }
+
+    private fun beginUsbDiagnostic() {
+        busy = true
+        cancelled = false
+        start.isEnabled = false
+        val app = applicationContext
+        worker.execute {
+            val dongle = CarPlayBluetoothManager.get(app).usbDongle
+            val restoreService = dongle?.isEnabled() == true || AirPlayPersistence.loadWirelessEnabled(app)
+            try {
+                record("USB Bluetooth diagnostic; native Android SDP/socket probes are not used for this adapter")
+                dongle?.disable()
+                val result = UsbBtSelfTest.run(app)
+                record("USB hardware test: ${result.status}; ${result.message}")
+                result.details.forEach { record(it) }
+                val detectedDevice = result.device
+                if (result.needsPermission && detectedDevice != null) {
+                    val manager = app.getSystemService(Context.USB_SERVICE) as? android.hardware.usb.UsbManager
+                    if (manager != null) runOnUiThread {
+                        com.shilapi.xcertplay.usbbt.UsbBtDongleDetector(app).ensurePermission(manager,
+                            com.shilapi.xcertplay.usbbt.UsbBtDongleDetector.Dongle(detectedDevice, result.vendorLabel.orEmpty(), false))
+                    }
+                }
+                record("HCI hardware success does not verify iPhone SDP, RFCOMM or CarPlay authentication")
+            } catch (error: Exception) {
+                record("USB diagnostic error: ${error.message}")
+            } finally {
+                Thread.interrupted() // allow restoration even if this diagnostic was cancelled
+                if (restoreService) {
+                    val restored = runCatching { dongle?.enable() == true }.getOrDefault(false)
+                    record("USB Bluetooth service restored=$restored")
+                }
+                busy = false
+                runOnUiThread { if (!isFinishing) start.isEnabled = true }
+            }
+        }
     }
 
     /** Context.getSystemService(Class) 需要 API 23；4.4 线走字符串常量。 */

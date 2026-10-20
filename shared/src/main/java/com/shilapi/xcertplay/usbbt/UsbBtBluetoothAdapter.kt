@@ -132,6 +132,8 @@ class UsbBtBluetoothAdapter(
 
     /** ACL handle -> latch awaiting EVT_ENCRYPTION_CHANGE. */
     private val encryptLatches = ConcurrentHashMap<Int, CountDownLatch>()
+    private val authenticationLocks = ConcurrentHashMap<Int, Any>()
+    private val authenticationStatus = ConcurrentHashMap<Int, Int>()
 
     init {
         runCatching {
@@ -230,6 +232,10 @@ class UsbBtBluetoothAdapter(
 
     /** Optional UI hook for Numeric Comparison pairing (item 2). Null = Just Works. */
     @Volatile var pairingUiCallback: UsbBtPairingAgent.PairingUiCallback? = null
+        set(value) {
+            field = value
+            pairingAgent?.uiCallback = value
+        }
 
     /**
      * Register USB permission + device-detach receivers once. The permission
@@ -345,7 +351,8 @@ class UsbBtBluetoothAdapter(
         // Paired = we hold a link key. Names are unknown without inquiry;
         // the address is the stable identifier.
         return linkKeys.peers().map { addr ->
-            CarPlayBluetoothDevice(name = "iPhone ($addr)", address = addr, isConnected = false)
+            CarPlayBluetoothDevice(name = "iPhone ($addr)", address = addr,
+                isConnected = aclHandleByAddr.containsKey(addr.uppercase()))
         }
     }
 
@@ -376,8 +383,7 @@ class UsbBtBluetoothAdapter(
 
             // 2.5) Authenticate and enable encryption on ACL link if needed.
             // iOS requires link encryption (SSP Mode 4) for wireless iAP2 RFCOMM access.
-            runCatching { authenticateAndEncrypt(h, handle) }
-                .onFailure { UsbBtLog.warn(appContext, TAG, "authenticateAndEncrypt failed (non-fatal)", it) }
+            authenticateAndEncrypt(h, handle)
 
             // Check if peer already opened an inbound iAP2 stream on this ACL handle
             activeStreams[handle]?.let { existing ->
@@ -401,18 +407,15 @@ class UsbBtBluetoothAdapter(
             val targetUuid = runCatching { UUID.fromString(uuid) }.getOrNull()
             val uuidBytes = if (targetUuid != null) uuidBigEndian(targetUuid) else HciProtocol.IAP2_UUID_BYTES
             val sdp = SdpClient(l2cap, handle, uuidBytes)
-            val channel = when (val r = sdp.findIap2RfcommChannel()) {
+            val channel = try { when (val r = sdp.findIap2RfcommChannel()) {
                 is SdpClient.SdpResult.Ok -> {
                     UsbBtLog.log(appContext, TAG, "SDP: iAP2 RFCOMM channel=${r.value}")
                     r.value
                 }
                 is SdpClient.SdpResult.Failed -> {
-                    Log.w(TAG, "SDP failed (${r.reason}); falling back to channel $FALLBACK_IAP2_CHANNEL")
-                    UsbBtLog.warn(appContext, TAG, "SDP failed (${r.reason}); falling back to channel $FALLBACK_IAP2_CHANNEL")
-                    FALLBACK_IAP2_CHANNEL
+                    throw IOException("iAP2 service discovery failed: ${r.reason}")
                 }
-            }
-            sdp.close()
+            } } finally { sdp.close() }
 
             // 4) RFCOMM DLC to the channel. Reuse existing RFCOMM layer if established inbound
             val rfcomm = rfcommLayers[handle] ?: run {
@@ -511,7 +514,7 @@ class UsbBtBluetoothAdapter(
 
                 // Register inbound RFCOMM on PSM 3 so iPhone incoming connections succeed
                 l2cap.registerService(HciProtocol.L2CAP_PSM_RFCOMM) { channel ->
-                    val rfcomm = RfcommLayer(l2cap, channel)
+                    val rfcomm = RfcommLayer(l2cap, channel, initiator = false)
                     rfcommLayers[handle] = rfcomm
                     rfcomm.onDlcOpened = { dlc ->
                         Log.i(TAG, "Inbound RFCOMM DLC opened: ch=${dlc.serverChannel} dlci=${dlc.dlci} on handle=0x${handle.toString(16)}")
@@ -566,6 +569,7 @@ class UsbBtBluetoothAdapter(
         activeStreams.remove(handle)?.let { runCatching { it.close() } }
         l2capLayers.remove(handle)?.let { runCatching { it.close() } }
         encryptedHandles.remove(handle)
+        authenticationStatus[handle] = -1
         authLatches.remove(handle)?.countDown()
         encryptLatches.remove(handle)?.countDown()
         Log.i(TAG, "ACL down (peer disconnected): handle=0x${handle.toString(16)}")
@@ -573,15 +577,20 @@ class UsbBtBluetoothAdapter(
 
     private fun teardown(handle: Int) = releaseAclRef(handle)
 
-    private fun authenticateAndEncrypt(h: UsbBtHci, handle: Int, timeoutMs: Long = 3_000L) {
+    private fun authenticateAndEncrypt(h: UsbBtHci, handle: Int, timeoutMs: Long = 35_000L): Unit =
+        synchronized(authenticationLocks.getOrPut(handle) { Any() }) {
         if (encryptedHandles[handle] == true) return
+        authenticationStatus.remove(handle)
         val authLatch = CountDownLatch(1)
         authLatches[handle] = authLatch
         try {
             val authRes = h.sendCommand(OP_AUTHENTICATION_REQUESTED, encodeAuthenticationRequested(handle))
             UsbBtLog.log(appContext, TAG, "Authentication_Requested for handle=0x${handle.toString(16)}: $authRes")
             if (authRes is UsbBtHci.HciResult.Ok) {
-                authLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+                if (!authLatch.await(timeoutMs, TimeUnit.MILLISECONDS)) throw IOException("Bluetooth pairing confirmation timed out")
+                if (authenticationStatus[handle] != 0) throw IOException("Bluetooth authentication failed: ${authenticationStatus[handle]}")
+            } else {
+                throw IOException("Bluetooth authentication request failed: $authRes")
             }
         } finally {
             authLatches.remove(handle)
@@ -595,8 +604,9 @@ class UsbBtBluetoothAdapter(
             val encRes = h.sendCommand(OP_SET_CONNECTION_ENCRYPTION, encodeSetConnectionEncryption(handle, true))
             UsbBtLog.log(appContext, TAG, "Set_Connection_Encryption for handle=0x${handle.toString(16)}: $encRes")
             if (encRes is UsbBtHci.HciResult.Ok) {
-                encryptLatch.await(2_000L, TimeUnit.MILLISECONDS)
+                encryptLatch.await(5_000L, TimeUnit.MILLISECONDS)
             }
+            if (encryptedHandles[handle] != true) throw IOException("Bluetooth link encryption was not established")
         } finally {
             encryptLatches.remove(handle)
         }
@@ -651,7 +661,7 @@ class UsbBtBluetoothAdapter(
 
                                 // Proactively authenticate and encrypt inbound connection if not already encrypted.
                                 // Otherwise iOS expects security establishment and disconnects with reason 0x13 after 17s.
-                                if (!cc.encryptionEnabled) {
+                                if (!cc.encryptionEnabled && pendingAcl[key] == null) {
                                     Thread({
                                         runCatching {
                                             authenticateAndEncrypt(h, cc.handle)
@@ -682,12 +692,11 @@ class UsbBtBluetoothAdapter(
                             val msg = "HCI authentication complete for handle=0x${handle.toString(16)} status=0x${status.toString(16)}"
                             Log.i(TAG, msg)
                             UsbBtLog.log(appContext, TAG, msg)
-                            authLatches[handle]?.countDown()
-                            // Automatically enable link encryption once authentication succeeds
-                            if (status == 0 && encryptedHandles[handle] != true) {
-                                runCatching {
-                                    h.sendCommand(OP_SET_CONNECTION_ENCRYPTION, encodeSetConnectionEncryption(handle, true))
-                                }
+                            // A peer-initiated SSP exchange can already be in progress.
+                            // Command Disallowed is not its final authentication result.
+                            if (status != 0x0c) {
+                                authenticationStatus[handle] = status
+                                authLatches[handle]?.countDown()
                             }
                         }
                     }

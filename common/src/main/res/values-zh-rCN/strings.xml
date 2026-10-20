@@ -761,4 +761,8 @@
     <string name="settings_usb_bluetooth_running">运行中 · 本地 MAC: %1$s · 广播名称: %2$s</string>
     <string name="settings_usb_bluetooth_self_test">自检外置蓝牙硬件与通讯</string>
     <string name="settings_usb_bluetooth_testing">正在自检外置蓝牙…</string>
+    <string name="settings_usb_pairing_title">确认蓝牙配对</string>
+    <string name="settings_usb_pairing_message">收到 %1$s 的蓝牙配对请求。\n请确认以下数字与 iPhone 上显示的一致：</string>
+    <string name="settings_usb_pairing_countdown">将在 %1$d 秒后自动确认</string>
+    <string name="settings_usb_bluetooth_diagnostic_description">外置蓝牙诊断：检查适配器权限和 HCI 硬件，结束后恢复无线服务。检测前请先断开 CarPlay。硬件正常不代表 iPhone 配对和 CarPlay 已连接；连接失败后请保存报告。</string>
 </resources>

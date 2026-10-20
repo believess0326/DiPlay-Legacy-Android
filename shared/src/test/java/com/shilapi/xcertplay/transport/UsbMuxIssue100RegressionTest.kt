@@ -29,6 +29,41 @@ import org.robolectric.util.ReflectionHelpers.ClassParameter
 class UsbMuxIssue100RegressionTest {
     @Before fun resetReplay() { UsbEvidenceReplay.reset() }
 
+    @Test fun detachedPipeNeverReleasesItsInterface() {
+        val session = pipe()
+        session.markAborted()
+        session.close()
+        session.close()
+        assertEquals(0, UsbEvidenceReplay.interfaceReleases)
+    }
+
+    @Test fun ordinaryPipeReleasesItsInterfaceOnce() {
+        val session = pipe()
+        session.close()
+        session.close()
+        assertEquals(1, UsbEvidenceReplay.interfaceReleases)
+    }
+
+    @Test fun pipeCloseWaitsForInFlightReadBeforeReleasingInterface() {
+        val session = pipe()
+        val lock = ReflectionHelpers.getField<Any>(session, "readLock")
+        val started = java.util.concurrent.CountDownLatch(1)
+        lateinit var closing: java.util.concurrent.FutureTask<Unit>
+        synchronized(lock) {
+            closing = java.util.concurrent.FutureTask {
+                started.countDown()
+                session.close()
+            }
+            Thread(closing).start()
+            assertTrue(started.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            // The close thread is blocked by the read's monitor.
+            assertEquals(0, UsbEvidenceReplay.interfaceReleases)
+            org.junit.Assert.assertFalse(closing.isDone)
+        }
+        closing.get(2, java.util.concurrent.TimeUnit.SECONDS)
+        assertEquals(1, UsbEvidenceReplay.interfaceReleases)
+    }
+
     @Test fun fullHostHandshakeAndReaderAcceptBothCapturedPaddingReplies() {
         UsbEvidenceReplay.transfers.add(versionReplyWithPadding)
         UsbEvidenceReplay.transfers.add(capturedSynAckWithPadding)
@@ -307,15 +342,20 @@ object UsbEvidenceReplay {
     var cancelReturns = true
     var completedReads = 0
     var timedOutReads = 0
+    var interfaceReleases = 0
     fun reset() {
         transfers.clear(); writes.clear()
         request = null; buffer = null; cancelled = false; cancelReturns = true; completedReads = 0; timedOutReads = 0
+        interfaceReleases = 0
     }
 }
 
 @Implements(UsbDeviceConnection::class)
 class EvidenceUsbConnectionShadow {
-    @Implementation fun releaseInterface(usbInterface: android.hardware.usb.UsbInterface) = true
+    @Implementation fun releaseInterface(usbInterface: android.hardware.usb.UsbInterface): Boolean {
+        UsbEvidenceReplay.interfaceReleases++
+        return true
+    }
     @Implementation fun bulkTransfer(endpoint: UsbEndpoint, buffer: ByteArray,
         offset: Int, length: Int, timeoutMillis: Int): Int {
         UsbEvidenceReplay.writes.add(buffer.copyOfRange(offset, offset + length))
