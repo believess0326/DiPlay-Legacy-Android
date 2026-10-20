@@ -3,7 +3,7 @@
     "name": "English",
     "dir": "ltr",
     "tag": "Legacy Android compatibility edition (Android 4.2+)",
-    "badge": "v0.2.79 RELEASE",
+    "badge": "v0.2.80 RELEASE",
     "title": "Your iPhone.\nCarPlay for legacy Android head units.",
     "intro": "DiPlay Legacy brings wired and wireless CarPlay to older Android head units (Android 4.2 / API 17+), with native multi-architecture support (ARMv7, x86, ARM64).",
     "download": "Download APK",
@@ -25,11 +25,10 @@
     ],
     "adb": "Installation & connection help",
     "bssid": "ADB is not required for everyday use. APK installation options depend on the car. No manual MAC address entry.",
-    "whats": "New in v0.2.79",
+    "whats": "New in v0.2.80",
     "features": [
-      "External USB Bluetooth (CM390/Actions/Realtek) iPhone discovery & EIR broadcast fix: add 16-bit audio service UUIDs (Tag 2: 0x111E Handsfree + 0x1203 Generic Audio) to EIR to prevent iOS Bluetooth Settings filter from hiding the adapter; configure HCI inquiry/page scan activity (1.28s interval, 40ms window) for responsive scan matching; eliminate 5.12s paging timeout to unrelated native Bluetooth devices on initial pairing; align broadcast local name with UI display; auto-restore advertising after hardware self-test (#246).",
-      "Direct straight-angle display & margin elimination: adjust AirPlay viewport safeArea declarations to eliminate corner rounding and black borders on custom vehicle screens.",
-      "Legacy system version guard (realSdkInt): unify version checks across audio sinks, location provider, crypto suites, and hotspot monitors using realSdkInt to prevent misreported Android OS versions on Allwinner T3 from triggering NoSuchMethod exceptions."
+      "External USB Bluetooth (CM390/Actions/Realtek) pairing authentication & self-test recovery: treat OP_AUTHENTICATION_REQUESTED and OP_SET_CONNECTION_ENCRYPTION as async link commands in HciEventDispatcher to resolve pairing authentication timeouts on iPhone connections; safely disable and re-enable USB dongle across hardware self-test; optimize Inquiry Scan duty cycle to 25% (640ms interval, 160ms window) and Page Scan to 80ms window with standard scan fallback for older chips.",
+      "Wired NCM USB reconnect hang & system freeze prevention: implement fast abort (markAborted) across NCM USB bridge, clear TX queue, and abort in-flight bulk transfers upon detach; keep controller waiting for iPhone on wired detach without tearing down the entire host session, eliminating vehicle ANR and kernel deadlocks on legacy Allwinner T3 head units."
     ],
     "compat": "Before you try it",
     "compatText": "Refactored and maintained for legacy head units. Install over an existing version only when the package and signing certificate match. Upstream or Debug-signed versions may require reinstalling; save your settings and reports first.",
@@ -240,7 +239,7 @@
     "name": "简体中文",
     "dir": "ltr",
     "tag": "深度兼容老款车机版本 (Android 4.2+)",
-    "badge": "v0.2.79 发布版",
+    "badge": "v0.2.80 发布版",
     "title": "你的 iPhone。\n老款安卓车机的 CarPlay 方案。",
     "intro": "DiPlay Legacy 专为老款 Android 车机（最低支持 Android 4.2 / API 17）深度优化，提供有线与无线 CarPlay 互联体验，支持 ARMv7、x86、ARM64 等多种硬件芯片架构。",
     "download": "下载 APK",
@@ -262,11 +261,10 @@
     ],
     "adb": "安装与连接指南",
     "bssid": "日常使用不需要 ADB。APK 安装方式取决于车机。无需手动输入 MAC 地址。",
-    "whats": "v0.2.79 更新亮点",
+    "whats": "v0.2.80 更新亮点",
     "features": [
-      "CM390 外置 USB 蓝牙 iPhone 搜索不可见修复：在 EIR 广播补充 16-bit 经典音频服务 UUID（Tag 2: 0x111E 与 0x1203），解决 iOS“设置 → 蓝牙”过滤隐藏该设备的问题；优化 Inquiry/Page 射频扫描参数至 1.28s 周期与 40ms 窗口提升发现命中率；空配对时避免向车机原生旧蓝牙设备死循环寻呼超时阻塞广播；统一广播设备名并支持自检后自动恢复广播（#246）。",
-      "直角画面显示与黑边消除：优化 AirPlay 视图协议层 safeArea 声明，移除无裁切要求下的边距约束，呈现无黑边直角全屏显示。",
-      "全志 T3 及老旧车机系统版本兼容（realSdkInt）：统一全模块系统版本校验至 realSdkInt 底层真实版本，防止部分定制 ROM 虚报版本误调高版本 API 引发崩溃。"
+      "CM390 / Actions / Realtek 外置蓝牙配对认证与状态自愈：HCI 事件调度器将 OP_AUTHENTICATION_REQUESTED 与 OP_SET_CONNECTION_ENCRYPTION 纳入异步链路指令追踪，彻底解决 iPhone 连接外置蓝牙在配对认证阶段超时失败问题；完善自检前后的 Dongle 启停状态管理并自动恢复无线广播；提升射频扫描占空比（Inquiry 25% / Page 80ms）并在老旧蓝牙芯片上平滑回退至 Standard 标准扫描。",
+      "有线模式拔插重连阻塞与车机死机消除：拔出 USB 数据线或有线链路断开时，通过 markAborted 快速中止 NCM 底层异步 bulk transfer 与清理发送队列，杜绝线程死锁导致车机卡死或看门狗重启；在等待 iPhone 重新插入时不触发全量重建，保持平稳监听重连。"
     ],
     "compat": "试用前请了解",
     "compatText": "本项目基于开源项目 xcertplay / DiPlay 深度重构与兼容，内置离线认证材料。同包名、同签名版本可覆盖升级；签名不同的上游或 Debug 版本可能需要重新安装，请先保存设置与诊断报告。老旧车机建议先使用 30 fps 并关闭 HEVC。",

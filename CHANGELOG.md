@@ -1,3 +1,10 @@
+# DiPlay 0.2.80 — 2026-10-20
+
+- External USB Bluetooth (CM390/Actions/Realtek) pairing authentication & self-test recovery: treat OP_AUTHENTICATION_REQUESTED and OP_SET_CONNECTION_ENCRYPTION as async link commands in HciEventDispatcher to resolve pairing authentication timeouts on iPhone connections; safely disable and re-enable USB dongle across hardware self-test; optimize Inquiry Scan duty cycle to 25% (640ms interval, 160ms window) and Page Scan to 80ms window with standard scan fallback for older chips.
+- Wired NCM USB reconnect hang & system freeze prevention: implement fast abort (markAborted) across NCM USB bridge, clear TX queue, and abort in-flight bulk transfers upon detach; keep controller waiting for iPhone on wired detach without tearing down the entire host session, eliminating vehicle ANR and kernel deadlocks on legacy Allwinner T3 head units.
+
+See [v0.2.80 release notes](docs/RELEASE-NOTES-0.2.80.md) for validation and device-testing limits.
+
 # DiPlay 0.2.79 — 2026-10-19
 
 - External USB Bluetooth (CM390/Actions/Realtek) iPhone discovery & EIR broadcast fix: add 16-bit audio service UUIDs (Tag 2: 0x111E Handsfree + 0x1203 Generic Audio) to Extended Inquiry Response (EIR) to prevent iOS Bluetooth Settings filter from hiding the adapter; configure HCI inquiry/page scan activity (1.28s interval, 40ms window) for responsive scan matching; avoid continuous 5.12s paging timeout to unrelated native Bluetooth devices on initial pairing; align broadcast local name with UI display; auto-restore advertising after hardware self-test (#246).
