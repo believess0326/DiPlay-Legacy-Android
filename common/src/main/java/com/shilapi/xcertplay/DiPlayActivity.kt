@@ -1561,10 +1561,34 @@ class DiPlayActivity : ComponentActivity() {
                 AirPlayPersistence.saveMainBufferedAudio(this, it)
                 reconnectIfRunning()
             }
-            toggle(card, getString(R.string.settings_car_bluetooth_audio), getString(R.string.settings_car_bluetooth_audio_description),
-                AirPlayPersistence.loadCarBluetoothAudio(this)) {
-                AirPlayPersistence.saveCarBluetoothAudio(this, it)
-                reconnectIfRunning()
+            var carBluetoothAudioSwitch: android.widget.Switch? = null
+            var carBluetoothAudioGuard = false
+            carBluetoothAudioSwitch = toggle(card, getString(R.string.settings_car_bluetooth_audio), getString(R.string.settings_car_bluetooth_audio_description),
+                AirPlayPersistence.loadCarBluetoothAudio(this)) { enabled ->
+                if (carBluetoothAudioGuard) return@toggle
+                if (enabled && usbBluetoothDonglePresent()) {
+                    // The USB dongle has no A2DP sink: with a dongle (the usual sign the car's own
+                    // Bluetooth cannot play audio) this feature would leave the driver with no sound
+                    // at all. Revert the switch and warn first; enable only on explicit confirm.
+                    carBluetoothAudioGuard = true
+                    carBluetoothAudioSwitch?.isChecked = false
+                    carBluetoothAudioGuard = false
+                    AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.settings_car_bluetooth_audio))
+                        .setMessage(getString(R.string.settings_car_bluetooth_audio_dongle_warning))
+                        .setPositiveButton(getString(R.string.settings_car_bluetooth_audio_enable_anyway)) { _, _ ->
+                            AirPlayPersistence.saveCarBluetoothAudio(this, true)
+                            carBluetoothAudioGuard = true
+                            carBluetoothAudioSwitch?.isChecked = true
+                            carBluetoothAudioGuard = false
+                            reconnectIfRunning()
+                        }
+                        .setNegativeButton(getString(R.string.cancel), null)
+                        .show()
+                } else {
+                    AirPlayPersistence.saveCarBluetoothAudio(this, enabled)
+                    reconnectIfRunning()
+                }
             }
         }
         filteredSection(content, SettingsSection.CAR_BUTTON,
@@ -4362,6 +4386,12 @@ class DiPlayActivity : ComponentActivity() {
 
         refreshCard()
     }
+
+    /** True when a USB Bluetooth dongle is plugged in; used to warn before audio is routed away. */
+    private fun usbBluetoothDonglePresent(): Boolean = runCatching {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
+        UsbBtDongleDetector(applicationContext).findDongles(usbManager).isNotEmpty()
+    }.getOrDefault(false)
 
     private fun runUsbBtSelfTest(resultLabel: TextView, onComplete: () -> Unit) {
         resultLabel.text = getString(R.string.settings_usb_bluetooth_testing)

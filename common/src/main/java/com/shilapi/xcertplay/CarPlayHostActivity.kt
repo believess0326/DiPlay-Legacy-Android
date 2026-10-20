@@ -3873,6 +3873,18 @@ class CarPlayHostActivity : ComponentActivity() {
         appendLog(effectiveSummary)
         if (AirPlayPersistence.loadCarBluetoothAudio(this)) {
             appendLog("Car Bluetooth audio: on; CarPlay audio not offered")
+            // The USB dongle stack has no A2DP sink: if a dongle is plugged in, audio can only
+            // play when the iPhone is also paired with the car's own Bluetooth. Flag it in the
+            // log so "no sound at all" reports are diagnosable.
+            val donglePresent = runCatching {
+                (getSystemService(Context.USB_SERVICE) as? UsbManager)?.let { usbManager ->
+                    com.shilapi.xcertplay.usbbt.UsbBtDongleDetector(applicationContext)
+                        .findDongles(usbManager).isNotEmpty()
+                } ?: false
+            }.getOrDefault(false)
+            if (donglePresent) {
+                appendLog("Car Bluetooth audio: WARNING USB Bluetooth dongle present; the dongle cannot play audio, sound needs the car's own Bluetooth")
+            }
         }
         return AirPlayConfig(
             deviceName = "DiPlay",
