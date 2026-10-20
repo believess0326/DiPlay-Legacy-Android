@@ -53,6 +53,10 @@ class IphoneUsbMatcher private constructor(
 
         /** Discovers every Apple device, matching only the vendor ID confirmed by LIVI. */
         fun appleVendor(): IphoneUsbMatcher = IphoneUsbMatcher(null, allowAnyAppleProduct = true)
+
+        /** Issue #256: claim retry budget for head units whose kernel settles slowly. */
+        private const val USB_CLAIM_MAX_ATTEMPTS = 4
+        private const val USB_CLAIM_RETRY_DELAY_MILLIS = 400L
     }
 }
 
@@ -357,7 +361,7 @@ class IphoneUsbHost(
                     "out=0x${endpoints.first.address.toString(16)} " +
                     "in=0x${endpoints.second.address.toString(16)}",
             )
-            val muxClaim = LegacyUsbHostCompat.claim(connection, usbMux)
+            val muxClaim = claimUsbMuxWithRetry(connection, usbMux)
             val activeAfterClaim = LegacyUsbHostCompat.activeConfiguration(connection)
             diagnosticLog(
                 "usb mux claim iface=${usbMux.id} ok=${muxClaim.claimed} errno=${muxClaim.errno} " +
@@ -391,6 +395,31 @@ class IphoneUsbHost(
     private fun diagnosticLog(message: String) {
         Log.i(IphoneCarPlayConfiguration.TAG, message)
         runCatching { onDiagnostic(message) }
+    }
+
+    /**
+     * Issue #256: on some head units (e.g. Hyundai Festa / Telechips) the first claim of the
+     * USBMUX interface right after configuration selection fails with usbfs ENOENT/EBUSY
+     * because the kernel is still settling the new configuration. Retry a few times with a
+     * short delay before giving up; a plain retry later in the same attempt succeeds there.
+     */
+    private fun claimUsbMuxWithRetry(
+        connection: UsbDeviceConnection,
+        usbMux: UsbInterface,
+    ): LegacyUsbHostCompat.ClaimResult {
+        var result = LegacyUsbHostCompat.claim(connection, usbMux)
+        var attempt = 1
+        while (!result.claimed && attempt < USB_CLAIM_MAX_ATTEMPTS) {
+            attempt++
+            diagnosticLog("usb mux claim retry attempt=$attempt iface=${usbMux.id}")
+            try {
+                Thread.sleep(USB_CLAIM_RETRY_DELAY_MILLIS)
+            } catch (_: InterruptedException) {
+                break
+            }
+            result = LegacyUsbHostCompat.claim(connection, usbMux)
+        }
+        return result
     }
 
     private fun requireConfiguredDevice(device: UsbDevice) {

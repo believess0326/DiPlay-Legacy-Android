@@ -564,6 +564,10 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             appendLog(if (existing === surface) "Texture surface reused" else "Texture surface created")
             attachSurface(surface)
+            // Like the SurfaceView path: after a surface rebuild (e.g. the reverse camera took
+            // the display and gave it back, #250/#214) a still CarPlay screen sends no frames,
+            // so ask for one or the screen stays black even though audio keeps playing.
+            sink?.refreshPicture(SCREEN_TYPE_MAIN)
             updateVideoLayout(width, height)
             scheduleDisplaySize(width, height)
         }
