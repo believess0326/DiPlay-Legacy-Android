@@ -74,6 +74,28 @@ class Ipv6NcmBridge(
     private var mdnsAnswerLogBudget = 6
     /** Issue #152: keep unmatched wired mDNS query names visible without spamming. */
     private var unmatchedMdnsLogBudget = 6
+
+    // Issue #262 diagnostics: same counters as the lwIP bridge — separate "responder built
+    // an answer" from "the answer actually went out on USB" (this bridge sends synchronously,
+    // so a send exception counts as dropped).
+    private val mdnsAnswerCalls = AtomicInteger(0)
+    private val mdnsAnsweredQueries = AtomicInteger(0)
+    private val mdnsTxSent = AtomicInteger(0)
+    private val mdnsTxDropped = AtomicInteger(0)
+    private val mdnsUnmatchedQueries = AtomicInteger(0)
+
+    private fun mdnsDiagSummary(): String =
+        "ncm mdns diag calls=${mdnsAnswerCalls.get()} answered=${mdnsAnsweredQueries.get()} " +
+            "txSent=${mdnsTxSent.get()} txDropped=${mdnsTxDropped.get()} unmatched=${mdnsUnmatchedQueries.get()}"
+
+    private fun maybeLogMdnsDiag() {
+        val events = mdnsAnsweredQueries.get() + mdnsUnmatchedQueries.get()
+        if (events > 0 && events % MDNS_DIAG_LOG_EVERY == 0) {
+            val msg = mdnsDiagSummary()
+            Log.i(TAG, msg)
+            runCatching { onDebugLog(msg) }
+        }
+    }
     /**
      * Issue #155/#123: the iPhone's TCP SYNs reach the NCM bridge but the kernel never
      * answers on some 4.4 kernels. Count TCP packets written into the TUN so a later
@@ -108,6 +130,12 @@ class Ipv6NcmBridge(
 
     override fun close() {
         if (!running.compareAndSet(true, false)) return
+        // Final mDNS tally for the report (#262): survives even when nothing else logged.
+        if (mdnsAnswerCalls.get() > 0 || mdnsUnmatchedQueries.get() > 0) {
+            val msg = mdnsDiagSummary()
+            Log.i(TAG, msg)
+            runCatching { onDebugLog(msg) }
+        }
         ncm.close()
         // Issue #168: do NOT close the TUN here. Its lifecycle belongs to
         // CarPlayVpnService, which deliberately keeps it open across wired
@@ -175,31 +203,51 @@ class Ipv6NcmBridge(
                 // answers it usefully, and a duplicate multicast reply would only
                 // confuse the iPhone's resolver.
                 val responder = mdnsResponder
+                if (responder != null) mdnsAnswerCalls.incrementAndGet()
                 val mdnsAnswers = responder?.answerFrames(
                     frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
                 ) ?: emptyList()
                 if (mdnsAnswers.isNotEmpty()) {
+                    mdnsAnsweredQueries.incrementAndGet()
                     // Issue #163: a non-QU query also gets a multicast copy, so the
                     // iPhone sees the answer even if it ignores unicast replies.
+                    var sent = 0
                     for (mdnsAnswer in mdnsAnswers) {
-                        ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                        try {
+                            ncm.send(mdnsAnswer, WRITE_TIMEOUT_MILLIS)
+                            mdnsTxSent.incrementAndGet()
+                            sent++
+                        } catch (error: Exception) {
+                            mdnsTxDropped.incrementAndGet()
+                            Log.w(TAG, "ncm mdns answer send failed: ${error.message}")
+                        }
+                    }
+                    if (sent < mdnsAnswers.size) {
+                        runCatching {
+                            onDebugLog("ncm mdns answer TX dropped sent=$sent of=${mdnsAnswers.size} " + mdnsDiagSummary())
+                        }
                     }
                     if (mdnsAnswerLogBudget > 0) {
                         mdnsAnswerLogBudget--
                         val answerMsg = "WIRED-CHAIN [15/16] mDNS _airplay query answered frames=${mdnsAnswers.size} " +
-                            "bytes=${mdnsAnswers.sumOf { it.size }}"
+                            "bytes=${mdnsAnswers.sumOf { it.size }} sent=$sent"
                         Log.i(TAG, answerMsg)
                         runCatching { onDebugLog(answerMsg) }
                     }
+                    maybeLogMdnsDiag()
                     continue
                 }
                 // Issue #152: when no answer matched, record what the iPhone actually
                 // asked for so the next report shows the real query names.
-                if (responder != null && unmatchedMdnsLogBudget > 0) {
+                if (responder != null) {
                     val queryName = responder.unmatchedQueryName(frame, ipv6.payloadOffset, ipv6.payloadLength)
                     if (queryName != null) {
-                        unmatchedMdnsLogBudget--
-                        runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
+                        mdnsUnmatchedQueries.incrementAndGet()
+                        if (unmatchedMdnsLogBudget > 0) {
+                            unmatchedMdnsLogBudget--
+                            runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
+                        }
+                        maybeLogMdnsDiag()
                     }
                 }
 
@@ -456,6 +504,8 @@ class Ipv6NcmBridge(
         const val ZERO_READ_BACKOFF_NANOS = 1_000_000L
         const val JOIN_TIMEOUT_MILLIS = 2_000L
         const val NA_RETRY_INTERVAL_NANOS = 500_000_000L
+        /** Emit the mDNS diagnostic summary after every N answered/unmatched queries (#262). */
+        const val MDNS_DIAG_LOG_EVERY = 5
     }
 }
 
