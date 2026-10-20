@@ -133,7 +133,7 @@ static err_t ncm_linkoutput(struct netif *netif, struct pbuf *p) {
             (*env)->ReleaseByteArrayElements(env, jframe, buf, 0);
 
             LOGI("ncm_linkoutput sending frame len=%d proto=0x%02x%02x next=0x%02x", 
-                 total_len, (unsigned char)header[12], (unsigned char)header[13], 
+                 total_len, (unsigned char)header[12], (unsigned char)header[13],
                  total_len >= 21 ? (unsigned char)header[20] : 0);
             (*env)->CallVoidMethod(env, ctx->bridge_obj_global, ctx->on_tx_frame_mid, jframe);
         }
@@ -173,7 +173,9 @@ static void close_tcp_relay_conn(LwipContext *ctx, TcpRelayConn *conn) {
         tcp_sent(conn->lwip_pcb, NULL);
         tcp_err(conn->lwip_pcb, NULL);
         tcp_poll(conn->lwip_pcb, NULL, 0);
-        tcp_close(conn->lwip_pcb);
+        // The local relay has ended. Do not leave a closing PCB referencing
+        // an obsolete USB session or consuming the global PCB pool on retry.
+        tcp_abort(conn->lwip_pcb);
         conn->lwip_pcb = NULL;
     }
     conn->loopback_to_lwip_len = 0;
@@ -292,6 +294,7 @@ static err_t tcp_relay_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
 }
 
 static err_t tcp_relay_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
+    (void)tpcb;
     (void)err;
     TcpRelayConn *conn = (TcpRelayConn *)arg;
     if (conn == NULL || !conn->active) {
