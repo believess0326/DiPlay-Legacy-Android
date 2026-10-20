@@ -330,6 +330,11 @@ class AdaptiveSettingsUiTest {
         }
         fun text(id: Int) = screen.getString(id)
 
+        val connection = visibleIn(R.string.connection)
+        val diagnostics = visibleIn(R.string.diagnostics)
+        assertFalse(text(R.string.settings_bluetooth_diagnostic) in connection)
+        assertFalse(text(R.string.settings_usb_bluetooth_self_test) in connection)
+        assertEquals(1, diagnostics.count { it == text(R.string.settings_bluetooth_diagnostic) })
         val display = visibleIn(R.string.settings_display)
         val audio = visibleIn(R.string.audio)
         val vehicle = visibleIn(R.string.settings_vehicle)

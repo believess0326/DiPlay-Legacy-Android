@@ -4322,12 +4322,6 @@ class DiPlayActivity : ComponentActivity() {
         }
         card.addView(actionLayout)
 
-        fun addDiagnosticAction() {
-            actionLayout.addView(button(getString(R.string.settings_bluetooth_diagnostic), false) {
-                openBluetoothDiagnostics()
-            }, matchButton(8, 60))
-        }
-
         fun refreshCard() {
             if (isFinishing || isDestroyed) return
             actionLayout.removeAllViews()
@@ -4340,7 +4334,6 @@ class DiPlayActivity : ComponentActivity() {
 
             if (!isSupported || dev == null) {
                 statusLabel.text = getString(R.string.settings_usb_bluetooth_not_detected)
-                addDiagnosticAction()
                 return
             }
 
@@ -4392,7 +4385,6 @@ class DiPlayActivity : ComponentActivity() {
                 }
             }
 
-            addDiagnosticAction()
         }
 
         refreshCard()
