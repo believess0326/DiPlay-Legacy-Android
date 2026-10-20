@@ -1,3 +1,14 @@
+# DiPlay 0.2.81 — 2026-10-20
+
+- Car Bluetooth audio bypass mode (#261): add option to withhold CarPlay audio declaration so audio, navigation, and telephony route entirely through the iPhone's Bluetooth connection with the vehicle; add detection warning when an external USB Bluetooth dongle is connected without A2DP capability.
+- Call microphone compatibility mode & WeChat silent call fix: add toggle for call microphone compatibility (auto-enabled on Allwinner/custom ROMs) switching telephony uplink from VOICE_COMMUNICATION to standard MIC; refine silence detection threshold and automatically persist compatibility mode upon detecting continuous silence.
+- Asynchronous video decrypt pipeline & nonce alignment (#249): decouple ChaCha20 frame decryption into a dedicated worker thread with reception-time nonce binding to prevent cipher desynchronization and consecutive auth failure crashes under buffer pressure.
+- Reverse camera return display refresh (#250): request picture refresh (refreshPicture) upon TextureView surface reconstruction to eliminate black screens after reversing.
+- USBMUX interface claim retry on slow kernels (#256) & USB Bluetooth background pairing auto-confirm fallback.
+- Wired mDNS diagnostics (#262): distinguish responder calls, answered queries, transmitted/enqueued frames, dropped frames and unmatched query names.
+
+See [v0.2.81 release notes](docs/RELEASE-NOTES-0.2.81.md) for validation and device-testing limits.
+
 # DiPlay 0.2.80 — 2026-10-20
 
 - External USB Bluetooth (CM390/Actions/Realtek) pairing authentication & self-test recovery: treat OP_AUTHENTICATION_REQUESTED and OP_SET_CONNECTION_ENCRYPTION as async link commands in HciEventDispatcher to resolve pairing authentication timeouts on iPhone connections; safely disable and re-enable USB dongle across hardware self-test; optimize Inquiry Scan duty cycle to 25% (640ms interval, 160ms window) and Page Scan to 80ms window with standard scan fallback for older chips.
