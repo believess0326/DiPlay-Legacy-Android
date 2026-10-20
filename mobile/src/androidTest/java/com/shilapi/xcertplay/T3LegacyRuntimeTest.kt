@@ -349,6 +349,13 @@ class T3LegacyRuntimeTest {
         native.destroy()
     }
 
+    @Test fun lwipUserspaceRepeatedSessionRecreationPreservesTcpAndUdpTimers() {
+        repeat(3) {
+            lwipUserspaceFullPipelineUdpRelay()
+            lwipUserspaceFullPipelineTcpRelay()
+        }
+    }
+
     @Test fun lwipUserspaceFullPipelineTcpRelay() {
         val hostMac = byteArrayOf(0x02, 0x00, 0x00, 0x00, 0x00, 0x02)
         val iphoneMac = byteArrayOf(0x02, 0x00, 0x00, 0x00, 0x00, 0x01)

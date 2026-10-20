@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -30,12 +31,20 @@
 #define MAX_UDP_RELAYS 32
 #define BUFFER_SIZE 16384
 
+// NO_SYS lwIP owns process-global heaps, PCB lists and cyclic timers.
+// Reinitializing those globals for another USB session corrupts next_timeout.
+static pthread_once_t lwip_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t lwip_core_lock = PTHREAD_MUTEX_INITIALIZER;
+static void initialize_lwip_once(void) { lwip_init(); }
+
 typedef struct {
     int active;
     struct tcp_pcb *lwip_pcb;
     int loopback_fd;
     uint8_t loopback_to_lwip_buf[BUFFER_SIZE];
     int loopback_to_lwip_len;
+    uint8_t lwip_to_loopback_buf[BUFFER_SIZE];
+    int lwip_to_loopback_len;
 } TcpRelayConn;
 
 typedef struct {
@@ -74,9 +83,8 @@ typedef struct {
     TcpRelayConn tcp_conns[MAX_RELAY_CONNS];
     UdpRelay udp_relays[MAX_UDP_RELAYS];
 
-    pthread_mutex_t lock;
     pthread_t thread;
-    int running;
+    atomic_int running;
     int wake_pipe[2];
 
     uint32_t stats_rx_frames;
@@ -120,11 +128,13 @@ static err_t ncm_linkoutput(struct netif *netif, struct pbuf *p) {
         jbyte *buf = (*env)->GetByteArrayElements(env, jframe, NULL);
         if (buf != NULL) {
             pbuf_copy_partial(p, buf, total_len, 0);
+            uint8_t header[21] = {0};
+            memcpy(header, buf, total_len < 21 ? (size_t)total_len : sizeof(header));
             (*env)->ReleaseByteArrayElements(env, jframe, buf, 0);
 
             LOGI("ncm_linkoutput sending frame len=%d proto=0x%02x%02x next=0x%02x", 
-                 total_len, (unsigned char)buf[12], (unsigned char)buf[13], 
-                 total_len >= 21 ? (unsigned char)buf[20] : 0);
+                 total_len, (unsigned char)header[12], (unsigned char)header[13], 
+                 total_len >= 21 ? (unsigned char)header[20] : 0);
             (*env)->CallVoidMethod(env, ctx->bridge_obj_global, ctx->on_tx_frame_mid, jframe);
         }
         (*env)->DeleteLocalRef(env, jframe);
@@ -167,6 +177,7 @@ static void close_tcp_relay_conn(LwipContext *ctx, TcpRelayConn *conn) {
         conn->lwip_pcb = NULL;
     }
     conn->loopback_to_lwip_len = 0;
+    conn->lwip_to_loopback_len = 0;
 }
 
 static void close_udp_relay(LwipContext *ctx, UdpRelay *relay) {
@@ -296,31 +307,11 @@ static err_t tcp_relay_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err
         return ERR_OK;
     }
 
-    // Forward received data from lwIP PCB to loopback_fd
-    struct pbuf *q = p;
-    while (q != NULL) {
-        const uint8_t *data = (const uint8_t *)q->payload;
-        int remaining = q->len;
-        while (remaining > 0 && conn->loopback_fd >= 0) {
-            ssize_t n = write(conn->loopback_fd, data, remaining);
-            if (n > 0) {
-                remaining -= n;
-                data += n;
-            } else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                struct timeval tv = { .tv_sec = 0, .tv_usec = 10000 };
-                fd_set wfds;
-                FD_ZERO(&wfds);
-                FD_SET(conn->loopback_fd, &wfds);
-                select(conn->loopback_fd + 1, NULL, &wfds, NULL, &tv);
-            } else {
-                LOGW("loopback_fd write error %d", errno);
-                break;
-            }
-        }
-        q = q->next;
-    }
-
-    tcp_recved(tpcb, p->tot_len);
+    // Never wait for a slow local reader while holding the global NO_SYS core
+    // lock. Keep bounded data and let the worker forward it nonblockingly.
+    if (p->tot_len > BUFFER_SIZE - conn->lwip_to_loopback_len) return ERR_MEM;
+    pbuf_copy_partial(p, conn->lwip_to_loopback_buf + conn->lwip_to_loopback_len, p->tot_len, 0);
+    conn->lwip_to_loopback_len += p->tot_len;
     pbuf_free(p);
     return ERR_OK;
 }
@@ -372,6 +363,7 @@ static err_t tcp_relay_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
     conn->lwip_pcb = newpcb;
     conn->loopback_fd = fd;
     conn->loopback_to_lwip_len = 0;
+    conn->lwip_to_loopback_len = 0;
     ctx->stats_tcp_conns_accepted++;
 
     tcp_arg(newpcb, conn);
@@ -387,6 +379,24 @@ static void check_and_forward_loopback(LwipContext *ctx) {
         TcpRelayConn *conn = &ctx->tcp_conns[i];
         if (!conn->active || conn->loopback_fd < 0 || conn->lwip_pcb == NULL) continue;
 
+        while (conn->lwip_to_loopback_len > 0) {
+            ssize_t sent = send(conn->loopback_fd, conn->lwip_to_loopback_buf,
+                                (size_t)conn->lwip_to_loopback_len, MSG_NOSIGNAL);
+            if (sent > 0) {
+                conn->lwip_to_loopback_len -= (int)sent;
+                memmove(conn->lwip_to_loopback_buf, conn->lwip_to_loopback_buf + sent,
+                        (size_t)conn->lwip_to_loopback_len);
+                tcp_recved(conn->lwip_pcb, (u16_t)sent);
+            } else if (sent < 0 && errno == EINTR) {
+                continue;
+            } else if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                break;
+            } else {
+                close_tcp_relay_conn(ctx, conn);
+                break;
+            }
+        }
+        if (!conn->active) continue;
         flush_loopback_to_lwip(conn);
 
         int space = BUFFER_SIZE - conn->loopback_to_lwip_len;
@@ -553,7 +563,7 @@ static void *lwip_worker_thread(void *arg) {
     LOGI("lwIP worker thread started");
 
     while (ctx->running) {
-        pthread_mutex_lock(&ctx->lock);
+        pthread_mutex_lock(&lwip_core_lock);
 
         sys_check_timeouts();
         register_listeners_locked(ctx);
@@ -585,7 +595,7 @@ static void *lwip_worker_thread(void *arg) {
             }
         }
 
-        pthread_mutex_unlock(&ctx->lock);
+        pthread_mutex_unlock(&lwip_core_lock);
 
         struct timeval tv = { .tv_sec = 0, .tv_usec = 20000 };
         int sel = select(max_fd + 1, &rfds, NULL, NULL, &tv);
@@ -615,6 +625,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeCreate(
 
     LwipContext *ctx = (LwipContext *)calloc(1, sizeof(LwipContext));
     if (ctx == NULL) return 0;
+    atomic_init(&ctx->running, 0);
 
     (*env)->GetJavaVM(env, &ctx->jvm);
     ctx->bridge_obj_global = (*env)->NewGlobalRef(env, thiz);
@@ -635,12 +646,18 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeCreate(
     ip6addr_aton(ll_str, &ctx->host_ip6);
     (*env)->ReleaseStringUTFChars(env, linkLocalStr, ll_str);
 
-    pthread_mutex_init(&ctx->lock, NULL);
-    pipe(ctx->wake_pipe);
-    int flags = fcntl(ctx->wake_pipe[0], F_GETFL, 0);
-    fcntl(ctx->wake_pipe[0], F_SETFL, flags | O_NONBLOCK);
+    if (pipe(ctx->wake_pipe) != 0) {
+        (*env)->DeleteGlobalRef(env, ctx->bridge_obj_global);
+        free(ctx);
+        return 0;
+    }
+    for (int end = 0; end < 2; end++) {
+        int flags = fcntl(ctx->wake_pipe[end], F_GETFL, 0);
+        fcntl(ctx->wake_pipe[end], F_SETFL, flags | O_NONBLOCK);
+    }
 
-    lwip_init();
+    pthread_mutex_lock(&lwip_core_lock);
+    pthread_once(&lwip_once, initialize_lwip_once);
 
     netif_add_noaddr(&ctx->ncm_netif, ctx, ncm_netif_init, ethernet_input);
     netif_set_link_up(&ctx->ncm_netif);
@@ -658,6 +675,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeCreate(
         netif_ip6_addr_set_state(&ctx->ncm_netif, idx1, IP6_ADDR_VALID);
     }
 
+    pthread_mutex_unlock(&lwip_core_lock);
     ctx->running = 1;
     pthread_create(&ctx->thread, NULL, lwip_worker_thread, ctx);
 
@@ -677,10 +695,10 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
     // pbuf_alloc() -> mem_malloc() used to run outside the lock here while the
     // worker thread concurrently freed pbufs (mem_free) under the lock, which
     // corrupted the heap and later aborted the process in mem_free (SIGABRT).
-    pthread_mutex_lock(&ctx->lock);
+    pthread_mutex_lock(&lwip_core_lock);
     struct pbuf *p = pbuf_alloc(PBUF_RAW, (u16_t)length, PBUF_RAM);
     if (p == NULL) {
-        pthread_mutex_unlock(&ctx->lock);
+        pthread_mutex_unlock(&lwip_core_lock);
         LOGW("pbuf_alloc failed for length %d", length);
         return;
     }
@@ -715,7 +733,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
         ctx->stats_rx_drops++;
         pbuf_free(p);
     }
-    pthread_mutex_unlock(&ctx->lock);
+    pthread_mutex_unlock(&lwip_core_lock);
 
     trigger_wake(ctx);
 }
@@ -728,11 +746,11 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeRegisterPort(
     LwipContext *ctx = (LwipContext *)(intptr_t)handle;
     if (ctx == NULL || !ctx->running || port <= 0) return;
 
-    pthread_mutex_lock(&ctx->lock);
+    pthread_mutex_lock(&lwip_core_lock);
     for (int i = 0; i < ctx->num_port_mappings; i++) {
         if (ctx->port_mappings[i].port == port &&
             ctx->port_mappings[i].is_tcp == (isTcp ? 1 : 0)) {
-            pthread_mutex_unlock(&ctx->lock);
+            pthread_mutex_unlock(&lwip_core_lock);
             return;
         }
     }
@@ -743,7 +761,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeRegisterPort(
         ctx->num_port_mappings++;
         LOGI("Registered port %d (tcp=%d) for relay", port, isTcp ? 1 : 0);
     }
-    pthread_mutex_unlock(&ctx->lock);
+    pthread_mutex_unlock(&lwip_core_lock);
 
     trigger_wake(ctx);
 }
@@ -760,7 +778,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeDestroy(
     trigger_wake(ctx);
     pthread_join(ctx->thread, NULL);
 
-    pthread_mutex_lock(&ctx->lock);
+    pthread_mutex_lock(&lwip_core_lock);
 
     for (int i = 0; i < MAX_RELAY_CONNS; i++) {
         close_tcp_relay_conn(ctx, &ctx->tcp_conns[i]);
@@ -782,8 +800,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeDestroy(
     if (ctx->wake_pipe[0] >= 0) close(ctx->wake_pipe[0]);
     if (ctx->wake_pipe[1] >= 0) close(ctx->wake_pipe[1]);
 
-    pthread_mutex_unlock(&ctx->lock);
-    pthread_mutex_destroy(&ctx->lock);
+    pthread_mutex_unlock(&lwip_core_lock);
 
     if (ctx->bridge_obj_global != NULL) {
         (*env)->DeleteGlobalRef(env, ctx->bridge_obj_global);
@@ -800,7 +817,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeGetSnapshot(
     LwipContext *ctx = (LwipContext *)(intptr_t)handle;
     if (ctx == NULL) return (*env)->NewStringUTF(env, "lwip handle null");
 
-    pthread_mutex_lock(&ctx->lock);
+    pthread_mutex_lock(&lwip_core_lock);
     int active_tcp = 0;
     for (int i = 0; i < MAX_RELAY_CONNS; i++) {
         if (ctx->tcp_conns[i].active) active_tcp++;
@@ -820,7 +837,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeGetSnapshot(
              ctx->stats_rx_frames, ctx->stats_rx_tcp, ctx->stats_rx_tcp_syn,
              ctx->stats_rx_udp, ctx->stats_rx_icmp6, ctx->stats_rx_drops,
              ctx->stats_tx_frames, ctx->stats_tx_bytes);
-    pthread_mutex_unlock(&ctx->lock);
+    pthread_mutex_unlock(&lwip_core_lock);
 
     return (*env)->NewStringUTF(env, buf);
 }

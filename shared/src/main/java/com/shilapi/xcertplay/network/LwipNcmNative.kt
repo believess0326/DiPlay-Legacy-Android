@@ -16,6 +16,7 @@ class LwipNcmNative(
         }
     }
 
+    @Synchronized
     fun create(hostMac: ByteArray, linkLocal: String): Boolean {
         if (nativeHandle != 0L) return true
         return try {
@@ -26,6 +27,7 @@ class LwipNcmNative(
         }
     }
 
+    @Synchronized
     fun inputFrame(frame: ByteArray, length: Int = frame.size) {
         val handle = nativeHandle
         if (handle != 0L) {
@@ -33,6 +35,7 @@ class LwipNcmNative(
         }
     }
 
+    @Synchronized
     fun registerPort(port: Int, isTcp: Boolean) {
         val handle = nativeHandle
         if (handle != 0L) {
@@ -40,6 +43,7 @@ class LwipNcmNative(
         }
     }
 
+    @Synchronized
     fun destroy() {
         val handle = nativeHandle
         if (handle != 0L) {
@@ -48,6 +52,7 @@ class LwipNcmNative(
         }
     }
 
+    @Synchronized
     fun getSnapshot(): String {
         val handle = nativeHandle
         if (handle == 0L) return "lwip uninitialized"
@@ -58,7 +63,7 @@ class LwipNcmNative(
         }
     }
 
-    /** Called from JNI worker thread when lwIP produces an Ethernet frame. */
+    /** Called under the native core lock; must not acquire the native-handle monitor. */
     fun onTxFrame(frame: ByteArray) {
         onTxFrameCallback(frame)
     }
