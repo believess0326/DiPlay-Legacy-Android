@@ -633,6 +633,8 @@
     <string name="call_echo_cancellation_description">يحاول تقليل صدى السماعات المرسل إلى الطرف الآخر أثناء مكالمات CarPlay. تعتمد النتيجة على وحدة السيارة. يُطبَّق عند الاتصال التالي بـ CarPlay.</string>
     <string name="call_voice_filter">أصوات مكالمات أوضح (تجريبي)</string>
     <string name="call_voice_filter_description">يخفض الجهير في صوت مكالمات CarPlay. قد يغيّر صوت المتحدثين. يُطبَّق عند الاتصال التالي بـ CarPlay.</string>
+    <string name="settings_call_mic_compatibility">توافق ميكروفون المكالمات (تجريبي)</string>
+    <string name="settings_call_mic_compatibility_description">يستخدم مدخل ميكروفون السيارة القياسي (MIC) ويتخطى تبديل وضع صوت الاتصال أثناء المكالمات. يصلح مشكلة كتم الميكروفون على أجهزة Allwinner وغيرها. يُطبَّق عند الاتصال التالي بـ CarPlay.</string>
     <string name="smooth_video">فيديو سلس (تجريبي)</string>
     <string name="smooth_video_description">يعرض كل إطار من الشاشة الرئيسية لـ CarPlay في الوقت الذي وسمه به iPhone مع تأخير قصير، بدلًا من عرضه فور فك ترميزه. يضبط التأخير نفسه تلقائيًا حتى يُفك ترميز معظم الإطارات في الوقت المناسب، وتُعرض الإطارات غير الجاهزة في وقتها رغم ذلك فورًا. قد يبدو التمرير أكثر انتظامًا، لكن الاستجابة للمس تتأخر. لا تنطبق إعدادات الصورة. يعيد توصيل CarPlay.</string>
     <string name="car_button_in_carplay">زر السيارة في CarPlay</string>

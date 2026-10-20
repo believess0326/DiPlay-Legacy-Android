@@ -687,6 +687,8 @@
     <string name="call_echo_cancellation_description">嘗試減少 CarPlay 通話中傳送給對方的喇叭回音。效果取決於車用主機。下次連線至 CarPlay 時生效。</string>
     <string name="call_voice_filter">更清晰的通話人聲（實驗性）</string>
     <string name="call_voice_filter_description">削減 CarPlay 通話音訊的低音。這可能改變人聲的音色。下次連線至 CarPlay 時生效。</string>
+    <string name="settings_call_mic_compatibility">通話麥克風相容模式（實驗性）</string>
+    <string name="settings_call_mic_compatibility_description">通話時使用標準車機麥克風輸入（MIC）並跳過系統通訊音訊模式切換。解決全志等車機在微信或電話通話時對方聽不到聲音的問題。下次連線至 CarPlay 時生效。</string>
     <string name="smooth_video">流暢影片（實驗性）</string>
     <string name="smooth_video_description">依 iPhone 為每一幀標記的時間加上一段短延遲顯示 CarPlay 主畫面，而不是解碼後立即顯示。延遲會自動調整，讓大多數畫面能及時解碼；仍未按時準備好的畫面會立即顯示。捲動可能更平順，但觸控反應會變慢。畫面調整不適用。變更後會重新連線至 CarPlay。</string>
     <string name="manual_grant_cmd_hint">或在電腦上執行以下 ADB 指令：</string>

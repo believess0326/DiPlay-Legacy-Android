@@ -73,6 +73,7 @@ object AirPlayPersistence {
     private const val KEY_MAIN_BUFFERED_AUDIO = "main_buffered_audio"
     private const val KEY_CALL_ECHO_CANCELLATION = "call_echo_cancellation"
     private const val KEY_CALL_VOICE_FILTER = "call_voice_filter"
+    private const val KEY_CALL_MIC_COMPATIBILITY = "call_mic_compatibility"
     private const val KEY_SMOOTH_VIDEO = "smooth_video"
     private const val KEY_CAR_BLUETOOTH_AUDIO = "car_bluetooth_audio"
     private const val KEY_DIRECT_SURFACE_VIEW = "direct_surface_view"
@@ -618,6 +619,28 @@ object AirPlayPersistence {
 
     fun saveCallVoiceFilter(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_CALL_VOICE_FILTER, enabled).apply()
+    }
+
+    fun isAllwinnerHeadUnit(): Boolean {
+        val hardware = Build.HARDWARE.lowercase(java.util.Locale.US)
+        val board = Build.BOARD.lowercase(java.util.Locale.US)
+        val brand = Build.BRAND.lowercase(java.util.Locale.US)
+        val manufacturer = Build.MANUFACTURER.lowercase(java.util.Locale.US)
+        return hardware.contains("sun8i") || hardware.contains("allwinner") ||
+            board.contains("exdroid") || brand.contains("allwinner") || manufacturer.contains("allwinner")
+    }
+
+    /** Compatibility microphone mode for calls on Allwinner / custom ROM head units; applies at reconnect. */
+    fun loadCallMicCompatibility(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.contains(KEY_CALL_MIC_COMPATIBILITY)) {
+            return prefs.getBoolean(KEY_CALL_MIC_COMPATIBILITY, false)
+        }
+        return isAllwinnerHeadUnit()
+    }
+
+    fun saveCallMicCompatibility(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_CALL_MIC_COMPATIBILITY, enabled).apply()
     }
 
     fun saveFps(context: Context, fps: Int) {

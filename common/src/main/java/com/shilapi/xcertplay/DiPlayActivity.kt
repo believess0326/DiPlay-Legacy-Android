@@ -1556,6 +1556,12 @@ class DiPlayActivity : ComponentActivity() {
                 AirPlayPersistence.saveCallVoiceFilter(this, it)
                 markReconnectNeeded()
             }
+            toggle(card, getString(R.string.settings_call_mic_compatibility),
+                getString(R.string.settings_call_mic_compatibility_description),
+                AirPlayPersistence.loadCallMicCompatibility(this)) {
+                AirPlayPersistence.saveCallMicCompatibility(this, it)
+                markReconnectNeeded()
+            }
             audioFocusControls(card)
             if (resources.getBoolean(R.bool.config_advanced_audio_channel_mapping)) {
                 toggle(card, getString(R.string.advanced_audio_channel_mapping),

@@ -35,6 +35,8 @@ internal class MicrophoneUplink(
     private val echoCancellerFactory: (Int, Int, Int) -> CallEchoCanceller? = { frame, rate, tail ->
         SpeexEchoCanceller.create(frame, rate, tail)
     },
+    private val callMicCompatibility: Boolean = false,
+    private val context: android.content.Context? = null,
 ) : Closeable {
     private val running = AtomicBoolean(false)
     private val stats = MicrophoneCaptureStats(config, report = { message ->
@@ -73,8 +75,8 @@ internal class MicrophoneUplink(
         val source = when (config.audioType) {
             // Issue #102: if VOICE_COMMUNICATION proved silent-broken on this device,
             // fall back to MIC for telephony uplinks instead of capturing zeroes forever.
-            "telephony" -> if (voiceCommunicationSilentBroken) {
-                Log.i(TAG, "microphone telephony using MIC (VOICE_COMMUNICATION silent-broken on this device)")
+            "telephony" -> if (callMicCompatibility || voiceCommunicationSilentBroken) {
+                Log.i(TAG, "microphone telephony using MIC (compatibility=$callMicCompatibility broken=$voiceCommunicationSilentBroken)")
                 MediaRecorder.AudioSource.MIC
             } else {
                 MediaRecorder.AudioSource.VOICE_COMMUNICATION
@@ -124,7 +126,7 @@ internal class MicrophoneUplink(
         socket = nextSocket
         opusEncoder = nextEncoder
         return try {
-            if (config.audioType == "telephony") {
+            if (config.audioType == "telephony" && !callMicCompatibility) {
                 echoCanceller = createEchoCanceller()
                 effects = voiceEffects(nextRecorder.audioSessionId)
                 if (echoReference != null) {
@@ -332,8 +334,16 @@ internal class MicrophoneUplink(
         }
     }
 
+    private fun isFrameSilent(frame: ByteArray): Boolean {
+        for (i in 0 until frame.size - 1 step 2) {
+            val sample = ((frame[i + 1].toInt() shl 8) or (frame[i].toInt() and 0xFF)).toShort().toInt()
+            if (sample > 64 || sample < -64) return false
+        }
+        return true
+    }
+
     private fun sendFrame(socket: DatagramSocket, counters: MicrophoneCounters, frame: ByteArray) {
-        stats.frameSilent(frame.all { it == 0.toByte() })
+        stats.frameSilent(isFrameSilent(frame))
         val bodies = if (config.codec == AudioCodecKind.OPUS) {
             opusEncoder?.encode(frame).orEmpty()
         } else {
@@ -417,6 +427,12 @@ internal class MicrophoneUplink(
                 " (${stats.silentFrameCount()} frames); future telephony uplinks will use MIC"
             Log.w(TAG, msg)
             onDiagnostic(msg)
+            context?.let { ctx ->
+                runCatching {
+                    val prefs = ctx.getSharedPreferences("xcertplay_airplay", android.content.Context.MODE_PRIVATE)
+                    prefs.edit().putBoolean("call_mic_compatibility", true).apply()
+                }
+            }
         }
         try {
             recorder?.stop()

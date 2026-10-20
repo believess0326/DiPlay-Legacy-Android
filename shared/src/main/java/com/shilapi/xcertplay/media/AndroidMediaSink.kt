@@ -233,6 +233,7 @@ class AndroidMediaSink(
     private val callEchoCancellation: Boolean = false,
     /** Cut the bass that head units add when they play a call as music. */
     private val callVoiceFilter: Boolean = false,
+    private val callMicCompatibility: Boolean = false,
     /**
      * Smooth video: show main-screen frames at the iPhone's frame time plus a delay that starts here and
      * then follows how late the decoder releases frames ([PacingDelay]); 0 shows each as soon as it is
@@ -548,10 +549,15 @@ class AndroidMediaSink(
     override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
         // This callback runs on the downlink thread; microphone failures must not stop playback.
         try {
-            if (config.audioType == "telephony") enterCommunicationMode(id)
+            if (config.audioType == "telephony" && !callMicCompatibility) enterCommunicationMode(id)
             val uplink = microphoneUplinks.computeIfAbsent(id) {
-                MicrophoneUplink(config, onAudioDiagnostic,
-                    if (config.audioType == TELEPHONY_AUDIO_TYPE) callEchoReferences[id] else null)
+                MicrophoneUplink(
+                    config = config,
+                    onDiagnostic = onAudioDiagnostic,
+                    echoReference = if (config.audioType == TELEPHONY_AUDIO_TYPE && !callMicCompatibility) callEchoReferences[id] else null,
+                    callMicCompatibility = callMicCompatibility,
+                    context = appContext,
+                )
             }
             if (!uplink.start()) {
                 microphoneUplinks.remove(id, uplink)
