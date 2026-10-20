@@ -48,6 +48,30 @@ class LwipNcmBridge(
     private var mdnsAnswerLogBudget = 6
     private var unmatchedMdnsLogBudget = 6
 
+    // Issue #262 diagnostics: keep "the responder built an answer" separate from "the answer
+    // was actually queued for USB", so one failing log can pinpoint the broken link:
+    // answered>0 & txSent==answered -> answers crossed the bridge, fault is iPhone-side;
+    // answered>0 & txDropped>0 -> answers died at the USB TX queue; unmatched>0 -> queries
+    // arrived but matched nothing; calls==0 -> the iPhone never queried at all.
+    private val mdnsAnswerCalls = AtomicInteger(0)
+    private val mdnsAnsweredQueries = AtomicInteger(0)
+    private val mdnsTxSent = AtomicInteger(0)
+    private val mdnsTxDropped = AtomicInteger(0)
+    private val mdnsUnmatchedQueries = AtomicInteger(0)
+
+    private fun mdnsDiagSummary(): String =
+        "ncm mdns diag calls=${mdnsAnswerCalls.get()} answered=${mdnsAnsweredQueries.get()} " +
+            "txSent=${mdnsTxSent.get()} txDropped=${mdnsTxDropped.get()} unmatched=${mdnsUnmatchedQueries.get()}"
+
+    private fun maybeLogMdnsDiag() {
+        val events = mdnsAnsweredQueries.get() + mdnsUnmatchedQueries.get()
+        if (events > 0 && events % MDNS_DIAG_LOG_EVERY == 0) {
+            val msg = mdnsDiagSummary()
+            Log.i(TAG, msg)
+            runCatching { onDebugLog(msg) }
+        }
+    }
+
     val injectedTcpPackets = AtomicInteger(0)
     private var lwipInjectLogBudget = 8
 
@@ -179,30 +203,53 @@ class LwipNcmBridge(
                 }
 
                 val responder = mdnsResponder
+                if (responder != null) mdnsAnswerCalls.incrementAndGet()
                 val mdnsAnswers = responder?.answerFrames(
                     frame, ipv6.payloadOffset, ipv6.payloadLength, hostMac, ipv6.sourceMac,
                 ) ?: emptyList()
                 if (mdnsAnswers.isNotEmpty()) {
+                    mdnsAnsweredQueries.incrementAndGet()
+                    var enqueued = 0
                     for (mdnsAnswer in mdnsAnswers) {
-                        enqueueTxFrame(mdnsAnswer, tag = "mdns")
+                        if (enqueueTxFrame(mdnsAnswer, tag = "mdns")) {
+                            mdnsTxSent.incrementAndGet()
+                            enqueued++
+                        } else {
+                            mdnsTxDropped.incrementAndGet()
+                        }
+                    }
+                    if (enqueued < mdnsAnswers.size) {
+                        // Do not claim "answered" when the answer never reached the TX queue
+                        // (#262): the drop is the diagnosis, not a success.
+                        runCatching {
+                            onDebugLog(
+                                "ncm mdns answer TX dropped enqueued=$enqueued of=${mdnsAnswers.size} " +
+                                    mdnsDiagSummary(),
+                            )
+                        }
                     }
                     if (mdnsAnswerLogBudget > 0) {
                         mdnsAnswerLogBudget--
                         val answerMsg = "WIRED-CHAIN [15/16] mDNS _airplay query answered frames=${mdnsAnswers.size} " +
-                            "bytes=${mdnsAnswers.sumOf { it.size }}"
+                            "bytes=${mdnsAnswers.sumOf { it.size }} enqueued=$enqueued"
                         Log.i(TAG, answerMsg)
                         runCatching { onDebugLog(answerMsg) }
                     }
+                    maybeLogMdnsDiag()
                     sendRouterAdvertisement(targetMac = ipv6.sourceMac)
                     sendUnsolicitedNeighborAdvertisement(force = true, targetMac = ipv6.sourceMac)
                     continue
                 }
 
-                if (responder != null && unmatchedMdnsLogBudget > 0) {
+                if (responder != null) {
                     val queryName = responder.unmatchedQueryName(frame, ipv6.payloadOffset, ipv6.payloadLength)
                     if (queryName != null) {
-                        unmatchedMdnsLogBudget--
-                        runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
+                        mdnsUnmatchedQueries.incrementAndGet()
+                        if (unmatchedMdnsLogBudget > 0) {
+                            unmatchedMdnsLogBudget--
+                            runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
+                        }
+                        maybeLogMdnsDiag()
                     }
                 }
 
@@ -333,6 +380,12 @@ class LwipNcmBridge(
 
     override fun close() {
         if (!running.compareAndSet(true, false)) return
+        // Final mDNS tally for the report (#262): survives even when nothing else logged.
+        if (mdnsAnswerCalls.get() > 0 || mdnsUnmatchedQueries.get() > 0) {
+            val msg = mdnsDiagSummary()
+            Log.i(TAG, msg)
+            runCatching { onDebugLog(msg) }
+        }
         txQueue.clear()
         // Stop the TX thread first so no new USB writes start; remaining queued frames
         // are dropped with the link going down. Guard for a start() that threw before
@@ -385,5 +438,7 @@ class LwipNcmBridge(
         const val NA_RETRY_INTERVAL_NANOS = 500_000_000L
         const val TX_QUEUE_CAPACITY = 64
         const val TX_POLL_MILLIS = 200L
+        /** Emit the mDNS diagnostic summary after every N answered/unmatched queries (#262). */
+        const val MDNS_DIAG_LOG_EVERY = 5
     }
 }
