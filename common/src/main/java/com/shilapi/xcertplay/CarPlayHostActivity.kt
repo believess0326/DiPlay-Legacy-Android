@@ -3871,6 +3871,9 @@ class CarPlayHostActivity : ComponentActivity() {
         appendLog(requestSummary)
         appendLog(support.details)
         appendLog(effectiveSummary)
+        if (AirPlayPersistence.loadCarBluetoothAudio(this)) {
+            appendLog("Car Bluetooth audio: on; CarPlay audio not offered")
+        }
         return AirPlayConfig(
             deviceName = "DiPlay",
             deviceId = DiPlayBootstrap.deviceId(airPlayIdentity),
@@ -3889,6 +3892,7 @@ class CarPlayHostActivity : ComponentActivity() {
             icons = listOf(loadAirPlayIcon()),
             videoInCar = com.shilapi.xcertplay.hud.BydOutputSettings.videoWhileParkedActive(this),
             mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(this),
+            disableAudioOutput = AirPlayPersistence.loadCarBluetoothAudio(this),
         )
     }
 
