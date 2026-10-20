@@ -44,13 +44,14 @@ object UsbBtPairingUiRouter {
     fun route(bdAddr: String, sixDigitNumber: Int, confirm: (Boolean) -> Unit) {
         val activity = activityRef?.get()
         if (activity == null || activity.isFinishing) {
-            Log.w(TAG, "no foreground activity; declining pairing for $bdAddr")
-            confirm(false)
+            Log.w(TAG, "no foreground activity; auto-confirming pairing for $bdAddr (Just Works fallback)")
+            confirm(true)
             return
         }
         activity.runOnUiThread {
             if (activity.isFinishing) {
-                confirm(false)
+                Log.w(TAG, "activity finishing; auto-confirming pairing for $bdAddr")
+                confirm(true)
                 return@runOnUiThread
             }
             UsbBtPairingDialog.show(activity, bdAddr, sixDigitNumber, confirm)
@@ -134,11 +135,11 @@ object UsbBtPairingDialog {
         var dialog: AlertDialog? = null
         val timer = object : CountDownTimer(COUNTDOWN_MS, 1_000) {
             override fun onTick(millisUntilFinished: Long) {
-                countdownView.text = "Auto-decline in ${millisUntilFinished / 1000}s"
+                countdownView.text = "Auto-confirm in ${millisUntilFinished / 1000}s"
             }
 
             override fun onFinish() {
-                decide(false)
+                decide(true)
                 runCatching { dialog?.dismiss() }
             }
         }

@@ -329,6 +329,13 @@ class DiPlayActivity : ComponentActivity() {
         handler.postDelayed(automaticUpdateCheck, 4000L)
         scheduleAutomaticVehicleValidation()
         handleWirelessRecovery()
+        // USB-Bluetooth dongle: route Numeric Comparison pairing requests to
+        // this Activity's dialog (no-op when no dongle stack is present).
+        runCatching {
+            UsbBtPairingUiRouter.installOn(
+                com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(this),
+            )
+        }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (page != "home") navigateBack()
@@ -416,6 +423,7 @@ class DiPlayActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        UsbBtPairingUiRouter.register(this)
         // Returning from another activity can bring the head unit's own density back.
         if (enforceInterfaceSize()) render()
         if (Build.VERSION.SDK_INT < 33 && AppLocale.preference(this) != languagePreferenceAtCreate) {
@@ -442,6 +450,7 @@ class DiPlayActivity : ComponentActivity() {
         }
     }
     override fun onPause() {
+        UsbBtPairingUiRouter.unregister(this)
         userNavigatedFromCarPlay = false
         cancelKeyLearning()
         pausedForAdbSwitchChange = adbSwitchChangePending
