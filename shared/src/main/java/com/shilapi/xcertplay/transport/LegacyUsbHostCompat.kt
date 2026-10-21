@@ -31,7 +31,7 @@ internal object LegacyUsbHostCompat {
      * physical re-plug; the caller must rediscover and reopen it afterwards.
      * Returns the reset errno, or null when no native fd was usable.
      */
-    fun resetDevice(connection: UsbDeviceConnection, onDiagnostic: (String) -> Unit = {}): Int? {
+    fun resetDevice(connection: SharedUsbConnection, onDiagnostic: (String) -> Unit = {}): Int? {
         val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
         if (fd < 0) {
             Log.w(TAG, "usbfs reset unavailable: invalid device fd")
@@ -48,7 +48,7 @@ internal object LegacyUsbHostCompat {
         return errno
     }
 
-    fun activeConfiguration(connection: UsbDeviceConnection): Int? {
+    fun activeConfiguration(connection: SharedUsbConnection): Int? {
         val value = ByteArray(1)
         val read = runCatching {
             connection.controlTransfer(
@@ -65,7 +65,7 @@ internal object LegacyUsbHostCompat {
     }
 
     fun selectConfiguration(
-        connection: UsbDeviceConnection,
+        connection: SharedUsbConnection,
         configuration: CarPlayUsbConfiguration,
         onDiagnostic: (String) -> Unit = {},
         nativeSelect: (Int, Int) -> Int = { fd, target -> LegacyUsbHostNative.setConfiguration(fd, target) },
@@ -138,11 +138,22 @@ internal object LegacyUsbHostCompat {
         return ConfigurationResult(ok, errno, active)
     }
 
+    fun claim(connection: SharedUsbConnection, usbInterface: UsbInterface): ClaimResult {
+        if (connection.claimInterface(usbInterface, true)) return ClaimResult(true, null)
+        if (realSdkInt() > Build.VERSION_CODES.P) return ClaimResult(false, null)
+        val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
+        return forceClaimFd(fd, usbInterface)
+    }
+
+    /** Framework-typed overload kept for callers that own a plain connection (CH341 host). */
     fun claim(connection: UsbDeviceConnection, usbInterface: UsbInterface): ClaimResult {
         if (connection.claimInterface(usbInterface, true)) return ClaimResult(true, null)
         if (realSdkInt() > Build.VERSION_CODES.P) return ClaimResult(false, null)
-
         val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
+        return forceClaimFd(fd, usbInterface)
+    }
+
+    private fun forceClaimFd(fd: Int, usbInterface: UsbInterface): ClaimResult {
         if (fd < 0) {
             Log.w(TAG, "usbfs fallback unavailable: invalid device fd for iface=${usbInterface.id}")
             return ClaimResult(false, null)
@@ -158,7 +169,7 @@ internal object LegacyUsbHostCompat {
         return ClaimResult(errno == 0, errno)
     }
 
-    fun select(connection: UsbDeviceConnection, usbInterface: UsbInterface): SelectResult {
+    fun select(connection: SharedUsbConnection, usbInterface: UsbInterface): SelectResult {
         if (realSdkInt() >= 21 && connection.setInterface(usbInterface)) return SelectResult(true, null)
         if (realSdkInt() > Build.VERSION_CODES.P) return SelectResult(false, null)
 

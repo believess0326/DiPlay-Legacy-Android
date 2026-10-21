@@ -15,13 +15,14 @@ import org.robolectric.shadow.api.Shadow
 @Config(sdk = [26, 27, 28], manifest = Config.NONE, shadows = [LegacyUsbConfigurationTest.Connection::class])
 class LegacyUsbConfigurationTest {
     private val connection = Shadow.newInstanceOf(UsbDeviceConnection::class.java)
+    private val seam = SharedUsbDeviceConnection.own(connection)
     private val state = Shadow.extract<Connection>(connection)
     private val configuration = CarPlayUsbConfiguration(
         6, emptyList(), Shadow.newInstanceOf(UsbConfiguration::class.java),
     )
 
     @Test fun failedFrameworkSelectionUsesUsbfsBeforeProceeding() {
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { fd, target ->
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { fd, target ->
             assertEquals(42, fd)
             assertEquals(6, target)
             state.active = target
@@ -36,7 +37,7 @@ class LegacyUsbConfigurationTest {
     @Test fun frameworkSuccessWithConfigOneStillRequiresUsbfs() {
         state.frameworkResult = true
         var calls = 0
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, _ ->
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, _ ->
             calls++
             state.active = 6
             0
@@ -49,7 +50,7 @@ class LegacyUsbConfigurationTest {
     @Test fun phoneReadbackDoesNotSkipKernelConfigurationOnFreshConnection() {
         state.active = 6
         state.frameworkResult = true
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, _ ->
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, _ ->
             fail("Successful framework selection does not need native fallback")
             -1
         }
@@ -58,7 +59,7 @@ class LegacyUsbConfigurationTest {
     }
 
     @Test fun reportsBusyAndRejectsMissingNcmConfiguration() {
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, _ -> 16 }
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, _ -> 16 }
         assertFalse(result.selected)
         assertEquals(16, result.errno)
         assertEquals(1, result.activeConfiguration)
@@ -67,7 +68,7 @@ class LegacyUsbConfigurationTest {
 
     @Test fun transientBusyRetriesUsbfsAndAcceptsVerifiedSuccess() {
         var attempts = 0
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, target ->
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, target ->
             attempts++
             if (attempts == 1) 16 else {
                 state.active = target
@@ -79,14 +80,14 @@ class LegacyUsbConfigurationTest {
         assertEquals(6, result.activeConfiguration)
     }
     @Test fun nativeSuccessCannotOverrideAReadbackMismatch() {
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, _ -> 0 }
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, _ -> 0 }
         assertFalse(result.selected)
         assertEquals(1, result.activeConfiguration)
     }
 
     @Test fun protocolErrorAttemptsPortResetBeforeFailingTheAttempt() {
         var nativeCalls = 0
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, _ ->
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, _ ->
             nativeCalls++
             71
         }
@@ -98,7 +99,7 @@ class LegacyUsbConfigurationTest {
     @Test fun matchingPhoneReadbackCannotHideFailedKernelSelection() {
         state.frameworkActive = 6
         var calls = 0
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, _ ->
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, _ ->
             calls++
             16
         }
@@ -111,7 +112,7 @@ class LegacyUsbConfigurationTest {
     @Test fun nativeSelectionRepairsKernelEvenWhenPhoneAlreadyReportsTarget() {
         state.active = 6
         var kernelConfigured = false
-        val result = LegacyUsbHostCompat.selectConfiguration(connection, configuration) { _, target ->
+        val result = LegacyUsbHostCompat.selectConfiguration(seam, configuration) { _, target ->
             kernelConfigured = target == 6
             0
         }

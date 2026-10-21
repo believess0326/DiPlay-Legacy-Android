@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay.transport
 
-import android.hardware.usb.UsbDeviceConnection
 
 /** Borrow the framework fd synchronously before any NCM workers start; never open/close/dup it. */
 internal object LegacyNcmNative {
@@ -10,7 +9,7 @@ internal object LegacyNcmNative {
     private external fun disconnectClaim(fd: Int, interfaceId: Int, driver: String): Int
     private external fun reconnectIfUnbound(fd: Int, interfaceId: Int): Int
 
-    fun operations(connection: UsbDeviceConnection, interfaceId: Int, pair: List<Int>, configurationId: Int,
+    fun operations(connection: SharedUsbConnection, interfaceId: Int, pair: List<Int>, configurationId: Int,
                    log: (String) -> Unit): LegacyNcmClaim.Native? {
         val fd = connection.fileDescriptor
         if (fd < 0) {

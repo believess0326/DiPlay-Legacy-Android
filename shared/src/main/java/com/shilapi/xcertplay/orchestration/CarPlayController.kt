@@ -234,6 +234,9 @@ class CarPlayController(
     private val wiredGeneration = AtomicInteger(0)
     @Volatile private var wiredUsbSession: Iap2UsbSession? = null
     @Volatile private var wiredNcm: NcmUsbBridge? = null
+    /** Issue #266 direct mode: the sysfs identity of the phone a direct session runs on. */
+    private val directAttemptRunning = AtomicBoolean(false)
+    @Volatile private var directDevice: com.shilapi.xcertplay.transport.SysfsUsbDevice? = null
     @Volatile private var ch341Host: Ch341UsbHost? = null
     @Volatile private var mfiSession: MfiSession? = null
     @Volatile private var mux: Iap2UsbMuxHost? = null
@@ -2123,6 +2126,9 @@ class CarPlayController(
         if (device == null) {
             onStatus(CarPlayStatus.WaitingForIphone)
             logVisibleUsbDevicesThrottled()
+            if (config.directUsbfsMode) {
+                tryStartDirectAttempt()
+            }
             scheduleAvailabilityPoll(Phase.IPHONE, ::checkIphoneAvailability)
         } else {
             debugLog(
@@ -2132,6 +2138,128 @@ class CarPlayController(
             availabilityPollGeneration.incrementAndGet()
             requestIphonePermission(device)
         }
+    }
+
+    /**
+     * Issue #266 direct mode: the framework discovery found nothing (on the target
+     * ROMs it never will), so try the sysfs/usbfs path. Bring-up is blocking (descriptor
+     * reads, a possible 30s re-enumeration wait), so it runs on the executor and posts
+     * its outcome back here, mirroring openIap2UsbSessionAsync's callback shape.
+     */
+    private fun tryStartDirectAttempt() {
+        if (closed || wiredTeardownPending.get()) return
+        if (!directAttemptRunning.compareAndSet(false, true)) return
+        val generation = availabilityPollGeneration.get()
+        executor.execute {
+            var posted = false
+            try {
+                val candidate = runCatching {
+                    com.shilapi.xcertplay.transport.SysfsUsbEnumerator()
+                        .findMatching(com.shilapi.xcertplay.transport.IphoneUsbMatcher.appleVendor())
+                        .firstOrNull()
+                }.getOrNull()
+                if (candidate == null) {
+                    debugLog("direct usbfs: sysfs scan found no iPhone; will retry on the next poll")
+                    return@execute
+                }
+                debugLog("direct usbfs: sysfs found iPhone at ${candidate.usbfsPath}; starting direct bring-up")
+                val host = com.shilapi.xcertplay.transport.DirectUsbHost(onDiagnostic = ::connectionDiagnostic)
+                when (val result = host.openSession(candidate)) {
+                    is com.shilapi.xcertplay.transport.DirectUsbHost.Result.Connected -> {
+                        posted = true
+                        mainHandler.post {
+                            directAttemptRunning.set(false)
+                            onDirectSessionConnected(result, generation)
+                        }
+                    }
+                    is com.shilapi.xcertplay.transport.DirectUsbHost.Result.Failed -> {
+                        posted = true
+                        mainHandler.post {
+                            directAttemptRunning.set(false)
+                            if (!closed && !wiredTeardownPending.get() &&
+                                generation == availabilityPollGeneration.get() && phase == Phase.IPHONE
+                            ) {
+                                fail(result.error)
+                            }
+                        }
+                    }
+                }
+            } catch (error: Throwable) {
+                posted = true
+                mainHandler.post {
+                    directAttemptRunning.set(false)
+                    if (!closed && phase == Phase.IPHONE) fail(error)
+                }
+            } finally {
+                if (!posted) directAttemptRunning.set(false)
+            }
+        }
+    }
+
+    /** Integrates a direct-mode session into the wired state machine, then runs the stack. */
+    private fun onDirectSessionConnected(
+        result: com.shilapi.xcertplay.transport.DirectUsbHost.Result.Connected,
+        generation: Int,
+    ) {
+        if (closed || wiredTeardownPending.get() ||
+            generation != availabilityPollGeneration.get() || phase != Phase.IPHONE
+        ) {
+            result.session.markAborted()
+            result.session.close()
+            return
+        }
+        wiredAborted = false
+        directDevice = result.device
+        availabilityPollGeneration.incrementAndGet()
+        val gen = wiredGeneration.incrementAndGet()
+        phase = Phase.DATAPATHS
+        wiredUsbSession = result.session
+        onStatus(CarPlayStatus.OpeningDataPaths)
+        wiredChain(3, "iAP2 USB session opened (direct usbfs fd ready)")
+        try {
+            val ncm = openNcm(result.device.vendorId, result.session)
+            wiredNcm = ncm
+            if (closed || wiredAborted || gen != wiredGeneration.get()) {
+                ncm.markAborted()
+                ncm.close()
+                result.session.markAborted()
+                result.session.close()
+                return
+            }
+            runStack(result.session, ncm)
+            startDirectDetachWatch(gen)
+        } catch (error: Throwable) {
+            result.session.close()
+            if (!closed && !wiredAborted && gen == wiredGeneration.get()) fail(error)
+        }
+    }
+
+    /**
+     * Direct mode has no USB detach broadcast to rely on (the USB service that would
+     * send it is the broken component), so poll sysfs while a direct session is live
+     * and tear down through the normal path when the phone vanishes.
+     */
+    private fun startDirectDetachWatch(generation: Int) {
+        val poll = object : Runnable {
+            override fun run() {
+                if (closed || generation != wiredGeneration.get()) return
+                val device = directDevice ?: return
+                val enumerator = com.shilapi.xcertplay.transport.SysfsUsbEnumerator()
+                val stillThere = runCatching {
+                    enumerator.enumerate().any {
+                        it.busNumber == device.busNumber && it.deviceNumber == device.deviceNumber
+                    }
+                }.getOrDefault(true) // a sysfs read error must not flap the session
+                if (!stillThere) {
+                    debugLog("direct usbfs: iPhone vanished from sysfs; tearing down the direct session")
+                    directDevice = null
+                    beginWiredTeardown()
+                    return
+                }
+                mainHandler.postDelayed(this, DIRECT_DETACH_POLL_MILLIS)
+            }
+        }
+        mainHandler.postDelayed(poll, DIRECT_DETACH_POLL_MILLIS)
     }
 
     private fun requestIphonePermission(device: UsbDevice) {
@@ -2528,51 +2656,6 @@ class CarPlayController(
         } else {
             debugLog("wired waiting for iPhone; visible USB devices: [$summary]")
         }
-        if (config.directUsbfsMode) {
-            probeDirectUsbfs()
-        }
-    }
-
-    /**
-     * Issue #266, direct usbfs mode: when the framework list cannot see the iPhone,
-     * check sysfs directly and prove the node is openable (root grant included) and
-     * answers a device-descriptor read. Discovery + transport proof only — the session
-     * itself still runs over the framework connection for now.
-     */
-    private fun probeDirectUsbfs() {
-        val candidates = runCatching {
-            com.shilapi.xcertplay.transport.SysfsUsbEnumerator()
-                .findMatching(com.shilapi.xcertplay.transport.IphoneUsbMatcher.appleVendor())
-        }.getOrDefault(emptyList())
-        if (candidates.isEmpty()) {
-            debugLog("direct usbfs: sysfs sees no iPhone either (cable/port or iPhone USB accessories locked)")
-            return
-        }
-        val candidate = candidates.first()
-        debugLog(
-            "direct usbfs: sysfs sees iPhone vid=0x${candidate.vendorId.toString(16)} " +
-                "pid=0x${candidate.productId.toString(16)} at ${candidate.usbfsPath}",
-        )
-        when (val result = com.shilapi.xcertplay.transport.DirectUsbAccess.open(candidate, allowRootGrant = true)) {
-            is com.shilapi.xcertplay.transport.DirectUsbAccess.OpenResult.Opened -> {
-                try {
-                    val buffer = java.nio.ByteBuffer.allocateDirect(18)
-                    val read = com.shilapi.xcertplay.transport.UsbfsIoNative.control(
-                        result.descriptor.fd, 0x80, 6, 0x0100, 0, buffer, 18, 1_000,
-                    )
-                    debugLog(
-                        "direct usbfs: node opened (rootGrant=${result.viaRootGrant}); " +
-                            "device descriptor read=$read bytes",
-                    )
-                } finally {
-                    runCatching { result.descriptor.close() }
-                }
-            }
-            is com.shilapi.xcertplay.transport.DirectUsbAccess.OpenResult.Denied ->
-                debugLog("direct usbfs: ${result.reason}")
-            com.shilapi.xcertplay.transport.DirectUsbAccess.OpenResult.NotPresent ->
-                debugLog("direct usbfs: node ${candidate.usbfsPath} missing despite sysfs entry (re-enumerating?)")
-        }
     }
 
     private fun scheduleAvailabilityPoll(phase: Phase, check: () -> Unit) {
@@ -2611,7 +2694,7 @@ class CarPlayController(
                     }
                     wiredChain(3, "iAP2 USB session opened (USBMUX fd ready)")
                     try {
-                        val ncm = openNcm(device, result.session)
+                        val ncm = openNcm(device.vendorId, result.session)
                         wiredNcm = ncm
                         if (closed || wiredAborted || generation != wiredGeneration.get()) {
                             ncm.markAborted()
@@ -2633,8 +2716,11 @@ class CarPlayController(
         }
     }
 
-    private fun openNcm(device: UsbDevice, usbSession: Iap2UsbSession): NcmUsbBridge {
-        val configuration = usbSession.carPlayConfiguration ?: IphoneCarPlayConfiguration.find(device)
+    private fun openNcm(vendorId: Int, usbSession: Iap2UsbSession): NcmUsbBridge {
+        // Sessions are only built after a CarPlay configuration was resolved (framework
+        // inspector or direct-mode descriptor read), so the configuration is always
+        // carried by the session itself.
+        val configuration = usbSession.carPlayConfiguration
             ?: throw IphoneUsbException.Protocol(
                 "iPhone exposes no CarPlay configuration for NCM",
             )
@@ -2660,7 +2746,7 @@ class CarPlayController(
             sharedConnection = sharedConnection,
             function = function,
             expectedConfiguration = configuration.id,
-            vendorId = device.vendorId,
+            vendorId = vendorId,
             useAsyncRead = realSdkInt() >= ASYNC_USB_READ_MIN_SDK,
             onDiagnostic = ::connectionDiagnostic,
         )
@@ -3715,6 +3801,8 @@ class CarPlayController(
         private const val CARPLAY_MODE_DESCRIPTOR_PROBE_TIMEOUT_MILLIS = 800L
         private const val PERMISSION_POLL_TIMEOUT_MILLIS = 120_000L
         private const val DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS = 2_000L
+        /** Issue #266: sysfs detach-watch cadence while a direct-mode session is live. */
+        private const val DIRECT_DETACH_POLL_MILLIS = 2_000L
         private const val NO_IPHONE_DEVICES_LOG_INTERVAL_MILLIS = 10_000L
         private const val WIRELESS_HANDOFF_TIMEOUT_MILLIS = 45_000L
         /** 无线建连持续观察设备入网的时长（port 自 ding2548-ui/DiPlay@main）。 */

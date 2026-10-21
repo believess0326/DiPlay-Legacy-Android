@@ -112,7 +112,7 @@ JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_bulkTr
     return rc < 0 ? -errno : rc;
 }
 
-JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_setConfiguration(
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_nativeSetConfiguration(
         JNIEnv *env, jobject self, jint fd, jint configuration) {
     (void) env; (void) self;
     if (fd < 0 || configuration < 0 || configuration > 255) return EINVAL;
@@ -120,10 +120,36 @@ JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_setCon
     return result(ioctl(fd, USBDEVFS_SETCONFIGURATION, &value));
 }
 
-JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_releaseInterface(
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_nativeReleaseInterface(
         JNIEnv *env, jobject self, jint fd, jint id) {
     (void) env; (void) self;
     if (!valid(fd, id)) return EINVAL;
     unsigned int interface_id = (unsigned int) id;
     return result(ioctl(fd, USBDEVFS_RELEASEINTERFACE, &interface_id));
+}
+
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_nativeClaimInterface(
+        JNIEnv *env, jobject self, jint fd, jint id) {
+    (void) env; (void) self;
+    if (!valid(fd, id)) return EINVAL;
+    unsigned int interface_id = (unsigned int) id;
+    return result(ioctl(fd, USBDEVFS_CLAIMINTERFACE, &interface_id));
+}
+
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_nativeSetInterface(
+        JNIEnv *env, jobject self, jint fd, jint id, jint alt) {
+    (void) env; (void) self;
+    if (!valid(fd, id) || alt < 0 || alt > 255) return EINVAL;
+    struct usbdevfs_setinterface request;
+    memset(&request, 0, sizeof(request));
+    request.interface = (unsigned int) id;
+    request.altsetting = (unsigned int) alt;
+    return result(ioctl(fd, USBDEVFS_SETINTERFACE, &request));
+}
+
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_nativeResetDevice(
+        JNIEnv *env, jobject self, jint fd) {
+    (void) env; (void) self;
+    if (fd < 0) return EINVAL;
+    return result(ioctl(fd, USBDEVFS_RESET, NULL));
 }

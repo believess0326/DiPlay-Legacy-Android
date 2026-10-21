@@ -48,6 +48,12 @@ object IphoneCarPlayConfiguration {
         } else {
             listOf(CarPlayUsbConfiguration(1, (0 until device.interfaceCount).map(device::getInterface)))
         }
+        return choose(configurations)
+    }
+
+    /** Picks the CarPlay configuration out of an already-parsed list (shared by the
+     *  framework inspector and the direct-mode descriptor reader, issue #266). */
+    fun choose(configurations: List<CarPlayUsbConfiguration>): CarPlayUsbConfiguration? {
         val chosen = configurations.firstOrNull { usbMuxInterface(it) != null && hasCdcNcm(it) && hasAppleEthernet(it) }
             ?: configurations.firstOrNull { usbMuxInterface(it) != null && hasCdcNcm(it) }
         Log.i(

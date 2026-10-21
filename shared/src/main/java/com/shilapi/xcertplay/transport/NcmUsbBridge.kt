@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * calls may block and must run away from the Android main thread.
  */
 class NcmUsbBridge internal constructor(
-    private val sharedConnection: SharedUsbDeviceConnection,
+    private val sharedConnection: SharedUsbConnection,
     private val outEndpoint: UsbEndpoint,
     private val inEndpoint: UsbEndpoint,
     private val statusEndpoint: UsbEndpoint?,
@@ -32,8 +32,6 @@ class NcmUsbBridge internal constructor(
     private val onDiagnostic: (String) -> Unit = {},
     private val legacyRestore: (() -> Unit)? = null,
 ) : Closeable {
-    private val connection: UsbDeviceConnection
-        get() = sharedConnection.connection
     private val descriptorMac = descriptorHostMac?.copyOf()
     val hostMac: ByteArray? get() = descriptorMac?.copyOf()
     private val stateLock = Any()
@@ -93,7 +91,7 @@ class NcmUsbBridge internal constructor(
         }
         val block = Ntb16Codec.build(frame, sequence)
         val transferred = writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
-            bulkTransferCompat(connection, outEndpoint, block, offset, count, timeout)
+            sharedConnection.bulkTransfer(outEndpoint, block, offset, count, timeout)
         }
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
         // resulting timeout as -1; it is not a detach and later packets must be allowed to retry.
@@ -184,7 +182,7 @@ class NcmUsbBridge internal constructor(
                 if (!isAbortedOrDetached) {
                     for (usbInterface in claimedInterfaces.asReversed()) {
                         try {
-                            connection.releaseInterface(usbInterface)
+                            sharedConnection.releaseInterface(usbInterface)
                         } catch (_: RuntimeException) {
                             // Best-effort release; connection close is authoritative.
                         }
@@ -222,7 +220,7 @@ class NcmUsbBridge internal constructor(
             // Short synchronous polls keep this thread out of JNI critical sections most of the time;
             // notifications are rare, small interrupt packets that are only logged.
             val transferred = try {
-                connection.bulkTransfer(endpoint, buffer, buffer.size, STATUS_POLL_TIMEOUT_MILLIS)
+                sharedConnection.bulkTransfer(endpoint, buffer, buffer.size, STATUS_POLL_TIMEOUT_MILLIS)
             } catch (_: RuntimeException) {
                 return
             }
@@ -365,7 +363,9 @@ class NcmUsbBridge internal constructor(
             synchronized(stateLock) {
                 checkOpenLocked()
                 val current = readRequest ?: UsbRequest().also {
-                    if (!it.initialize(connection, inEndpoint)) {
+                    val framework = sharedConnection.frameworkConnection
+                        ?: throw failSession("async NCM read requires a framework USB connection")
+                    if (!it.initialize(framework, inEndpoint)) {
                         it.close()
                         throw failSession("Android could not initialize the NCM read request")
                     }
@@ -425,7 +425,7 @@ class NcmUsbBridge internal constructor(
         checkOpen()
         val timeout = timeoutMillis.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
         return try {
-            connection.bulkTransfer(inEndpoint, readBuffer, readBuffer.size, timeout)
+            sharedConnection.bulkTransfer(inEndpoint, readBuffer, readBuffer.size, timeout)
                 .takeIf { it > 0 }
         } catch (error: RuntimeException) {
             throw failSession("NCM synchronous read failed", error)
@@ -441,7 +441,7 @@ class NcmUsbBridge internal constructor(
     }
 
     private fun clearOutEndpointHalt() {
-        val result = clearUsbEndpointHalt(connection, outEndpoint)
+        val result = clearUsbEndpointHalt(sharedConnection, outEndpoint)
         Log.i(
             IphoneCarPlayConfiguration.TAG,
             "ncm bulk-out failed; clear-halt on endpoint 0x${outEndpoint.address.toString(16)} returned $result",
@@ -504,14 +504,14 @@ class NcmUsbBridge internal constructor(
         }
         /** Claims NCM while retaining the caller's shared USB connection. */
         internal fun open(
-            sharedConnection: SharedUsbDeviceConnection,
+            sharedConnection: SharedUsbConnection,
             function: NcmFunctionDiscovery.NcmFunction,
             expectedConfiguration: Int,
             vendorId: Int = 0x05ac,
             useAsyncRead: Boolean = true,
             onDiagnostic: (String) -> Unit = {},
         ): NcmUsbBridge {
-            val connection = sharedConnection.connection
+            val connection = sharedConnection
             val claimed = ArrayList<UsbInterface>(2)
             var legacyRestore: (() -> Unit)? = null
             fun log(message: String) {
@@ -621,7 +621,7 @@ class NcmUsbBridge internal constructor(
                     inEndpoint = function.bulkIn,
                     statusEndpoint = function.statusIn,
                     claimedInterfaces = claimed,
-                    useAsyncRead = useAsyncRead,
+                    useAsyncRead = useAsyncRead && sharedConnection.supportsAsyncRequests,
                     descriptorHostMac = descriptorHostMac,
                     onDiagnostic = onDiagnostic,
                     legacyRestore = legacyRestore,
@@ -657,8 +657,43 @@ class NcmUsbBridge internal constructor(
             onDiagnostic = diagnostics,
         )
 
-        private fun readNcmHostMac(connection: UsbDeviceConnection, controlInterfaceId: Int): ByteArray? {
-            val index = ethernetMacStringIndex(connection.rawDescriptors, controlInterfaceId) ?: return null
+        /**
+         * The descriptor bytes [ethernetMacStringIndex] walks. Framework connections
+         * expose them directly; a raw connection (issue #266) re-reads the same layout
+         * over control transfers: device descriptor followed by every config blob.
+         */
+        private fun rawDescriptorBytes(connection: SharedUsbConnection): ByteArray {
+            connection.frameworkConnection?.rawDescriptors?.let { return it }
+            val device = ByteArray(18)
+            val deviceRead = connection.controlTransfer(
+                UsbConstants.USB_DIR_IN, USB_REQUEST_GET_DESCRIPTOR, 0x0100, 0,
+                device, device.size, USB_CONTROL_TIMEOUT_MILLIS,
+            )
+            if (deviceRead < 18) return ByteArray(0)
+            val count = device[17].toInt() and 0xff
+            val out = java.io.ByteArrayOutputStream()
+            out.write(device)
+            for (index in 0 until count.coerceAtMost(8)) {
+                val header = ByteArray(9)
+                val headerRead = connection.controlTransfer(
+                    UsbConstants.USB_DIR_IN, USB_REQUEST_GET_DESCRIPTOR, 0x0200 or index, 0,
+                    header, header.size, USB_CONTROL_TIMEOUT_MILLIS,
+                )
+                if (headerRead != 9) continue
+                val total = (header[2].toInt() and 0xff) or ((header[3].toInt() and 0xff) shl 8)
+                if (total !in 9..65535) continue
+                val blob = ByteArray(total)
+                val blobRead = connection.controlTransfer(
+                    UsbConstants.USB_DIR_IN, USB_REQUEST_GET_DESCRIPTOR, 0x0200 or index, 0,
+                    blob, blob.size, USB_CONTROL_TIMEOUT_MILLIS,
+                )
+                if (blobRead == total) out.write(blob)
+            }
+            return out.toByteArray()
+        }
+
+        private fun readNcmHostMac(connection: SharedUsbConnection, controlInterfaceId: Int): ByteArray? {
+            val index = ethernetMacStringIndex(rawDescriptorBytes(connection), controlInterfaceId) ?: return null
             val buffer = ByteArray(256)
             val length = connection.controlTransfer(
                 UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_STANDARD,

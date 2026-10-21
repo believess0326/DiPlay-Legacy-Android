@@ -334,7 +334,7 @@ class IphoneUsbHost(
                     "target=${configuration.id} interfaces=${IphoneCarPlayConfiguration.describe(configuration)}",
             )
             val selected = LegacyUsbHostCompat.selectConfiguration(
-                connection, configuration, onDiagnostic = ::diagnosticLog,
+                sharedConnection, configuration, onDiagnostic = ::diagnosticLog,
             )
             diagnosticLog(
                 "setConfiguration target=${configuration.id} ok=${selected.selected} " +
@@ -357,8 +357,8 @@ class IphoneUsbHost(
                     "out=0x${endpoints.first.address.toString(16)} " +
                     "in=0x${endpoints.second.address.toString(16)}",
             )
-            val muxClaim = claimUsbMuxWithRetry(connection, usbMux)
-            val activeAfterClaim = LegacyUsbHostCompat.activeConfiguration(connection)
+            val muxClaim = claimUsbMuxWithRetry(sharedConnection, usbMux)
+            val activeAfterClaim = LegacyUsbHostCompat.activeConfiguration(sharedConnection)
             diagnosticLog(
                 "usb mux claim iface=${usbMux.id} ok=${muxClaim.claimed} errno=${muxClaim.errno} " +
                     "target=${configuration.id} active=${activeAfterClaim ?: "unknown"}",
@@ -381,7 +381,7 @@ class IphoneUsbHost(
             )
         } catch (error: Throwable) {
             if (claimedInterface != null) {
-                runCatching { connection.releaseInterface(claimedInterface) }
+                runCatching { sharedConnection.releaseInterface(claimedInterface) }
             }
             sharedConnection.release()
             throw error
@@ -400,7 +400,7 @@ class IphoneUsbHost(
      * short delay before giving up; a plain retry later in the same attempt succeeds there.
      */
     private fun claimUsbMuxWithRetry(
-        connection: UsbDeviceConnection,
+        connection: SharedUsbConnection,
         usbMux: UsbInterface,
     ): LegacyUsbHostCompat.ClaimResult {
         var result = LegacyUsbHostCompat.claim(connection, usbMux)
@@ -516,15 +516,13 @@ class IphoneUsbHost(
  * All operations must run off the Android main thread. The session does not parse iAP2 frames.
  */
 class Iap2UsbSession internal constructor(
-    private val sharedConnection: SharedUsbDeviceConnection,
+    private val sharedConnection: SharedUsbConnection,
     private val claimedInterface: UsbInterface,
     private val outEndpoint: UsbEndpoint,
     private val inEndpoint: UsbEndpoint,
     private val onDiagnostic: (String) -> Unit = {},
     internal val carPlayConfiguration: CarPlayUsbConfiguration? = null,
 ) : Closeable {
-    private val connection: UsbDeviceConnection
-        get() = sharedConnection.connection
 
     private val stateLock = Any()
     private val readLock = Any()
@@ -551,7 +549,7 @@ class Iap2UsbSession internal constructor(
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         if (data.isEmpty()) return@synchronized
         val transferred = writeUsbChunks(data.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
-            bulkTransferCompat(connection, outEndpoint, data, offset, count, timeout)
+            sharedConnection.bulkTransfer(outEndpoint, data, offset, count, timeout)
         }
         if (transferred != data.size) {
             // A -1 bulk transfer means the device stopped responding (wedged USB stack,
@@ -559,7 +557,7 @@ class Iap2UsbSession internal constructor(
             // sees a re-enumerated, sane device instead of failing every attempt.
             // Do NOT attempt a reset if the session is already aborted, detached or closed (issue #227).
             if (transferred < 0 && !closed && !isAbortedOrDetached) {
-                runCatching { LegacyUsbHostCompat.resetDevice(connection, onDiagnostic) }
+                runCatching { LegacyUsbHostCompat.resetDevice(sharedConnection, onDiagnostic) }
             }
             throw IphoneUsbException.DeviceUnavailable(
                 "USBMUX write transferred $transferred of ${data.size} bytes",
@@ -571,7 +569,7 @@ class Iap2UsbSession internal constructor(
     fun read(timeoutMillis: Long): ByteArray? = synchronized(readLock) {
         checkOpen()
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
-        if (realSdkInt() < ASYNC_USB_READ_MIN_SDK) {
+        if (realSdkInt() < ASYNC_USB_READ_MIN_SDK || !sharedConnection.supportsAsyncRequests) {
             return@synchronized readSynchronously(timeoutMillis)
         }
         var acceptedFallback: UsbReadQueueResult? = null
@@ -579,7 +577,9 @@ class Iap2UsbSession internal constructor(
             synchronized(stateLock) {
                 checkOpenLocked()
                 val current = readRequest ?: UsbRequest().also {
-                    if (!it.initialize(connection, inEndpoint)) {
+                    val framework = sharedConnection.frameworkConnection
+                        ?: throw failSession("async USBMUX read requires a framework USB connection")
+                    if (!it.initialize(framework, inEndpoint)) {
                         it.close()
                         throw failSession(
                             "Android could not initialize USBMUX read request (${requestDiagnostics(timeoutMillis)})",
@@ -661,7 +661,7 @@ class Iap2UsbSession internal constructor(
      * second openDevice() fd (the usbfs fallback reports ENOENT). Sharing this fd
      * also matches the ownership model of SharedUsbDeviceConnection.
      */
-    internal fun retainConnectionForNcm(): SharedUsbDeviceConnection = synchronized(stateLock) {
+    internal fun retainConnectionForNcm(): SharedUsbConnection = synchronized(stateLock) {
         checkOpenLocked()
         sharedConnection.retain()
     }
@@ -677,7 +677,7 @@ class Iap2UsbSession internal constructor(
         // synchronous bulk ioctl still owns this fd on a legacy USB host.
         synchronized(readLock) {
             synchronized(writeLock) {
-                if (!isAbortedOrDetached) runCatching { connection.releaseInterface(claimedInterface) }
+                if (!isAbortedOrDetached) runCatching { sharedConnection.releaseInterface(claimedInterface) }
             }
         }
         // Android 4.x: a cancelled URB is reaped by the wait worker asynchronously.
@@ -717,7 +717,7 @@ class Iap2UsbSession internal constructor(
             if (remainingNanos <= 0) return null
             val remaining = (remainingNanos / 1_000_000).toInt().coerceIn(1, Int.MAX_VALUE)
             val transferred = try {
-                connection.bulkTransfer(inEndpoint, syncReadBuffer, syncReadBuffer.size, remaining)
+                sharedConnection.bulkTransfer(inEndpoint, syncReadBuffer, syncReadBuffer.size, remaining)
             } catch (error: RuntimeException) {
                 throw failSession("USBMUX read failed", error)
             }

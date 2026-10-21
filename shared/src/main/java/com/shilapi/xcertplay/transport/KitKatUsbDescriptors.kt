@@ -79,9 +79,21 @@ internal object KitKatUsbDescriptors {
             UsbEndpoint::class.java.getDeclaredConstructor(primitive, primitive, primitive, primitive)
                 .apply { isAccessible = true }.newInstance(it.address, it.attributes, it.packetSize, it.interval)
         }.toTypedArray()
-        val iface = UsbInterface::class.java.getDeclaredConstructor(primitive, primitive, primitive, primitive,
-            Array<android.os.Parcelable>::class.java).apply { isAccessible = true }
-            .newInstance(info.id, info.clazz, info.subclass, info.protocol, endpoints)
+        // API 21+ UsbInterface carries an alternate-setting and a name slot in its hidden
+        // constructor; the 5-arg form below is the pre-21 shape. Try the modern one first
+        // so direct-mode descriptor parsing (issue #266) works on newer ROMs too; the
+        // alternates map is registered either way for the legacy lookup path.
+        val iface = try {
+            UsbInterface::class.java.getDeclaredConstructor(
+                primitive, primitive, String::class.java, primitive, primitive, primitive,
+                Array<UsbEndpoint>::class.java,
+            ).apply { isAccessible = true }
+                .newInstance(info.id, info.alternate, null, info.clazz, info.subclass, info.protocol, endpoints)
+        } catch (_: ReflectiveOperationException) {
+            UsbInterface::class.java.getDeclaredConstructor(primitive, primitive, primitive, primitive,
+                Array<android.os.Parcelable>::class.java).apply { isAccessible = true }
+                .newInstance(info.id, info.clazz, info.subclass, info.protocol, endpoints)
+        }
         alternates[iface] = info.alternate
         return iface
     }

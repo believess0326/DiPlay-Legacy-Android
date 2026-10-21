@@ -30,8 +30,11 @@ internal object UsbfsIoNative {
         fd: Int, endpoint: Int, buffer: ByteBuffer, length: Int, timeoutMillis: Int,
     ): Int
 
-    private external fun setConfiguration(fd: Int, configuration: Int): Int
-    private external fun releaseInterface(fd: Int, interfaceId: Int): Int
+    private external fun nativeSetConfiguration(fd: Int, configuration: Int): Int
+    private external fun nativeReleaseInterface(fd: Int, interfaceId: Int): Int
+    private external fun nativeClaimInterface(fd: Int, interfaceId: Int): Int
+    private external fun nativeSetInterface(fd: Int, interfaceId: Int, altSetting: Int): Int
+    private external fun nativeResetDevice(fd: Int): Int
 
     /** Bytes transferred, or a negative errno. [buffer] must be a direct buffer. */
     fun control(fd: Int, requestType: Int, request: Int, value: Int, index: Int,
@@ -56,7 +59,7 @@ internal object UsbfsIoNative {
     fun setConfiguration(fd: Int, configuration: Int): Int =
         if (!libraryReady) ERRNO_UNAVAILABLE
         else try {
-            setConfiguration(fd, configuration)
+            nativeSetConfiguration(fd, configuration)
         } catch (_: LinkageError) {
             ERRNO_UNAVAILABLE
         }
@@ -65,7 +68,34 @@ internal object UsbfsIoNative {
     fun releaseInterface(fd: Int, interfaceId: Int): Int =
         if (!libraryReady) ERRNO_UNAVAILABLE
         else try {
-            releaseInterface(fd, interfaceId)
+            nativeReleaseInterface(fd, interfaceId)
+        } catch (_: LinkageError) {
+            ERRNO_UNAVAILABLE
+        }
+
+    /** 0 on success, or a positive errno. */
+    fun claimInterface(fd: Int, interfaceId: Int): Int =
+        if (!libraryReady) ERRNO_UNAVAILABLE
+        else try {
+            nativeClaimInterface(fd, interfaceId)
+        } catch (_: LinkageError) {
+            ERRNO_UNAVAILABLE
+        }
+
+    /** 0 on success, or a positive errno. */
+    fun setInterface(fd: Int, interfaceId: Int, altSetting: Int): Int =
+        if (!libraryReady) ERRNO_UNAVAILABLE
+        else try {
+            nativeSetInterface(fd, interfaceId, altSetting)
+        } catch (_: LinkageError) {
+            ERRNO_UNAVAILABLE
+        }
+
+    /** 0 on success, or a positive errno. */
+    fun resetDevice(fd: Int): Int =
+        if (!libraryReady) ERRNO_UNAVAILABLE
+        else try {
+            nativeResetDevice(fd)
         } catch (_: LinkageError) {
             ERRNO_UNAVAILABLE
         }

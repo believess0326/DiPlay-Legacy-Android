@@ -88,6 +88,29 @@ internal fun selectUsbConfiguration(
     ) >= 0
 }
 
+/**
+ * Seam variant (issue #266): the framework transport delegates to the typed overload;
+ * a raw transport has no platform configuration object, so SET_CONFIGURATION goes
+ * out as a plain control transfer and the usbfs ioctl in
+ * [LegacyUsbHostCompat.selectConfiguration] remains the authoritative fallback.
+ */
+internal fun selectUsbConfiguration(
+    connection: SharedUsbConnection,
+    configuration: CarPlayUsbConfiguration,
+): Boolean {
+    val framework = connection.frameworkConnection
+    if (framework != null) return selectUsbConfiguration(framework, configuration)
+    return connection.controlTransfer(
+        UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_STANDARD,
+        9,
+        configuration.id,
+        0,
+        null,
+        0,
+        1_000,
+    ) >= 0
+}
+
 internal fun selectUsbInterface(connection: UsbDeviceConnection, usbInterface: UsbInterface): Boolean =
     if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) connection.setInterface(usbInterface)
     else connection.controlTransfer(
@@ -115,6 +138,25 @@ private fun selectUsbConfiguration21(connection: UsbDeviceConnection, value: Any
  */
 internal fun clearUsbEndpointHalt(
     connection: UsbDeviceConnection,
+    endpoint: UsbEndpoint,
+    timeoutMillis: Int = USB_HALT_CLEAR_TIMEOUT_MILLIS,
+): Int = try {
+    connection.controlTransfer(
+        UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_STANDARD or USB_RECIP_ENDPOINT,
+        USB_REQUEST_CLEAR_FEATURE,
+        USB_FEATURE_ENDPOINT_HALT,
+        endpoint.address,
+        null,
+        0,
+        timeoutMillis,
+    )
+} catch (_: RuntimeException) {
+    -1
+}
+
+/** Seam variant (issue #266): identical CLEAR_FEATURE transfer over either transport. */
+internal fun clearUsbEndpointHalt(
+    connection: SharedUsbConnection,
     endpoint: UsbEndpoint,
     timeoutMillis: Int = USB_HALT_CLEAR_TIMEOUT_MILLIS,
 ): Int = try {

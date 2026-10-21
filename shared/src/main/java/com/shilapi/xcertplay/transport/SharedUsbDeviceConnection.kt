@@ -14,13 +14,38 @@ import java.nio.ByteBuffer
  */
 internal class SharedUsbDeviceConnection private constructor(
     val connection: UsbDeviceConnection,
-) {
+) : SharedUsbConnection {
     private var references = 1
     private var closed = false
     private val usbCompat = UsbRequestCompat()
     private val completions = UsbCompletionRouter<UsbRequest> { usbCompat.requestWait(connection, it) }
 
-    fun queue(request: UsbRequest, buffer: ByteBuffer): Boolean {
+    override val fileDescriptor: Int get() = connection.fileDescriptor
+    override val frameworkConnection: UsbDeviceConnection get() = connection
+    override val supportsAsyncRequests: Boolean get() = true
+
+    override fun controlTransfer(
+        requestType: Int, request: Int, value: Int, index: Int,
+        buffer: ByteArray?, length: Int, timeoutMillis: Int,
+    ): Int = connection.controlTransfer(requestType, request, value, index, buffer, length, timeoutMillis)
+
+    override fun bulkTransfer(endpoint: android.hardware.usb.UsbEndpoint, buffer: ByteArray, length: Int, timeoutMillis: Int): Int =
+        connection.bulkTransfer(endpoint, buffer, length, timeoutMillis)
+
+    override fun bulkTransfer(
+        endpoint: android.hardware.usb.UsbEndpoint, buffer: ByteArray, offset: Int, length: Int, timeoutMillis: Int,
+    ): Int = bulkTransferCompat(connection, endpoint, buffer, offset, length, timeoutMillis)
+
+    override fun claimInterface(usbInterface: android.hardware.usb.UsbInterface, force: Boolean): Boolean =
+        connection.claimInterface(usbInterface, force)
+
+    override fun releaseInterface(usbInterface: android.hardware.usb.UsbInterface): Boolean =
+        connection.releaseInterface(usbInterface)
+
+    override fun setInterface(usbInterface: android.hardware.usb.UsbInterface): Boolean =
+        connection.setInterface(usbInterface)
+
+    override fun queue(request: UsbRequest, buffer: ByteBuffer): Boolean {
         completions.register(request)
         return try {
             usbCompat.queue(request, buffer).also { if (!it) completions.forget(request) }
@@ -30,18 +55,18 @@ internal class SharedUsbDeviceConnection private constructor(
         }
     }
 
-    fun await(request: UsbRequest, timeoutMillis: Long): UsbRequest = completions.await(request, timeoutMillis)
-    fun forget(request: UsbRequest) = completions.forget(request)
+    override fun await(request: UsbRequest, timeoutMillis: Long): UsbRequest = completions.await(request, timeoutMillis)
+    override fun forget(request: UsbRequest) = completions.forget(request)
 
     @Synchronized
-    fun retain(): SharedUsbDeviceConnection {
+    override fun retain(): SharedUsbDeviceConnection {
         check(!closed) { "USB device connection is already closed" }
         references += 1
         return this
     }
 
     @Synchronized
-    fun release() {
+    override fun release() {
         if (closed) return
         references -= 1
         check(references >= 0) { "USB device connection released too many times" }
