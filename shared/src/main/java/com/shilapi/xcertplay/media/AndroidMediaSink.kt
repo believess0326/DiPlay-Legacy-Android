@@ -1424,6 +1424,8 @@ private class AudioRenderer(
     private var codecMime: String? = null
     private var decoderCreateRetries = 0
     private var lastDecoderCreateRetryNanos = 0L
+    /** Issue #272: bundled libopus path for ROMs with no MediaCodec Opus decoder at all. */
+    private var softwareOpusDecoder: NativeOpusDecoder? = null
     private var track: AudioTrack? = null
     private var pcm = ByteArray(64 * 1024)
     private var playbackStarted = false
@@ -1544,6 +1546,7 @@ private class AudioRenderer(
     }
 
     private fun configureCodec(mime: String) {
+        if (codec != null || softwareOpusDecoder != null) return
         codecMime = mime
         codec = createConfiguredDecoder(mime, forceSoftware = false)
         if (codec == null) {
@@ -1554,6 +1557,19 @@ private class AudioRenderer(
             // packets keep arriving, so one transient failure cannot mute a stream.
             report("Audio: platform decoder unavailable for $mime; trying software decoder")
             codec = createConfiguredDecoder(mime, forceSoftware = true)
+        }
+        if (codec == null && mime == MediaFormat.MIMETYPE_AUDIO_OPUS) {
+            // Issue #272 (field follow-up): some ROMs have no Opus decoder in
+            // MediaCodec at all — the platform create and the OMX.google lookup
+            // both come back empty, deterministically, so retries never recover.
+            // The project already bundles libopus for the microphone; decode with
+            // it and feed the PCM straight to the track.
+            softwareOpusDecoder = NativeOpusDecoder.create(format.sampleRate, format.channels)?.also {
+                report(
+                    "Audio: no platform Opus decoder on this device; using bundled " +
+                        "software Opus decoder rate=${format.sampleRate} channels=${format.channels}",
+                )
+            }
         }
     }
 
@@ -2040,6 +2056,14 @@ private class AudioRenderer(
 
     private fun feedCodec(payload: ByteArray, presentationTimeUs: Long) {
         val codec = codec ?: run {
+            // Issue #272: the bundled software decoder bypasses MediaCodec entirely.
+            softwareOpusDecoder?.let { decoder ->
+                decoder.decode(payload)?.let { pcmBytes ->
+                    outputBuffers++
+                    writePcm(pcmBytes)
+                }
+                return
+            }
             decoderUnavailablePackets++
             retryDecoderCreateIfDue()
             return
@@ -2336,6 +2360,8 @@ private class AudioRenderer(
     @Synchronized
     private fun release() {
         abandonAudioFocus()
+        softwareOpusDecoder?.close()
+        softwareOpusDecoder = null
         val codec = codec
         this.codec = null
         if (codec != null) {
