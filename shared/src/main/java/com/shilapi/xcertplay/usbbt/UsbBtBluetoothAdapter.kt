@@ -362,6 +362,23 @@ class UsbBtBluetoothAdapter(
     }
 
     /**
+     * The cached iAP2 stream for [handle] when it is still usable, or null. A stream
+     * closed by a previous session's teardown stays in the cache while the inbound ACL
+     * keeps a reference alive, and handing the corpse out again makes every retry fail
+     * instantly with zero bytes transferred (issue #274) — evict it, together with the
+     * RFCOMM layer its close() already shut down, and let bring-up build a fresh DLC.
+     */
+    private fun liveCachedStream(handle: Int, deviceAddress: String): UsbBtRfcommStream? {
+        val existing = activeStreams[handle] ?: return null
+        if (!existing.isClosed) return existing
+        if (activeStreams.remove(handle, existing)) {
+            rfcommLayers.remove(handle)
+            UsbBtLog.log(appContext, TAG, "openRfcommStream: evicted closed cached stream for $deviceAddress; opening a fresh DLC")
+        }
+        return null
+    }
+
+    /**
      * Open an RFCOMM stream to [deviceAddress] for the iAP2 service ([uuid]
      * is accepted for interface compatibility; the channel comes from SDP).
      *
@@ -386,7 +403,7 @@ class UsbBtBluetoothAdapter(
             authenticateAndEncrypt(h, handle)
 
             // Check if peer already opened an inbound iAP2 stream on this ACL handle
-            activeStreams[handle]?.let { existing ->
+            liveCachedStream(handle, deviceAddress)?.let { existing ->
                 UsbBtLog.log(appContext, TAG, "openRfcommStream: reusing existing inbound stream for $deviceAddress")
                 return existing
             }
@@ -395,7 +412,7 @@ class UsbBtBluetoothAdapter(
                 // If peer just connected inbound, give iOS a brief window (up to 2.5s) to open its inbound iAP2 DLC
                 val waitDeadline = System.currentTimeMillis() + 2500L
                 while (System.currentTimeMillis() < waitDeadline && isEnabled()) {
-                    activeStreams[handle]?.let { existing ->
+                    liveCachedStream(handle, deviceAddress)?.let { existing ->
                         UsbBtLog.log(appContext, TAG, "openRfcommStream: peer opened inbound iAP2 stream for $deviceAddress; reusing")
                         return existing
                     }
@@ -890,6 +907,9 @@ private class UsbBtRfcommStream(
 
     private val inbound = LinkedBlockingQueue<ByteArray>(64)
     private val closed = AtomicBoolean(false)
+
+    /** True once [close] ran; a closed stream must never be handed to a new session. */
+    val isClosed: Boolean get() = closed.get()
 
     /** Reassembly buffer for frames larger than one recv() call. Guarded by itself. */
     private val reassembly = java.io.ByteArrayOutputStream()
