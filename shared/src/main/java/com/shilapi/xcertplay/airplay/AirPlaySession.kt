@@ -99,6 +99,8 @@ class AirPlaySession(
     private var pendingNightMode: Boolean? = null
     private val firstTouchSendLogged = AtomicBoolean(false)
     private val touchSendFailureLogged = AtomicBoolean(false)
+    /** Issue #282: tracks press starts so each tap's scaled coordinates are logged once. */
+    private val touchWasDown = AtomicBoolean(false)
     private val ntp = NtpClock(socket.localAddress)
     private var keepAliveSocket: DatagramSocket? = null
     private var keepAliveThread: Thread? = null
@@ -357,6 +359,22 @@ class AirPlaySession(
             )
         } else if (!sent && touchSendFailureLogged.compareAndSet(false, true)) {
             Log.w(TAG, "airplay touch dropped: event channel is not ready")
+        }
+        // Issue #282: log every press start with its scaled coordinates and the raw
+        // report. A session where taps are sent but the phone never reacts can then
+        // be settled from the report alone: coordinates inside the declared display
+        // (config.main) mean the phone side ignored a well-formed tap; coordinates
+        // pinned to an edge mean the view-side mapping is wrong for that geometry.
+        val anyDown = scaled.any { it.down }
+        if (sent && anyDown && !touchWasDown.getAndSet(true)) {
+            val first = scaled.first()
+            Log.i(
+                TAG,
+                "airplay touch press x=${first.x} y=${first.y} display=${config.main.widthPixels}x" +
+                    "${config.main.heightPixels} report=${report.toHexString()}",
+            )
+        } else if (!anyDown) {
+            touchWasDown.set(false)
         }
         return sent
     }
