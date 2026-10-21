@@ -222,6 +222,9 @@ class AndroidMediaSink(
     private val audioFocusAutoYield: Boolean = true,
     private val mediaChannel: Int = 0,
     private val navigationChannel: Int = 0,
+    /** Issues #253/#263: per-stream PCM volume in percent (100 = unchanged). */
+    private val mediaVolumePercent: Int = 100,
+    private val navigationVolumePercent: Int = 100,
     context: Context? = null,
     private val navigationStreamType: Int = AudioChannelMapper.DEFAULT_NAVIGATION_STREAM_TYPE,
     onScreenStreamActiveChanged: ((Int, Boolean) -> Unit)? = null,
@@ -713,6 +716,11 @@ class AndroidMediaSink(
             onAudioDiagnostic,
             echoReference,
             callVoiceFilter && format.audioType == TELEPHONY_AUDIO_TYPE,
+            volumePercent = when (format.audioType) {
+                "media" -> mediaVolumePercent
+                "navigation" -> navigationVolumePercent
+                else -> 100
+            },
         ).also {
             // Port of upstream #797: if the call lands on the earpiece, move it to the loudspeaker.
             if (format.audioType == TELEPHONY_AUDIO_TYPE) it.onRoutedToEarpiece = { moveCallToLoudspeaker(id) }
@@ -822,6 +830,8 @@ private class VideoDecoder(
     private var lastKeyFrameRequestNs = 0L
     private var consecutiveInputWithoutOutput = 0
     private var consecutiveDroppedWithoutKeyFrame = 0
+    /** Issue #216: when the current wait for an acceptable keyframe began. */
+    private var keyframeWaitStartedNs = 0L
     private var lastOutputRenderedNs = 0L
     // The main screen keeps the historical log format; other screens are labelled.
     private val stats = VideoStats(statsLabel ?: if (streamType == MAIN_SCREEN_TYPE) "" else " stream=$streamType")
@@ -1165,6 +1175,18 @@ private class VideoDecoder(
         if (annexB.isEmpty()) { recover("invalid video access unit"); return }
         if (!referenceChain.accepts(annexB, config.codec)) {
             consecutiveDroppedWithoutKeyFrame++
+            // Issue #216: keyframe requests repeat while waiting, but if the chain
+            // tracker and the phone disagree about the reference state (or every
+            // keyframe arrives damaged on a lossy link), well-formed frames can be
+            // rejected forever without ever triggering a full reset — the picture
+            // froze at shown=0 for minutes while rx stayed healthy. Escalate a
+            // long wait to the same full recovery the stall paths use.
+            val nowNs = System.nanoTime()
+            if (keyframeWaitStartedNs == 0L) keyframeWaitStartedNs = nowNs
+            if (nowNs - keyframeWaitStartedNs >= KEYFRAME_WAIT_ESCALATION_NS) {
+                recover("keyframe wait exceeded ${KEYFRAME_WAIT_ESCALATION_NS / 1_000_000}ms with $consecutiveDroppedWithoutKeyFrame frames dropped")
+                return
+            }
             if (consecutiveDroppedWithoutKeyFrame >= 60) {
                 // If we've dropped ~2 seconds of frames waiting for keyframe, force-request keyframe immediately
                 requestKeyFrameIfDue(force = true)
@@ -1175,6 +1197,7 @@ private class VideoDecoder(
             return
         }
         consecutiveDroppedWithoutKeyFrame = 0
+        keyframeWaitStartedNs = 0L
         if (decoder == null) configureDecoder(config)
         val codec = decoder ?: return
         if (!submittedFrameLogged) {
@@ -1244,6 +1267,7 @@ private class VideoDecoder(
         Log.w(TAG, "Video recovery: $reason; waiting for keyframe")
         consecutiveInputWithoutOutput = 0
         consecutiveDroppedWithoutKeyFrame = 0
+        keyframeWaitStartedNs = 0L
         lastOutputRenderedNs = System.nanoTime()
         stats.onRecovery()
         report("recovery: $reason; waiting for keyframe")
@@ -1375,6 +1399,8 @@ private class VideoDecoder(
         const val PAUSE_HELD_FRAMES = 3
         const val MAX_CONSECUTIVE_INPUT_WITHOUT_OUTPUT = 30
         const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
+        /** Issue #216: a keyframe wait longer than this escalates to a full recovery. */
+        const val KEYFRAME_WAIT_ESCALATION_NS = 5_000_000_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)
     }
 }
@@ -1407,6 +1433,8 @@ private class AudioRenderer(
     /** Called when this call's track is routed to the earpiece; the sink moves the call to the loudspeaker. */
     var onRoutedToEarpiece: (() -> Unit)? = null,
     private var routingListener: Any? = null,
+    /** Issues #253/#263: this stream's PCM volume in percent (100 = unchanged). */
+    private val volumePercent: Int = 100,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
 
@@ -1507,7 +1535,7 @@ private class AudioRenderer(
             runCatching { report("Audio: starting api=${Build.VERSION.SDK_INT} " +
                 "audioType=${format.audioType} codec=${format.codec} rate=${format.sampleRate} channels=${format.channels} " +
                 "mapping=${if (advancedAudioChannelMapping) "automotive" else "mobile"} " +
-                "mediaChannel=$mediaChannel navigationChannel=$navigationChannel focus=$audioFocusEnabled") }
+                "mediaChannel=$mediaChannel navigationChannel=$navigationChannel volume=$volumePercent% focus=$audioFocusEnabled") }
             when (format.codec) {
                 AudioCodecKind.AAC_LC -> configureCodec(MediaFormat.MIMETYPE_AUDIO_AAC)
                 AudioCodecKind.OPUS -> configureCodec(MediaFormat.MIMETYPE_AUDIO_OPUS)
@@ -2170,6 +2198,25 @@ private class AudioRenderer(
         }
     }
 
+    /**
+     * Issues #253/#263: scales this stream's PCM16 by the configured percent so the
+     * driver can balance navigation against media even when the head unit offers a
+     * single volume. Runs once per writePcm call, before the chunked track writes.
+     */
+    private fun applyStreamGain(data: ByteArray, offset: Int, length: Int) {
+        if (volumePercent == 100 || length < 2) return
+        val factor = volumePercent / 100.0
+        val end = offset + length - 1
+        var i = offset
+        while (i < end) {
+            val sample = (data[i].toInt() and 0xff) or (data[i + 1].toInt() shl 8)
+            val scaled = (sample * factor).toInt().coerceIn(-32768, 32767)
+            data[i] = (scaled and 0xff).toByte()
+            data[i + 1] = ((scaled shr 8) and 0xff).toByte()
+            i += 2
+        }
+    }
+
     private fun writePcm(data: ByteArray, offset: Int = 0, length: Int = data.size) {
         val track = track ?: return
         diagnosticStage = "track-write"
@@ -2185,6 +2232,7 @@ private class AudioRenderer(
             applyFadeIn(data, offset, length)
             fadeApplied = true
         }
+        applyStreamGain(data, offset, length)
         var written = 0
         while (written < length && running) {
             val writeLength = if (playbackStarted) {
