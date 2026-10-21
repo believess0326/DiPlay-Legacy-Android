@@ -703,5 +703,8 @@
     <string name="settings_usb_bluetooth_diagnostic_description">Діагностика USB Bluetooth: перевірка дозволів та обладнання HCI з відновленням бездротової служби. Спочатку від’єднайте CarPlay. Успішний тест обладнання не підтверджує сполучення iPhone або підключення CarPlay. Збережіть звіт після збою підключення.</string>
     <string name="settings_advanced_connection">Розширене підключення</string>
     <string name="settings_direct_usbfs_mode">Пряме підключення USB (експериментально)</string>
+    <string name="settings_media_volume">Гучність музики</string>
+    <string name="settings_navigation_volume">Гучність навігації</string>
+    <string name="settings_stream_volume_description">Регулює баланс звуків усередині DiPlay, коли в головного пристрою одна загальна гучність.</string>
     <string name="settings_direct_usbfs_mode_description">Для пристроїв, де системний список USB ніколи не показує iPhone: перераховує пристрої напряму та відкриває вузол пристрою, може знадобитися root. Застосовується при наступному підключенні та перезапускає CarPlay.</string>
 </resources>

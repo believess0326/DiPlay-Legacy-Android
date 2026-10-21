@@ -805,5 +805,8 @@
     <string name="settings_usb_bluetooth_diagnostic_description">USB Bluetooth diagnostic: tests adapter permissions and HCI hardware, then restores the wireless service. Disconnect CarPlay before testing. A hardware pass does not verify iPhone pairing or CarPlay; save the report after reproducing a connection failure.</string>
     <string name="settings_advanced_connection">Advanced connection</string>
     <string name="settings_direct_usbfs_mode">Direct USB connection (experimental)</string>
+    <string name="settings_media_volume">Media volume</string>
+    <string name="settings_navigation_volume">Navigation volume</string>
+    <string name="settings_stream_volume_description">Balances each sound inside DiPlay when the head unit has a single volume for everything.</string>
     <string name="settings_direct_usbfs_mode_description">For head units whose system USB list never shows the iPhone: enumerates USB devices directly and opens the device node, which may require root. Applies at the next connection and restarts CarPlay.</string>
 </resources>

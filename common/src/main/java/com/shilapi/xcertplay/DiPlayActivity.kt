@@ -1624,6 +1624,20 @@ class DiPlayActivity : ComponentActivity() {
             getString(R.string.audio_routing), R.drawable.ic_dp_audio) { card ->
             mediaChannelControl(card)
             navigationChannelControl(card)
+            // Issues #253/#263: when the head unit merges all audio into one volume,
+            // balance navigation prompts against music inside the app instead.
+            val volumeLabels = AirPlayPersistence.STREAM_VOLUME_PERCENTS.map { "$it%" }
+            choice(card, getString(R.string.settings_media_volume), volumeLabels,
+                AirPlayPersistence.STREAM_VOLUME_PERCENTS.indexOf(AirPlayPersistence.loadMediaVolumePercent(this)).coerceAtLeast(0)) {
+                AirPlayPersistence.saveMediaVolumePercent(this, AirPlayPersistence.STREAM_VOLUME_PERCENTS[it])
+            }
+            choice(card, getString(R.string.settings_navigation_volume), volumeLabels,
+                AirPlayPersistence.STREAM_VOLUME_PERCENTS.indexOf(AirPlayPersistence.loadNavigationVolumePercent(this)).coerceAtLeast(0)) {
+                AirPlayPersistence.saveNavigationVolumePercent(this, AirPlayPersistence.STREAM_VOLUME_PERCENTS[it])
+            }
+            card.addView(label(getString(R.string.settings_stream_volume_description), 14, MUTED).apply {
+                setPadding(0, dp(8), 0, dp(6))
+            })
             val bufferPresets = com.shilapi.xcertplay.media.MediaAudioBuffer.presets
             choice(card, getString(R.string.music_buffer), listOf(getString(R.string.s_300_ms_default), getString(R.string.s_500_ms), getString(R.string.s_1000_ms_most_stable)),
                 bufferPresets.indexOf(AirPlayPersistence.loadMediaBufferMillis(this)).coerceAtLeast(0)) {

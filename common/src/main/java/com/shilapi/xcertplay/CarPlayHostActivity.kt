@@ -1393,6 +1393,11 @@ class CarPlayHostActivity : ComponentActivity() {
             touchOutsideContent = false
             refreshConfiguration(source = ThemeModeDiagnostics.Source.WINDOW_FOCUS)
             applyFullscreenMode()
+            // Issues #251/#252: a reverse-camera overlay usually takes window focus
+            // without pausing the activity, so onResume's picture refresh never runs
+            // when it closes — the (still decoding) picture stayed black for seconds
+            // until the stream happened to refresh itself. Refresh on focus regain.
+            if (activeAirPlaySession != null) sink?.refreshPicture(SCREEN_TYPE_MAIN)
         } else {
             mainHandler.removeCallbacks(hideDockRunnable)
             dockEdgeSwipeActive = false
@@ -4083,6 +4088,8 @@ class CarPlayHostActivity : ComponentActivity() {
             audioFocusAutoYield = AirPlayPersistence.loadAudioFocusAutoYield(this),
             mediaChannel = AirPlayPersistence.loadMediaAudioChannel(this),
             navigationChannel = AirPlayPersistence.loadNavigationAudioChannel(this),
+            mediaVolumePercent = AirPlayPersistence.loadMediaVolumePercent(this),
+            navigationVolumePercent = AirPlayPersistence.loadNavigationVolumePercent(this),
             context = this,
             navigationStreamType = navigationStreamType,
             onScreenStreamActiveChanged = { type, active ->

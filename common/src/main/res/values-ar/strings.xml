@@ -691,5 +691,8 @@
     <string name="settings_usb_bluetooth_diagnostic_description">تشخيص USB Bluetooth: فحص أذونات المحول وعتاد HCI ثم استعادة الخدمة اللاسلكية. افصل CarPlay قبل الفحص. نجاح فحص العتاد لا يؤكد اقتران iPhone أو اتصال CarPlay. احفظ التقرير بعد فشل الاتصال.</string>
     <string name="settings_advanced_connection">اتصال متقدم</string>
     <string name="settings_direct_usbfs_mode">اتصال USB مباشر (تجريبي)</string>
+    <string name="settings_media_volume">مستوى صوت الوسائط</string>
+    <string name="settings_navigation_volume">مستوى صوت التنقل</string>
+    <string name="settings_stream_volume_description">يوازن كل صوت داخل DiPlay عندما يكون لدى وحدة التحكم مستوى صوت واحد لكل شيء.</string>
     <string name="settings_direct_usbfs_mode_description">للوحدات التي لا تُظهر قائمة USB في النظام جهاز iPhone أبدًا: يقوم بتعداد الأجهزة مباشرة وفتح عقدة الجهاز، وقد يتطلب صلاحيات الجذر. يُطبق عند الاتصال التالي ويعيد تشغيل CarPlay.</string>
 </resources>

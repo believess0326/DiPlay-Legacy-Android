@@ -50,6 +50,10 @@ object AirPlayPersistence {
     private const val KEY_AUDIO_FOCUS_ENABLED = "audio_focus_enabled"
     private const val KEY_AUDIO_FOCUS_AUTO_YIELD = "audio_focus_auto_yield"
     private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
+    private const val KEY_MEDIA_VOLUME_PERCENT = "media_volume_percent"
+    private const val KEY_NAVIGATION_VOLUME_PERCENT = "navigation_volume_percent"
+    /** Issues #253/#263: selectable per-stream volume steps, in percent. */
+    val STREAM_VOLUME_PERCENTS = listOf(25, 50, 75, 100, 125, 150)
     private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
     private const val KEY_NAVIGATION_STREAM_TYPE = "navigation_stream_type"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
@@ -256,6 +260,31 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_MEDIA_AUDIO_CHANNEL, 0)
             .takeIf { it in AUDIO_CHANNELS } ?: 0
+
+    // Issues #253/#263: per-stream volume. Head units that merge every stream into
+    // one system volume leave drivers unable to balance navigation prompts against
+    // music; the renderer scales each stream's PCM by these percents instead.
+    fun loadMediaVolumePercent(context: Context): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_MEDIA_VOLUME_PERCENT, 100)
+            .takeIf { it in STREAM_VOLUME_PERCENTS } ?: 100
+
+    fun saveMediaVolumePercent(context: Context, percent: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_MEDIA_VOLUME_PERCENT, percent.takeIf { it in STREAM_VOLUME_PERCENTS } ?: 100)
+            .apply()
+    }
+
+    fun loadNavigationVolumePercent(context: Context): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_NAVIGATION_VOLUME_PERCENT, 100)
+            .takeIf { it in STREAM_VOLUME_PERCENTS } ?: 100
+
+    fun saveNavigationVolumePercent(context: Context, percent: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_NAVIGATION_VOLUME_PERCENT, percent.takeIf { it in STREAM_VOLUME_PERCENTS } ?: 100)
+            .apply()
+    }
 
     fun saveMediaAudioChannel(context: Context, channel: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

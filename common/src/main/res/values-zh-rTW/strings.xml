@@ -757,5 +757,8 @@
     <string name="settings_usb_bluetooth_diagnostic_description">外接藍牙診斷：檢查轉接器權限與 HCI 硬體，結束後恢復無線服務。檢測前請先中斷 CarPlay。硬體正常不代表 iPhone 配對及 CarPlay 已連線；連線失敗後請儲存報告。</string>
     <string name="settings_advanced_connection">進階連接</string>
     <string name="settings_direct_usbfs_mode">USB 直連模式（實驗性）</string>
+    <string name="settings_media_volume">媒體音量</string>
+    <string name="settings_navigation_volume">導航音量</string>
+    <string name="settings_stream_volume_description">當車機只有一個總音量時，在 DiPlay 內部調整媒體與導航的相對音量。</string>
     <string name="settings_direct_usbfs_mode_description">適用於系統 USB 列表始終看不到 iPhone 的車機：繞過系統列表直接列舉並開啟裝置節點，可能需要 root。會在下次連接時生效，並重新連接 CarPlay。</string>
 </resources>
