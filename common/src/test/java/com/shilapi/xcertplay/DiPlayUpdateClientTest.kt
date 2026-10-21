@@ -90,6 +90,7 @@ class DiPlayUpdateClientTest {
     @Test fun checksumAcceptsOnlyValidDigestForExpectedApk() {
         val hash = "a".repeat(64)
         assertEquals(hash, DiPlayUpdateClient.parseChecksum("$hash  $name\n", name))
+        assertEquals(hash, DiPlayUpdateClient.parseChecksum("\uFEFF$hash  $name\n", name))
         assertEquals(hash, DiPlayUpdateClient.parseChecksum(hash, name))
         for (bad in listOf("abcd  $name", "$hash  different.apk", "a".repeat(65))) {
             try {

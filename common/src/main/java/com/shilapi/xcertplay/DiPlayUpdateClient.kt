@@ -143,7 +143,7 @@ internal object DiPlayUpdateClient {
         parseChecksum(withDownloadFallback(release.checksumUrl) { readText(it, MAX_DIGEST_FILE) }, release.apkName)
 
     internal fun parseChecksum(content: String, apkName: String): String {
-        val words = content.trim().split(Regex("\\s+"))
+        val words = content.removePrefix("\uFEFF").trim().split(Regex("\\s+"))
         val hash = words.firstOrNull()?.lowercase()
         if (hash == null || !digestPattern.matches(hash) ||
             (words.size > 1 && words.drop(1).joinToString(" ").trimStart('*') != apkName)
