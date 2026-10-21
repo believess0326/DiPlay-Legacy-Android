@@ -706,6 +706,7 @@
     <string name="hotspot_network_not_ready">Hotspot network is not ready</string>
     <string name="first_tcp_timeout">The iPhone did not connect to CarPlay in time</string>
     <string name="wireless_startup_retries_exhausted">Automatic retries stopped. Check the connection and retry manually.</string>
+    <string name="wired_no_tcp_replug_required">Connection failed repeatedly. Unplug the iPhone, plug it back in, then tap Retry.</string>
     <string name="retry_carplay_connection">Retry connection</string>
     <string name="carplay_dock">CarPlay dock</string>
     <string name="carplay_dock_automatic">Automatic</string>

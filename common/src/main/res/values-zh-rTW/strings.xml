@@ -640,6 +640,7 @@
     <string name="hotspot_network_not_ready">熱點網路未就緒</string>
     <string name="first_tcp_timeout">等待 iPhone 接入 CarPlay 超時</string>
     <string name="wireless_startup_retries_exhausted">自動再試一次已停止，請檢查連線後手動再試一次。</string>
+    <string name="wired_no_tcp_replug_required">連接反覆失敗。請拔下 iPhone 重新插入，然後點選重試。</string>
     <string name="retry_carplay_connection">重新連線</string>
     <string name="auto_grant_confirm_msg">尚未確認 ADB 授權。如果車機顯示「允許 USB 偵錯？」提示，請允許。\n\n請勾選「一律允許」並點選「確定」，再按一次此按鈕以完成設定。</string>
     <string name="auto_grant_confirm_title">請在車機螢幕上確認 ADB 授權</string>

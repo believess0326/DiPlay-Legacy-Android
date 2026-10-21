@@ -131,6 +131,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var connectionPanel: View? = null
     private var wifiRecoveryButton: View? = null
     private var reconnectAttempts = 0
+    /** Issues #275/#243: consecutive wired no-TCP failures on pre-Lollipop units. */
+    private var wiredNoTcpFailures = 0
     private val siriKey = WheelSiriKey()
     private val siriKeyPresses = WheelKeyPresses()
     private val legacySiriPresses = mutableSetOf<Triple<Int, Int, Int>>()
@@ -1639,6 +1641,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 startupRetryBudget.manualRetry()
                 startupRetryStopped = false
                 reconnectAttempts = 0
+                wiredNoTcpFailures = 0
                 visibility = View.GONE
                 restartCarPlay(getString(R.string.connecting_to_your_iphone))
             }
@@ -4121,6 +4124,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     activeAirPlaySession = session
                     CarPlayBackgroundSession.active = true
                     reconnectAttempts = 0
+                    wiredNoTcpFailures = 0
                     logThemeState(ThemeModeDiagnostics.Source.SESSION_ACTIVE, resources.configuration)
                     syncAirPlayDarkMode(ThemeModeDiagnostics.Source.SESSION_ACTIVE)
                     if (menuOpen) return@runOnUiThread
@@ -4248,6 +4252,9 @@ class CarPlayHostActivity : ComponentActivity() {
         if (status is CarPlayStatus.Failed) setFailedConnectionStage(status.message)
         else setConnectionStage(description, exact = true)
         when (status) {
+            // The phone is gone (or was replugged): a fresh attach episode starts,
+            // so the legacy wired no-TCP budget starts over (issues #275/#243).
+            is CarPlayStatus.WaitingForIphone -> wiredNoTcpFailures = 0
             is CarPlayStatus.Failed -> if (status.wifiResetRequired) {
                 wifiRecoveryButton?.visibility = View.VISIBLE
             } else {
@@ -4810,6 +4817,24 @@ class CarPlayHostActivity : ComponentActivity() {
             appendLog("wired VPN netd state unrecoverable; automatic retry stopped, reboot required generation=$restartGeneration")
             setConnectionStage(reason)
             return
+        }
+        // Issues #275/#243: on pre-Lollipop units (T3 / Android 4.4 class) a wired
+        // "No AirPlay TCP" failure is deterministic while the phone stays plugged in,
+        // and every rebuild risks another USB re-enumeration cycle, which can wedge
+        // the kernel USB hub and freeze the whole unit. Give it one automatic retry,
+        // then stop and ask for a physical replug instead of looping forever. The
+        // counter resets when a session activates, when the user taps Retry, or when
+        // the controller reports it is waiting for a (re)plugged iPhone.
+        if (!wirelessEnabled && realSdkInt() < Build.VERSION_CODES.LOLLIPOP &&
+            reason.contains("No AirPlay TCP after CarPlay StartSession")
+        ) {
+            wiredNoTcpFailures += 1
+            if (wiredNoTcpFailures >= WIRED_NO_TCP_FAILURE_LIMIT) {
+                appendLog("wired no-TCP failures=$wiredNoTcpFailures on legacy API ${realSdkInt()}; automatic retry stopped, manual replug required generation=$restartGeneration")
+                startupRetryButton?.visibility = View.VISIBLE
+                setConnectionStage(getString(R.string.wired_no_tcp_replug_required))
+                return
+            }
         }
         val startupDelay = if (startupFailure != null && startupFailure != WirelessStartupFailure.HOTSPOT_CONFIGURATION)
             startupRetryBudget.nextDelayMillis() else null
@@ -5627,6 +5652,8 @@ class CarPlayHostActivity : ComponentActivity() {
         const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
         const val CONFIGURATION_POLL_INTERVAL_MILLIS = 2_000L
         const val RECONNECT_DELAY_MILLIS = 2_000L
+        /** Issues #275/#243: automatic wired no-TCP retries allowed on pre-Lollipop units before asking for a physical replug. */
+        const val WIRED_NO_TCP_FAILURE_LIMIT = 2
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         /**
          * Issue #188 follow-up: a human cannot read and dismiss the system VPN
