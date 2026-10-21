@@ -21,7 +21,10 @@ class SysfsUsbEnumeratorTest {
 
     @Test fun enumeratesDevicesAndSkipsInterfaces() {
         deviceDir("1-2", "05ac", "12a8", 1, 4)
-        deviceDir("1-2:1.0", "05ac", "12a8", 1, 4) // interface entry: same attrs, must be skipped
+        // On Linux/Android sysfs, interface entries are named like "1-2:1.0". On Windows,
+        // colons are invalid in filesystem names, so the test checks interface-entry skipping
+        // conditionally on whether creating a colon-named dir is supported by the OS.
+        val canCreateColonDir = runCatching { deviceDir("1-2:1.0", "05ac", "12a8", 1, 4) }.isSuccess
         deviceDir("usb1", "1d6b", "0002", 1, 1)
         val devices = SysfsUsbEnumerator(temp.root).enumerate()
         assertEquals(2, devices.size)
