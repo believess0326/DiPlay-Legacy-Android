@@ -31,6 +31,8 @@ class NcmUsbBridge internal constructor(
     descriptorHostMac: ByteArray?,
     private val onDiagnostic: (String) -> Unit = {},
     private val legacyRestore: (() -> Unit)? = null,
+    /** Issue #279: the data interface, kept so a wedged OUT endpoint can be reset in place. */
+    private val dataInterface: UsbInterface? = null,
 ) : Closeable {
     private val descriptorMac = descriptorHostMac?.copyOf()
     val hostMac: ByteArray? get() = descriptorMac?.copyOf()
@@ -50,6 +52,8 @@ class NcmUsbBridge internal constructor(
     private var loggedWriteTimeout = false
     private var inboundFrameSeen = false
     private var consecutiveWriteFailures = 0
+    /** Issue #279: the data-interface reset is attempted once per failure run. */
+    private var interfaceResetAttempted = false
     private val frames = ArrayDeque<ByteArray>()
     private var queuedBytes = 0
     private var buffered = ByteArray(0)
@@ -116,6 +120,19 @@ class NcmUsbBridge internal constructor(
                     "while the data path was live: endpoint=0x${outEndpoint.address.toString(16)} " +
                     "requested=${block.size} transferred=$transferred",
             )
+            if (consecutiveWriteFailures == 1) {
+                // Issue #279: the framework transfer result carries no errno, so probe
+                // the endpoint status word instead — halt=1 means the device latched a
+                // stall; halt=0 with failing transfers points at the host side.
+                Log.i(
+                    IphoneCarPlayConfiguration.TAG,
+                    "ncm bulk-out endpoint status: ${probeOutEndpointStatus()}",
+                )
+            }
+            if (consecutiveWriteFailures == INTERFACE_RESET_AT_FAILURE && !interfaceResetAttempted) {
+                interfaceResetAttempted = true
+                resetDataInterface()
+            }
             if (consecutiveWriteFailures >= MAX_CONSECUTIVE_WRITE_FAILURES) {
                 // USBMUX tears its whole session down for the same class of failure.
                 throw failSession(
@@ -130,6 +147,7 @@ class NcmUsbBridge internal constructor(
             throw failSession("NCM write transferred $transferred of ${block.size} bytes")
         }
         consecutiveWriteFailures = 0
+        interfaceResetAttempted = false
         if (loggedWriteTimeout) {
             loggedWriteTimeout = false
             Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out became ready")
@@ -448,6 +466,52 @@ class NcmUsbBridge internal constructor(
         )
     }
 
+    /**
+     * Issue #279: GET_STATUS on the OUT endpoint. The framework bulk result is a bare
+     * -1 (no errno), so this is the obtainable discriminator: halt=1 means the device
+     * latched a stall on the endpoint; halt=0 while transfers keep failing points at
+     * a wedged host-side queue instead.
+     */
+    private fun probeOutEndpointStatus(): String {
+        val buffer = ByteArray(2)
+        val transferred = try {
+            sharedConnection.controlTransfer(
+                UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_STANDARD or 0x02,
+                0,
+                0,
+                outEndpoint.address,
+                buffer,
+                buffer.size,
+                ENDPOINT_STATUS_TIMEOUT_MILLIS,
+            )
+        } catch (_: RuntimeException) {
+            -1
+        }
+        if (transferred < 2) return "unavailable (control transferred=$transferred)"
+        return "halt=${buffer[0].toInt() and 1} raw=0x${(buffer[0].toInt() and 0xff).toString(16)}"
+    }
+
+    /**
+     * Issue #279: when clear-halt does not revive the OUT endpoint, re-select the data
+     * interface's alternate setting — the same SET_INTERFACE the open path performs,
+     * which resets the endpoint data toggles on both sides — then clear the halt once
+     * more. Runs at most once per failure run, inside the write lock.
+     */
+    private fun resetDataInterface() {
+        val usbInterface = dataInterface
+        if (usbInterface == null) {
+            Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out recovery: no data interface recorded; skipping reset")
+            return
+        }
+        val result = runCatching { LegacyUsbHostCompat.select(sharedConnection, usbInterface) }.getOrNull()
+        Log.i(
+            IphoneCarPlayConfiguration.TAG,
+            "ncm bulk-out recovery: re-selected data interface ${usbInterface.id} " +
+                "ok=${result?.selected} errno=${result?.errno ?: "none"}; endpoint status: ${probeOutEndpointStatus()}",
+        )
+        clearOutEndpointHalt()
+    }
+
     private fun checkOpen() {
         synchronized(stateLock) { checkOpenLocked() }
     }
@@ -479,6 +543,9 @@ class NcmUsbBridge internal constructor(
         private const val MAX_QUEUED_FRAMES = 256
         private const val MAX_QUEUED_BYTES = 1 shl 20
         private const val MAX_CONSECUTIVE_WRITE_FAILURES = 25
+        /** Issue #279: consecutive failures at which the one-shot interface reset runs. */
+        private const val INTERFACE_RESET_AT_FAILURE = 5
+        private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
         private const val NANOS_PER_MILLISECOND = 1_000_000L
         private const val REQUEST_DRAIN_TIMEOUT_MILLIS = 2_000L
 
@@ -625,6 +692,7 @@ class NcmUsbBridge internal constructor(
                     descriptorHostMac = descriptorHostMac,
                     onDiagnostic = onDiagnostic,
                     legacyRestore = legacyRestore,
+                    dataInterface = function.data,
                 )
             } catch (error: Throwable) {
                 for (usbInterface in claimed.asReversed()) {
