@@ -120,8 +120,15 @@ class LwipNcmBridge(
         }
     }
 
+    /** Ports with a live listener this session; TCP to any other port is stale traffic. */
+    private val registeredTcpPorts = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    /** Issue #270: TCP packets aimed at a previous session's dataPort, counted for diagnosis. */
+    val stalePortTcpPackets = AtomicInteger(0)
+    private var stalePortLogBudget = 4
+
     fun registerPort(port: Int, isTcp: Boolean) {
         lwipNative.registerPort(port, isTcp)
+        if (isTcp) registeredTcpPorts += port
     }
 
     private fun enqueueTxFrame(frame: ByteArray, tag: String = "lwip"): Boolean {
@@ -300,6 +307,23 @@ class LwipNcmBridge(
                         val tcpMsg = "WIRED-CHAIN [16/16] first TCP packet passed to lwIP (iPhone -> 7000)"
                         Log.i(TAG, tcpMsg)
                         runCatching { onDebugLog(tcpMsg) }
+                    }
+                    // Issue #270: after a session ends, the iPhone keeps sending TCP to the
+                    // previous session's video dataPort during the next attempt. Those packets
+                    // have no listener now; count them so a failing reconnect log shows whether
+                    // stale-session traffic is drowning the new attempt's SYN to 7000.
+                    if (ipv6.payloadLength >= 44 && registeredTcpPorts.isNotEmpty()) {
+                        val dstPort = ((frame[ipv6.payloadOffset + 42].toInt() and 0xff) shl 8) or
+                            (frame[ipv6.payloadOffset + 43].toInt() and 0xff)
+                        if (dstPort !in registeredTcpPorts) {
+                            val stale = stalePortTcpPackets.incrementAndGet()
+                            if (stalePortLogBudget > 0) {
+                                stalePortLogBudget--
+                                runCatching {
+                                    onDebugLog("ncm stale-session tcp dstPort=$dstPort count=$stale (no listener this session)")
+                                }
+                            }
+                        }
                     }
                 }
 
