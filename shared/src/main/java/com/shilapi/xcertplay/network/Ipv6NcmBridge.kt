@@ -83,10 +83,14 @@ class Ipv6NcmBridge(
     private val mdnsTxSent = AtomicInteger(0)
     private val mdnsTxDropped = AtomicInteger(0)
     private val mdnsUnmatchedQueries = AtomicInteger(0)
+    /** Last unmatched query name, kept in the summary: the per-name log lines are
+     *  budgeted and can be trimmed from a report; the tally must carry the evidence. */
+    @Volatile private var lastUnmatchedName: String? = null
 
     private fun mdnsDiagSummary(): String =
         "ncm mdns diag calls=${mdnsAnswerCalls.get()} answered=${mdnsAnsweredQueries.get()} " +
-            "txSent=${mdnsTxSent.get()} txDropped=${mdnsTxDropped.get()} unmatched=${mdnsUnmatchedQueries.get()}"
+            "txSent=${mdnsTxSent.get()} txDropped=${mdnsTxDropped.get()} unmatched=${mdnsUnmatchedQueries.get()}" +
+            (lastUnmatchedName?.let { " lastUnmatched=$it" } ?: "")
 
     private fun maybeLogMdnsDiag() {
         val events = mdnsAnsweredQueries.get() + mdnsUnmatchedQueries.get()
@@ -251,6 +255,7 @@ class Ipv6NcmBridge(
                     val queryName = responder.unmatchedQueryName(frame, ipv6.payloadOffset, ipv6.payloadLength)
                     if (queryName != null) {
                         mdnsUnmatchedQueries.incrementAndGet()
+                        lastUnmatchedName = queryName
                         if (unmatchedMdnsLogBudget > 0) {
                             unmatchedMdnsLogBudget--
                             runCatching { onDebugLog("ncm wired mdns query not answered name=$queryName") }
