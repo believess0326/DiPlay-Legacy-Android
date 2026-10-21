@@ -195,7 +195,7 @@ class NcmUsbBridge internal constructor(
                 Thread.currentThread().interrupt()
             }
         }
-        synchronized(readLock) {
+        if (!isAbortedOrDetached) synchronized(readLock) {
             synchronized(writeLock) {
                 if (!isAbortedOrDetached) {
                     for (usbInterface in claimedInterfaces.asReversed()) {

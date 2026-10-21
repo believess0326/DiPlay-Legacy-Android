@@ -316,7 +316,7 @@ class IphoneUsbHost(
         // Issue #221/#227: On KitKat (Allwinner T3), let kernel usbfs finish releasing the prior
         // descriptor inspection connection before opening a new one; avoids kernel D-state deadlock.
         if (realSdkInt() < 21) {
-            SystemClock.sleep(100L)
+            SystemClock.sleep(400L)
         }
         // Issue #112: stale UsbDevice after re-enumeration; try the fresh instance.
         val connection = usbManager.openDevice(device)
@@ -675,7 +675,7 @@ class Iap2UsbSession internal constructor(
         val cancelled = runCatching { requestToCancel?.cancel() }.getOrNull() == true
         // Never issue RELEASEINTERFACE against a detached device, or while a
         // synchronous bulk ioctl still owns this fd on a legacy USB host.
-        synchronized(readLock) {
+        if (!isAbortedOrDetached) synchronized(readLock) {
             synchronized(writeLock) {
                 if (!isAbortedOrDetached) runCatching { sharedConnection.releaseInterface(claimedInterface) }
             }

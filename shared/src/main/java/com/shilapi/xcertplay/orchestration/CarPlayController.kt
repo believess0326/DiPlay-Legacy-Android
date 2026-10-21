@@ -2508,7 +2508,8 @@ class CarPlayController(
      * re-enumeration per physical attach before reusing a ready-made configuration.
      */
     private fun shouldForceReenumerationBeforeReuse(): Boolean =
-        wiredSessionActivatedThisRun && !forcedReenumerationForAttach
+        realSdkInt() >= Build.VERSION_CODES.LOLLIPOP &&
+            wiredSessionActivatedThisRun && !forcedReenumerationForAttach
 
     private fun useIphoneConfiguration(device: UsbDevice, configuration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration?) {
         connectionDiagnostic("USB descriptor inspection sdk=${Build.VERSION.SDK_INT} " +
