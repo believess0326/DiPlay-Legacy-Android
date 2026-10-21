@@ -1420,6 +1420,10 @@ private class AudioRenderer(
     @Volatile private var running = true
     @Volatile private var started = false
     private var codec: MediaCodec? = null
+    /** Issue #272: state for recovering a decoder whose initial create failed. */
+    private var codecMime: String? = null
+    private var decoderCreateRetries = 0
+    private var lastDecoderCreateRetryNanos = 0L
     private var track: AudioTrack? = null
     private var pcm = ByteArray(64 * 1024)
     private var playbackStarted = false
@@ -1540,7 +1544,29 @@ private class AudioRenderer(
     }
 
     private fun configureCodec(mime: String) {
+        codecMime = mime
         codec = createConfiguredDecoder(mime, forceSoftware = false)
+        if (codec == null) {
+            // Issue #272: creating the telephony Opus decoder can fail outright on
+            // legacy OMX stacks (native_setup IOException), e.g. raced against the
+            // media decoder's release at call start. Fall back to the software
+            // decoder right away; feedCodec additionally retries creation while
+            // packets keep arriving, so one transient failure cannot mute a stream.
+            report("Audio: platform decoder unavailable for $mime; trying software decoder")
+            codec = createConfiguredDecoder(mime, forceSoftware = true)
+        }
+    }
+
+    /** Issue #272: bounded, spaced retries of a failed decoder create. */
+    private fun retryDecoderCreateIfDue() {
+        val mime = codecMime ?: return
+        if (decoderCreateRetries >= MAX_DECODER_CREATE_RETRIES) return
+        val now = System.nanoTime()
+        if (now - lastDecoderCreateRetryNanos < DECODER_CREATE_RETRY_INTERVAL_NANOS) return
+        lastDecoderCreateRetryNanos = now
+        decoderCreateRetries++
+        report("Audio: retrying decoder create attempt=$decoderCreateRetries mime=$mime")
+        configureCodec(mime)
     }
 
     /**
@@ -2013,7 +2039,11 @@ private class AudioRenderer(
         (sample.toLong() and 0xffff_ffffL) * 1_000_000L / format.sampleRate
 
     private fun feedCodec(payload: ByteArray, presentationTimeUs: Long) {
-        val codec = codec ?: run { decoderUnavailablePackets++; return }
+        val codec = codec ?: run {
+            decoderUnavailablePackets++
+            retryDecoderCreateIfDue()
+            return
+        }
         diagnosticStage = "decoder-input"
         // Upstream #381: while a blocking track write holds this thread, decoded output fills
         // up and the decoder stops taking input. Dropping the packet after one 10 ms wait cut
@@ -2363,6 +2393,9 @@ private class AudioRenderer(
         const val OPUS_SEEK_PRE_ROLL_NANOS = 80_000_000L
         const val INPUT_TIMEOUT_US = 10_000L
         const val AUDIO_POLL_MILLIS = 10L
+        /** Issue #272: decoder-create recovery budget for one audio stream. */
+        const val MAX_DECODER_CREATE_RETRIES = 5
+        const val DECODER_CREATE_RETRY_INTERVAL_NANOS = 1_000_000_000L
         const val BUFFER_TAIL_WAIT_NS = 500_000_000L
         // Holds a burst after a Wi-Fi gap (~4 s of AAC) instead of dropping it.
         const val MAX_QUEUED_PACKETS = 192
