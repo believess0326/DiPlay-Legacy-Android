@@ -240,6 +240,8 @@ class CarPlayController(
     @Volatile private var wiredNcm: NcmUsbBridge? = null
     /** Issue #266 direct mode: the sysfs identity of the phone a direct session runs on. */
     private val directAttemptRunning = AtomicBoolean(false)
+    /** Issue #266: pacing for direct bring-up attempts; reset on a real detach. */
+    @Volatile private var lastDirectAttemptStartNanos = 0L
     @Volatile private var directDevice: com.shilapi.xcertplay.transport.SysfsUsbDevice? = null
     @Volatile private var ch341Host: Ch341UsbHost? = null
     @Volatile private var mfiSession: MfiSession? = null
@@ -2155,7 +2157,15 @@ class CarPlayController(
      */
     private fun tryStartDirectAttempt() {
         if (closed || wiredTeardownPending.get()) return
+        // Issue #266 field report: hammering bring-up attempts on every poll (~2 s)
+        // makes the iPhone re-enumerate on every cycle — the node number climbs, the
+        // kernel configuration falls back and node permissions reset, so the attempts
+        // lock themselves out permanently. Pace direct attempts; a detach (a genuine
+        // replug) resets the clock.
+        val now = System.nanoTime()
+        if (now - lastDirectAttemptStartNanos < DIRECT_ATTEMPT_MIN_INTERVAL_NANOS) return
         if (!directAttemptRunning.compareAndSet(false, true)) return
+        lastDirectAttemptStartNanos = now
         val generation = availabilityPollGeneration.get()
         executor.execute {
             var posted = false
@@ -2602,6 +2612,8 @@ class CarPlayController(
                 // A real detach ends the attach episode: the next plug may need its
                 // own forced re-enumeration after a completed session (issue #275).
                 forcedReenumerationForAttach = false
+                // A replug is a fresh start, not a retry: direct pacing restarts too.
+                lastDirectAttemptStartNanos = 0L
                 phase = Phase.IPHONE
                 beginWiredTeardown()
                 mainHandler.post {
@@ -3857,6 +3869,8 @@ class CarPlayController(
         private const val WIRELESS_CLIENT_WATCH_POLL_MILLIS = 2_000L
         private const val RFCOMM_CONNECT_TIMEOUT_MILLIS = 15_000L
         private const val MAXIMUM_REENUMERATION_ATTEMPTS = 2
+        /** Issue #266: minimum spacing between direct usbfs bring-up attempts. */
+        private const val DIRECT_ATTEMPT_MIN_INTERVAL_NANOS = 10_000_000_000L
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"
         private val BLUETOOTH_ADDRESS = Regex("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")

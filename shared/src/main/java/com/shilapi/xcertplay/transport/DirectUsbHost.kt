@@ -86,7 +86,7 @@ internal class DirectUsbHost(
     private fun finish(
         connection: RawSharedUsbConnection, device: SysfsUsbDevice, configuration: CarPlayUsbConfiguration,
     ): Result = try {
-        val session = buildSession(connection, configuration)
+        val session = buildSession(connection, device, configuration)
         step("9/$STEP_TOTAL iAP2 USB session ready over direct fd=${connection.fileDescriptor}")
         Result.Connected(session, device)
     } catch (error: IphoneUsbException) {
@@ -173,22 +173,75 @@ internal class DirectUsbHost(
         return null
     }
 
+    /** The kernel's own view of the active configuration, from sysfs; null when unreadable. */
+    private fun readKernelConfiguration(device: SysfsUsbDevice): Int? = runCatching {
+        java.io.File("/sys/bus/usb/devices/${device.sysfsName}/bConfigurationValue")
+            .readText().trim().toIntOrNull()
+    }.getOrNull()
+
+    /** Polls sysfs until the kernel reports [target] as the active configuration. */
+    private fun awaitKernelConfiguration(device: SysfsUsbDevice, target: Int): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + KERNEL_CONFIG_VERIFY_MILLIS
+        while (true) {
+            if (readKernelConfiguration(device) == target) return true
+            if (SystemClock.elapsedRealtime() >= deadline) return false
+            try {
+                Thread.sleep(KERNEL_CONFIG_POLL_MILLIS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+    }
+
     private fun buildSession(
-        connection: RawSharedUsbConnection, configuration: CarPlayUsbConfiguration,
+        connection: RawSharedUsbConnection, device: SysfsUsbDevice,
+        configuration: CarPlayUsbConfiguration,
     ): Iap2UsbSession {
-        val selected = LegacyUsbHostCompat.selectConfiguration(
-            connection, configuration, onDiagnostic = onDiagnostic,
-        )
-        step(
-            "6/$STEP_TOTAL setConfiguration target=${configuration.id} ok=${selected.selected} " +
-                "active=${selected.activeConfiguration ?: "unknown"} errno=${selected.errno ?: "none"}",
-        )
-        if (!selected.selected) {
-            throw IphoneUsbException.DeviceUnavailable(
-                "USB CarPlay configuration ${configuration.id} could not be selected (direct mode); " +
-                    "activeConfig=${selected.activeConfiguration ?: "unknown"}" +
-                    (selected.errno?.let { " (usbfs errno $it)" } ?: ""),
+        // Issue #266 field report (SoFIA 3GR): when the kernel already holds the target
+        // configuration, a redundant usbfs SET_CONFIGURATION only pokes the state
+        // machine — skip straight to the claim. And the usbfs call can report success
+        // while the kernel keeps the old configuration (its interfaces never appear,
+        // so the claim below fails ENOENT): verify against sysfs, and on a mismatch
+        // fall back to the root sysfs write of the same value before giving up.
+        if (readKernelConfiguration(device) == configuration.id) {
+            step(
+                "6/$STEP_TOTAL kernel already at configuration ${configuration.id} (sysfs); " +
+                    "skipping SET_CONFIGURATION",
             )
+        } else {
+            val selected = LegacyUsbHostCompat.selectConfiguration(
+                connection, configuration, onDiagnostic = onDiagnostic,
+            )
+            step(
+                "6/$STEP_TOTAL setConfiguration target=${configuration.id} ok=${selected.selected} " +
+                    "active=${selected.activeConfiguration ?: "unknown"} errno=${selected.errno ?: "none"}",
+            )
+            if (!selected.selected) {
+                throw IphoneUsbException.DeviceUnavailable(
+                    "USB CarPlay configuration ${configuration.id} could not be selected (direct mode); " +
+                        "activeConfig=${selected.activeConfiguration ?: "unknown"}" +
+                        (selected.errno?.let { " (usbfs errno $it)" } ?: ""),
+                )
+            }
+            if (!awaitKernelConfiguration(device, configuration.id)) {
+                step(
+                    "6/$STEP_TOTAL kernel still at configuration " +
+                        "${readKernelConfiguration(device) ?: "unknown"} after SET_CONFIGURATION; " +
+                        "trying root sysfs write",
+                )
+                val wrote = DirectUsbAccess.writeConfigurationViaRoot(device.sysfsName, configuration.id)
+                step(
+                    "6/$STEP_TOTAL root sysfs write ok=$wrote; kernel now at " +
+                        "configuration ${readKernelConfiguration(device) ?: "unknown"}",
+                )
+                if (!awaitKernelConfiguration(device, configuration.id)) {
+                    throw IphoneUsbException.DeviceUnavailable(
+                        "kernel did not adopt USB configuration ${configuration.id} (direct mode); " +
+                            "sysfs still shows ${readKernelConfiguration(device) ?: "unknown"}",
+                    )
+                }
+            }
         }
         val usbMux = IphoneCarPlayConfiguration.usbMuxInterface(configuration)
             ?: throw IphoneUsbException.Protocol("CarPlay configuration exposes no USBMUX interface")
@@ -242,6 +295,9 @@ internal class DirectUsbHost(
         const val USB_CLAIM_MAX_ATTEMPTS = 4
         const val USB_CLAIM_RETRY_DELAY_MILLIS = 400L
         const val REAPPEAR_TIMEOUT_MILLIS = 30_000L
+        /** Issue #266: how long the kernel gets to adopt a configuration in sysfs. */
+        const val KERNEL_CONFIG_VERIFY_MILLIS = 3_000L
+        const val KERNEL_CONFIG_POLL_MILLIS = 250L
         const val REAPPEAR_POLL_MILLIS = 250L
     }
 }

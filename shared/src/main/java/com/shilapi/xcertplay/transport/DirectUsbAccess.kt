@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.transport
 
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -69,18 +70,52 @@ object DirectUsbAccess {
         null
     }
 
+    /**
+     * Issue #266: on some kernels the usbfs SET_CONFIGURATION reports success while
+     * the kernel keeps the old configuration; writing the same value through sysfs
+     * (root shell) is the route that takes effect there.
+     */
+    fun writeConfigurationViaRoot(sysfsName: String, configurationValue: Int): Boolean =
+        runSu(
+            listOf("echo $configurationValue > /sys/bus/usb/devices/$sysfsName/bConfigurationValue"),
+            timeoutMillis = 5_000,
+        )
+
     /** Runs `su -c <command...>`; true only when it exits 0 within [timeoutMillis]. */
     private fun runSu(command: List<String>, timeoutMillis: Long): Boolean = try {
         val process = ProcessBuilder(listOf("su", "-c", command.joinToString(" ")))
             .redirectErrorStream(true)
             .start()
-        if (process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)) {
-            process.exitValue() == 0
-        } else {
-            process.destroy()
-            false
-        }
+        waitForProcess(process, timeoutMillis)
     } catch (_: Exception) {
         false
+    } catch (_: Error) {
+        // Issue #266 field report: a linkage error on an old release (e.g. an API 26
+        // Process method resolving on API 22) must degrade to "su unusable", never
+        // crash the connection flow that merely probed for root.
+        false
+    }
+
+    /** Process.waitFor(long, TimeUnit) is API 26+; poll exitValue on older releases. */
+    private fun waitForProcess(process: Process, timeoutMillis: Long): Boolean {
+        if (realSdkInt() >= 26) {
+            if (!process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)) {
+                process.destroy()
+                return false
+            }
+            return process.exitValue() == 0
+        }
+        val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
+        while (true) {
+            try {
+                return process.exitValue() == 0
+            } catch (_: IllegalThreadStateException) {
+                if (System.nanoTime() >= deadline) {
+                    process.destroy()
+                    return false
+                }
+                Thread.sleep(50)
+            }
+        }
     }
 }
