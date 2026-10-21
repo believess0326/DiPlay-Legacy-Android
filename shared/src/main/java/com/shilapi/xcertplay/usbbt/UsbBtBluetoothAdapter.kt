@@ -404,6 +404,11 @@ class UsbBtBluetoothAdapter(
             }
 
             // 3) SDP: find the iAP2 RFCOMM channel.
+            // Logs from the field (2026-10-20) repeatedly show "SDP query timeout" and
+            // "L2CAP connect rejected: result=0x3" on iPhone-initiated reconnects.
+            // iOS often rejects the SDP L2CAP channel while the iAP2 service is still
+            // reachable on channel 1 (its historic default). Fall back to channel 1 on
+            // any SDP failure rather than aborting the whole RFCOMM bring-up.
             val targetUuid = runCatching { UUID.fromString(uuid) }.getOrNull()
             val uuidBytes = if (targetUuid != null) uuidBigEndian(targetUuid) else HciProtocol.IAP2_UUID_BYTES
             val sdp = SdpClient(l2cap, handle, uuidBytes)
@@ -413,7 +418,12 @@ class UsbBtBluetoothAdapter(
                     r.value
                 }
                 is SdpClient.SdpResult.Failed -> {
-                    throw IOException("iAP2 service discovery failed: ${r.reason}")
+                    // Fall back to the well-known iAP2 channel instead of failing the whole
+                    // RFCOMM attempt. iOS frequently rejects the SDP L2CAP channel
+                    // (result=0x3, PSM=0x1) or lets it time out while iAP2 itself is
+                    // still responsive on the default channel.
+                    UsbBtLog.warn(appContext, TAG, "SDP failed (${r.reason}); falling back to channel $FALLBACK_IAP2_CHANNEL")
+                    FALLBACK_IAP2_CHANNEL
                 }
             } } finally { sdp.close() }
 

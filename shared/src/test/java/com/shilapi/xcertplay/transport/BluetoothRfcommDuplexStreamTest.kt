@@ -283,6 +283,50 @@ class BluetoothRfcommDuplexStreamTest {
         }
     }
 
+    /**
+     * An input that blocks indefinitely even after close(), simulating an Android 4.4
+     * kernel that is slow to unblock a blocking read() when the socket is closed.
+     * Used to verify that a stale reader thread only emits a diagnostic and does not
+     * cause close() to throw (regression guard for the field issue on Allwinner T3).
+     */
+    private class PermanentlyBlockingInput : InputStream() {
+        val entered = CountDownLatch(1)
+        @Volatile var closeCount = 0
+        override fun read(): Int {
+            entered.countDown()
+            while (true) Thread.sleep(100) // never unblocks, simulating a stuck kernel socket
+            @Suppress("UNREACHABLE_CODE")
+            return -1
+        }
+        override fun close() { closeCount++ }
+    }
+
+    @Test fun staleReaderAfterCloseEmitsDiagnosticAndDoesNotThrow() {
+        // Regression guard: on API 19 (Allwinner T3) the kernel can be slow to release a
+        // blocking read(), leaving the reader thread alive after socket close(). The previous
+        // code threw IOException("Bluetooth RFCOMM reader did not stop after close"), which
+        // aborted the whole wireless bootstrap. The fix logs a diagnostic instead.
+        val input = PermanentlyBlockingInput()
+        val lines = CopyOnWriteArrayList<String>()
+        val socket = FakeSocket(input)
+        val stream = BluetoothRfcommDuplexStream(socket, lines::add)
+        assertTrue("reader did not enter its blocking read", input.entered.await(2, TimeUnit.SECONDS))
+
+        // close() must not throw even though the reader remains alive.
+        stream.close()
+
+        // A diagnostic line about the stale daemon thread must be emitted instead.
+        assertTrue(
+            "expected stale-reader diagnostic, got: $lines",
+            lines.any { it.contains("did not stop after close") },
+        )
+        // No FAILED diagnostic — the stream closed intentionally, not due to a transport error.
+        assertFalse(
+            "unexpected FAILED diagnostic: $lines",
+            lines.any { it.contains("result=FAILED") },
+        )
+    }
+
     private class BlockingOutput(private val blockFlush: Boolean) : OutputStream() {
         val entered = CountDownLatch(1)
         private val released = CountDownLatch(1)

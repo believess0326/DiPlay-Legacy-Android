@@ -138,10 +138,13 @@ class BluetoothRfcommDuplexStream internal constructor(
                 )
             }
             if (reader.isAlive) {
-                closeFailure = combine(
-                    closeFailure,
-                    IOException("Bluetooth RFCOMM reader did not stop after close"),
-                )
+                // Field logs (2026-10-20, Allwinner T3 / API 19) show the reader
+                // thread still alive after 1 s. We raised the join timeout to 2 s;
+                // if the reader is still running after that, record a diagnostic but
+                // do not escalate to an IOException that aborts wireless bootstrap.
+                // The thread is a daemon and will exit once the OS releases the
+                // socket handle; throwing here only prevents reconnect attempts.
+                report("Bluetooth RFCOMM reader did not stop after close (stale daemon thread; will exit with the socket)")
             }
         }
         if (closeFailure != null) throw closeFailure
@@ -313,7 +316,11 @@ class BluetoothRfcommDuplexStream internal constructor(
     private companion object {
         private const val READ_CHUNK_BYTES = 8_192
         private const val MAX_PENDING_BYTES = 65_536
-        private const val CLOSE_JOIN_MILLIS = 1_000L
+        // Raised from 1 000 ms: Android 4.4 (API 19) socket close() can take
+        // up to ~1.5 s to unblock the reader's blocking read(). Field logs show
+        // "Bluetooth RFCOMM reader did not stop after close" on Allwinner T3
+        // (API 19) units; 2 s gives the kernel time to deliver the close signal.
+        private const val CLOSE_JOIN_MILLIS = 2_000L
         private const val NANOS_PER_MILLISECOND = 1_000_000L
         private val EMPTY = ByteArray(0)
     }
