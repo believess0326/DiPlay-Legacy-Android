@@ -69,6 +69,8 @@ class CarPlayRuntimeConfig(
     val existingWifiSsid: String = "",
     val existingWifiPassphrase: String = "",
     val userspaceNetworkEnabled: Boolean = true,
+    /** Issue #266: direct usbfs discovery/open for ROMs whose UsbManager list stays empty. */
+    val directUsbfsMode: Boolean = false,
 ) {
     init {
         require(iphoneDevices.all { it.vendorId == APPLE_VENDOR_ID }) {

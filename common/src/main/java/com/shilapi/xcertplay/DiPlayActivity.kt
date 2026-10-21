@@ -1315,6 +1315,13 @@ class DiPlayActivity : ComponentActivity() {
                 matchButton(12, 60),
             )
             card.addView(label(getString(R.string.settings_car_bluetooth_mac_subtitle), 14, MUTED).apply { setPadding(0, dp(4), 0, 0) })
+            // Issue #266: direct usbfs mode for ROMs whose UsbManager list stays empty.
+            toggle(card, getString(R.string.settings_direct_usbfs_mode),
+                getString(R.string.settings_direct_usbfs_mode_description),
+                AirPlayPersistence.loadDirectUsbfsMode(this)) {
+                AirPlayPersistence.saveDirectUsbfsMode(this, it)
+                reconnectIfRunning()
+            }
         }
         filteredSection(content, SettingsSection.USB_BLUETOOTH,
             getString(R.string.settings_usb_bluetooth_title), R.drawable.ic_dp_connection, ::usbBluetoothSettings)

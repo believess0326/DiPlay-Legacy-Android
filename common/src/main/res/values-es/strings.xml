@@ -689,4 +689,6 @@
     <string name="settings_usb_pairing_message">Solicitud de enlace Bluetooth de %1$s.\nComprueba que el número coincide con el de tu iPhone:</string>
     <string name="settings_usb_pairing_countdown">Confirmación automática en %1$d s</string>
     <string name="settings_usb_bluetooth_diagnostic_description">Diagnóstico USB Bluetooth: comprueba permisos y hardware HCI y restaura el servicio inalámbrico. Desconecta CarPlay antes de probar. Una prueba de hardware correcta no confirma el enlace del iPhone ni CarPlay; guarda el informe tras un fallo de conexión.</string>
+    <string name="settings_direct_usbfs_mode">Conexión USB directa (experimental)</string>
+    <string name="settings_direct_usbfs_mode_description">Para unidades cuyo listado USB del sistema nunca muestra el iPhone: enumera los dispositivos directamente y abre el nodo del dispositivo; puede requerir root. Se aplica en la próxima conexión y reinicia CarPlay.</string>
 </resources>

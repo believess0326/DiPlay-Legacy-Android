@@ -190,6 +190,7 @@ class CarPlayHostActivity : ComponentActivity() {
         existingWifiSsid = existingWifiSsid,
         existingWifiPassphrase = existingWifiPassphrase,
         locationReportingEnabled = locationReportingEnabled,
+        directUsbfsMode = AirPlayPersistence.loadDirectUsbfsMode(this),
     )
 
     private val vpnConsent =

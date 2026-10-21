@@ -77,6 +77,7 @@ object AirPlayPersistence {
     private const val KEY_SMOOTH_VIDEO = "smooth_video"
     private const val KEY_CAR_BLUETOOTH_AUDIO = "car_bluetooth_audio"
     private const val KEY_DIRECT_SURFACE_VIEW = "direct_surface_view"
+    private const val KEY_DIRECT_USBFS_MODE = "direct_usbfs_mode"
     private const val KEY_CLUSTER_MAP = "cluster_map_enabled"
     private const val KEY_ADB_CLUSTER_ACTIVITY = "adb_cluster_activity_enabled"
     private const val KEY_CENTER_MAP_OVERLAY = "center_map_overlay"
@@ -598,6 +599,14 @@ object AirPlayPersistence {
 
     fun saveDirectSurfaceView(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DIRECT_SURFACE_VIEW, enabled).apply()
+    }
+
+    /** Issue #266: direct usbfs mode for ROMs whose UsbManager never lists the iPhone. */
+    fun loadDirectUsbfsMode(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_DIRECT_USBFS_MODE, false)
+
+    fun saveDirectUsbfsMode(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DIRECT_USBFS_MODE, enabled).apply()
     }
 
     fun saveMediaBufferMillis(context: Context, millis: Int) {

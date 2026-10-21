@@ -2528,6 +2528,51 @@ class CarPlayController(
         } else {
             debugLog("wired waiting for iPhone; visible USB devices: [$summary]")
         }
+        if (config.directUsbfsMode) {
+            probeDirectUsbfs()
+        }
+    }
+
+    /**
+     * Issue #266, direct usbfs mode: when the framework list cannot see the iPhone,
+     * check sysfs directly and prove the node is openable (root grant included) and
+     * answers a device-descriptor read. Discovery + transport proof only — the session
+     * itself still runs over the framework connection for now.
+     */
+    private fun probeDirectUsbfs() {
+        val candidates = runCatching {
+            com.shilapi.xcertplay.transport.SysfsUsbEnumerator()
+                .findMatching(com.shilapi.xcertplay.transport.IphoneUsbMatcher.appleVendor())
+        }.getOrDefault(emptyList())
+        if (candidates.isEmpty()) {
+            debugLog("direct usbfs: sysfs sees no iPhone either (cable/port or iPhone USB accessories locked)")
+            return
+        }
+        val candidate = candidates.first()
+        debugLog(
+            "direct usbfs: sysfs sees iPhone vid=0x${candidate.vendorId.toString(16)} " +
+                "pid=0x${candidate.productId.toString(16)} at ${candidate.usbfsPath}",
+        )
+        when (val result = com.shilapi.xcertplay.transport.DirectUsbAccess.open(candidate, allowRootGrant = true)) {
+            is com.shilapi.xcertplay.transport.DirectUsbAccess.OpenResult.Opened -> {
+                try {
+                    val buffer = java.nio.ByteBuffer.allocateDirect(18)
+                    val read = com.shilapi.xcertplay.transport.UsbfsIoNative.control(
+                        result.descriptor.fd, 0x80, 6, 0x0100, 0, buffer, 18, 1_000,
+                    )
+                    debugLog(
+                        "direct usbfs: node opened (rootGrant=${result.viaRootGrant}); " +
+                            "device descriptor read=$read bytes",
+                    )
+                } finally {
+                    runCatching { result.descriptor.close() }
+                }
+            }
+            is com.shilapi.xcertplay.transport.DirectUsbAccess.OpenResult.Denied ->
+                debugLog("direct usbfs: ${result.reason}")
+            com.shilapi.xcertplay.transport.DirectUsbAccess.OpenResult.NotPresent ->
+                debugLog("direct usbfs: node ${candidate.usbfsPath} missing despite sysfs entry (re-enumerating?)")
+        }
     }
 
     private fun scheduleAvailabilityPoll(phase: Phase, check: () -> Unit) {

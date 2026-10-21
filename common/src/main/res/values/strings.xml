@@ -802,4 +802,6 @@
     <string name="settings_usb_pairing_message">Bluetooth pairing request from %1$s.\nConfirm the number matches your iPhone:</string>
     <string name="settings_usb_pairing_countdown">Auto-confirm in %1$d s</string>
     <string name="settings_usb_bluetooth_diagnostic_description">USB Bluetooth diagnostic: tests adapter permissions and HCI hardware, then restores the wireless service. Disconnect CarPlay before testing. A hardware pass does not verify iPhone pairing or CarPlay; save the report after reproducing a connection failure.</string>
+    <string name="settings_direct_usbfs_mode">Direct USB connection (experimental)</string>
+    <string name="settings_direct_usbfs_mode_description">For head units whose system USB list never shows the iPhone: enumerates USB devices directly and opens the device node, which may require root. Applies at the next connection and restarts CarPlay.</string>
 </resources>

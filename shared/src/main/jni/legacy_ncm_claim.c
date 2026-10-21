@@ -66,3 +66,64 @@ JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_LegacyNcmNative_reco
     request.ioctl_code = USBDEVFS_CONNECT;
     return result(ioctl(fd, USBDEVFS_IOCTL, &request));
 }
+
+/*
+ * Direct usbfs mode (issue #266): transfer primitives on a raw /dev/bus/usb fd that
+ * DirectUsbAccess opened without the framework. Same contract as the rest of this file:
+ * no exceptions cross JNI; transfers return the byte count (>= 0) or -errno.
+ * The buffer is a direct ByteBuffer address supplied by Kotlin, so no array pinning or
+ * copies happen here beyond the kernel's own.
+ */
+
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_controlTransfer(
+        JNIEnv *env, jobject self, jint fd, jint requestType, jint request, jint value,
+        jint index, jobject buffer, jint length, jint timeoutMillis) {
+    (void) self;
+    if (fd < 0 || buffer == NULL || length < 0 || timeoutMillis < 0) return -EINVAL;
+    void *data = (*env)->GetDirectBufferAddress(env, buffer);
+    if (data == NULL) return -EINVAL;
+    struct usbdevfs_ctrltransfer ctrl;
+    memset(&ctrl, 0, sizeof(ctrl));
+    ctrl.bRequestType = (__u8) requestType;
+    ctrl.bRequest = (__u8) request;
+    ctrl.wValue = (__u16) value;
+    ctrl.wIndex = (__u16) index;
+    ctrl.wLength = (__u16) length;
+    ctrl.timeout = (unsigned int) timeoutMillis;
+    ctrl.data = data;
+    int rc = ioctl(fd, USBDEVFS_CONTROL, &ctrl);
+    return rc < 0 ? -errno : rc;
+}
+
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_bulkTransfer(
+        JNIEnv *env, jobject self, jint fd, jint endpoint, jobject buffer, jint length,
+        jint timeoutMillis) {
+    (void) self;
+    if (fd < 0 || buffer == NULL || length < 0 || timeoutMillis < 0) return -EINVAL;
+    void *data = (*env)->GetDirectBufferAddress(env, buffer);
+    if (data == NULL) return -EINVAL;
+    struct usbdevfs_bulktransfer bulk;
+    memset(&bulk, 0, sizeof(bulk));
+    bulk.ep = (unsigned int) endpoint;
+    bulk.len = (unsigned int) length;
+    bulk.timeout = (unsigned int) timeoutMillis;
+    bulk.data = data;
+    int rc = ioctl(fd, USBDEVFS_BULK, &bulk);
+    return rc < 0 ? -errno : rc;
+}
+
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_setConfiguration(
+        JNIEnv *env, jobject self, jint fd, jint configuration) {
+    (void) env; (void) self;
+    if (fd < 0 || configuration < 0 || configuration > 255) return EINVAL;
+    unsigned int value = (unsigned int) configuration;
+    return result(ioctl(fd, USBDEVFS_SETCONFIGURATION, &value));
+}
+
+JNIEXPORT jint JNICALL Java_com_shilapi_xcertplay_transport_UsbfsIoNative_releaseInterface(
+        JNIEnv *env, jobject self, jint fd, jint id) {
+    (void) env; (void) self;
+    if (!valid(fd, id)) return EINVAL;
+    unsigned int interface_id = (unsigned int) id;
+    return result(ioctl(fd, USBDEVFS_RELEASEINTERFACE, &interface_id));
+}
