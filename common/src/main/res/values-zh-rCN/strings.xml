@@ -765,6 +765,7 @@
     <string name="settings_usb_pairing_message">收到 %1$s 的蓝牙配对请求。\n请确认以下数字与 iPhone 上显示的一致：</string>
     <string name="settings_usb_pairing_countdown">将在 %1$d 秒后自动确认</string>
     <string name="settings_usb_bluetooth_diagnostic_description">外置蓝牙诊断：检查适配器权限和 HCI 硬件，结束后恢复无线服务。检测前请先断开 CarPlay。硬件正常不代表 iPhone 配对和 CarPlay 已连接；连接失败后请保存报告。</string>
+    <string name="settings_advanced_connection">高级连接</string>
     <string name="settings_direct_usbfs_mode">USB 直连模式（实验性）</string>
     <string name="settings_direct_usbfs_mode_description">适用于系统 USB 列表始终看不到 iPhone 的车机：绕过系统列表直接枚举并打开设备节点，可能需要 root。会在下次连接时生效，并重新连接 CarPlay。</string>
 </resources>

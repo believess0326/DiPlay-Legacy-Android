@@ -93,6 +93,7 @@ internal enum class SettingsSection {
     DISPLAY_AND_PERFORMANCE,
     EXPERIMENTAL_DISPLAY,
     ADVANCED_MEDIA,
+    ADVANCED_CONNECTION,
     CAR_BUTTON,
     AUDIO_ROUTING,
     LOCATION,
@@ -126,6 +127,7 @@ internal object SettingsInformationArchitecture {
             SettingsSection.CLUSTER_MAP,
             SettingsSection.EXPERIMENTAL_DISPLAY,
             SettingsSection.ADVANCED_MEDIA,
+            SettingsSection.ADVANCED_CONNECTION,
         ),
     )
 }
@@ -1315,13 +1317,6 @@ class DiPlayActivity : ComponentActivity() {
                 matchButton(12, 60),
             )
             card.addView(label(getString(R.string.settings_car_bluetooth_mac_subtitle), 14, MUTED).apply { setPadding(0, dp(4), 0, 0) })
-            // Issue #266: direct usbfs mode for ROMs whose UsbManager list stays empty.
-            toggle(card, getString(R.string.settings_direct_usbfs_mode),
-                getString(R.string.settings_direct_usbfs_mode_description),
-                AirPlayPersistence.loadDirectUsbfsMode(this)) {
-                AirPlayPersistence.saveDirectUsbfsMode(this, it)
-                reconnectIfRunning()
-            }
         }
         filteredSection(content, SettingsSection.USB_BLUETOOTH,
             getString(R.string.settings_usb_bluetooth_title), R.drawable.ic_dp_connection, ::usbBluetoothSettings)
@@ -1610,6 +1605,17 @@ class DiPlayActivity : ComponentActivity() {
                     AirPlayPersistence.saveCarBluetoothAudio(this, enabled)
                     reconnectIfRunning()
                 }
+            }
+        }
+        // Firmware-specific opt-ins that change how the wired link itself is established.
+        filteredSection(content, SettingsSection.ADVANCED_CONNECTION,
+            getString(R.string.settings_advanced_connection), R.drawable.ic_dp_advanced) { card ->
+            // Issue #266: direct usbfs mode for ROMs whose UsbManager list stays empty.
+            toggle(card, getString(R.string.settings_direct_usbfs_mode),
+                getString(R.string.settings_direct_usbfs_mode_description),
+                AirPlayPersistence.loadDirectUsbfsMode(this)) {
+                AirPlayPersistence.saveDirectUsbfsMode(this, it)
+                reconnectIfRunning()
             }
         }
         filteredSection(content, SettingsSection.CAR_BUTTON,

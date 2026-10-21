@@ -689,6 +689,7 @@
     <string name="settings_usb_pairing_message">Запрос сопряжения Bluetooth от %1$s.\nУбедитесь, что код совпадает с кодом на iPhone:</string>
     <string name="settings_usb_pairing_countdown">Автоподтверждение через %1$d с</string>
     <string name="settings_usb_bluetooth_diagnostic_description">Диагностика USB Bluetooth: проверка разрешений и оборудования HCI с восстановлением беспроводной службы. Сначала отключите CarPlay. Успешный тест оборудования не подтверждает сопряжение iPhone или подключение CarPlay. Сохраните отчёт после сбоя подключения.</string>
+    <string name="settings_advanced_connection">Расширенное подключение</string>
     <string name="settings_direct_usbfs_mode">Прямое подключение USB (экспериментально)</string>
     <string name="settings_direct_usbfs_mode_description">Для устройств, где системный список USB никогда не показывает iPhone: перечисляет устройства напрямую и открывает узел устройства, может потребоваться root. Применяется при следующем подключении и перезапускает CarPlay.</string>
 </resources>
