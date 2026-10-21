@@ -1,3 +1,9 @@
+# DiPlay 0.2.84 — 2026-10-21
+
+- Wired NCM bulk-out failure probing & interface reselect (#279): probe OUT endpoint status word via GET_STATUS upon first bulk-out failure to identify halt/STALL conditions; trigger SET_INTERFACE to reset data toggle and clear halt upon 5 consecutive transmit failures to recover Wedged host queues.
+
+See [v0.2.84 release notes](docs/RELEASE-NOTES-0.2.84.md) for details.
+
 # DiPlay 0.2.83 — 2026-10-21
 
 - Direct USB usbfs mode (#266): add direct usbfs discovery and raw connection fallback via sysfs device enumeration and root permission escalation for customized ROMs with broken Android USB host framework; add direct-mode setting in Advanced.
