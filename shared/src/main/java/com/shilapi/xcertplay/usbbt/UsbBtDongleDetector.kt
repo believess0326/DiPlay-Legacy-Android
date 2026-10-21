@@ -28,6 +28,8 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.USB_SUBCLASS_RF
  * public hardware IDs only.
  */
 class UsbBtDongleDetector(private val appContext: Context) {
+    /** Issue #281: last logged candidate signature, for log dedupe. */
+    @Volatile private var lastCandidateInfo: String? = null
 
     /** A USB device identified as a Bluetooth dongle. */
     data class Dongle(
@@ -212,7 +214,13 @@ class UsbBtDongleDetector(private val appContext: Context) {
                     val candidateInfo = "Bluetooth dongle candidate: vid=0x${device.vendorId.toString(16)} " +
                         "pid=0x${device.productId.toString(16)} vendor=${it.vendorLabel} " +
                         "viaClassCode=${it.viaClassCode} hasPermission=${usbManager.hasPermission(device)}"
-                    UsbBtLog.log(appContext, TAG, candidateInfo)
+                    // Issue #281: findDongles runs on a ~1 Hz poll while wireless is
+                    // starting; logging every sighting floods the session log with
+                    // identical lines. Log a candidate only when its signature changes.
+                    if (candidateInfo != lastCandidateInfo) {
+                        lastCandidateInfo = candidateInfo
+                        UsbBtLog.log(appContext, TAG, candidateInfo)
+                    }
                 }
             }
             .sortedWith(

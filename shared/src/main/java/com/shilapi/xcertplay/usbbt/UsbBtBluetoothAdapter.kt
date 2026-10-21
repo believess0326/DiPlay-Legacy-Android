@@ -66,6 +66,8 @@ class UsbBtBluetoothAdapter(
         private const val TAG = "UsbBtBluetoothAdapter"
         private const val CONNECT_TIMEOUT_MS = 10_000L
         private const val FALLBACK_IAP2_CHANNEL = 1
+        /** Issue #281: result=0x4 rejections on one ACL before it is force-dropped. */
+        private const val STALE_ACL_REJECTION_LIMIT = 2
     }
 
     private val usbManager: UsbManager? =
@@ -89,6 +91,8 @@ class UsbBtBluetoothAdapter(
 
     /** ACL handle -> L2CAP layer (one per peer connection). */
     private val l2capLayers = ConcurrentHashMap<Int, L2capLayer>()
+    /** Issue #281: consecutive L2CAP result=0x4 rejections per ACL handle. */
+    private val l2capRejectionCounts = ConcurrentHashMap<Int, AtomicInteger>()
 
     /** ACL handle -> active RFCOMM layer (inbound or outbound). */
     private val rfcommLayers = ConcurrentHashMap<Int, RfcommLayer>()
@@ -470,14 +474,64 @@ class UsbBtBluetoothAdapter(
                 onClose = { teardown(handle) },
             )
             activeStreams[handle] = stream
+            l2capRejectionCounts.remove(handle)
             UsbBtLog.log(appContext, TAG, "openRfcommStream: connected successfully to $deviceAddress (handle=0x${handle.toString(16)}, channel=$channel)")
             return stream
         } catch (t: Throwable) {
             UsbBtLog.warn(appContext, TAG, "openRfcommStream failed for $deviceAddress", t)
-            // Only tear down the ACL when we created it fresh for this call AND it is not an inbound connection from peer.
-            if (freshAcl && !isInbound) teardown(handle) else releaseAclRef(handle)
+            when {
+                // Issue #281: the ACL survived a link loss (e.g. Wi-Fi dropped while
+                // Bluetooth stayed up, or our process died mid-session), so the phone
+                // still holds the previous session's RFCOMM DLC and refuses every new
+                // one (L2CAP result=0x4). Retrying forever never recovers; after a
+                // couple of rejections, drop the ACL itself so the phone releases
+                // the stale DLC and the next attempt starts from a clean link.
+                !freshAcl && noteL2capRejection(handle, t) -> forceDropAcl(handle)
+                // Only tear down the ACL when we created it fresh for this call AND it is not an inbound connection from peer.
+                freshAcl && !isInbound -> teardown(handle)
+                else -> releaseAclRef(handle)
+            }
             throw t
         }
+    }
+
+    /** Counts L2CAP result=0x4 rejections for [handle]; true once the stale-ACL limit is hit. */
+    private fun noteL2capRejection(handle: Int, error: Throwable): Boolean {
+        val rejected = generateSequence(error) { it.cause }
+            .any { it.message?.contains("L2CAP connect rejected: result=0x4") == true }
+        if (!rejected) return false
+        val count = l2capRejectionCounts.getOrPut(handle) { AtomicInteger(0) }.incrementAndGet()
+        UsbBtLog.warn(
+            appContext, TAG,
+            "L2CAP result=0x4 rejection $count/$STALE_ACL_REJECTION_LIMIT for handle=0x${handle.toString(16)}",
+        )
+        return count >= STALE_ACL_REJECTION_LIMIT
+    }
+
+    /**
+     * Issue #281: unconditionally drops an ACL and all its layers, including the HCI
+     * disconnect [releaseAclRef] skips for inbound links — the phone must release its
+     * side too, stale DLC included. Used only by the stale-ACL escalation above.
+     */
+    private fun forceDropAcl(handle: Int) {
+        UsbBtLog.warn(
+            appContext, TAG,
+            "dropping stale ACL handle=0x${handle.toString(16)} after repeated L2CAP rejections; " +
+                "the peer must release its leftover RFCOMM channel before reconnecting",
+        )
+        l2capRejectionCounts.remove(handle)
+        aclRefCount.remove(handle)
+        aclHandleByAddr.entries.find { it.value == handle }?.let { entry ->
+            aclHandleByAddr.remove(entry.key)
+            connectedOrder.remove(entry.key)
+        }
+        inboundHandles.remove(handle)
+        encryptedHandles.remove(handle)
+        rfcommLayers.remove(handle)?.let { runCatching { it.close() } }
+        activeStreams.remove(handle)?.let { runCatching { it.close() } }
+        l2capLayers.remove(handle)?.let { runCatching { it.close() } }
+        val h = synchronized(lock) { hci } ?: return
+        runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
     }
 
     // ------------------------------------------------------------------
