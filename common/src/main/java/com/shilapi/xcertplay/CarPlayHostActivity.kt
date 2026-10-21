@@ -4843,7 +4843,7 @@ class CarPlayHostActivity : ComponentActivity() {
             startupRetryButton?.visibility = View.VISIBLE
             setConnectionStage(if (startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) reason
                 else "$reason\n${getString(R.string.wireless_startup_retries_exhausted)}")
-            appendLog("wireless startup recovery stopped generation=$restartGeneration reason=$startupFailure retries=${startupRetryBudget.retries}")
+            appendLog("wireless startup recovery stopped generation=$restartGeneration reason=$startupFailure detail=$reason retries=${startupRetryBudget.retries}")
             return
         }
         reconnectScheduled = true
