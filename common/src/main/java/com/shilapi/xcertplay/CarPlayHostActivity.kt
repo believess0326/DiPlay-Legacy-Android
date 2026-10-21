@@ -3878,7 +3878,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val effectiveSummary = "Display effective percent=$uiScalePercent resolution=${displayScalePercent}% " +
             "canvas=${display.widthPixels}x${display.heightPixels} decision=${support.reason} " +
             "physical=${physical.widthMm}x${physical.heightMm}mm safeArea=${display.safeArea} " +
-            "drawOutside=${display.safeAreaDrawOutside}"
+            "drawOutside=${display.safeAreaDrawOutside} forceSquareCorners=${display.forceSquareCorners}"
         displayDiagnosticAttempt = DisplayDiagnosticSnapshot.begin(this, requestSummary, support.details, effectiveSummary)
         appendLog(requestSummary)
         appendLog(support.details)
@@ -5134,7 +5134,15 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun useFallbackVideoSurface(texture: TextureView) {
         val root = texture.parent as? FrameLayout ?: return
         val index = root.indexOfChild(texture)
-        val viewport = FrameLayout(this).apply { clipChildren = true }
+        val viewport = FrameLayout(this).apply {
+            clipChildren = true
+            // Issue #283: the wrapper must not reintroduce the rounded clipping the
+            // toggle removed from the video views themselves.
+            if (AirPlayPersistence.loadForceSquareCorners(this@CarPlayHostActivity) && realSdkInt() >= 21) {
+                outlineProvider = null
+                clipToOutline = false
+            }
+        }
         val surfaceView = SurfaceView(this).apply {
             // Same square-corner treatment as the TextureView path (issue #240).
             if (AirPlayPersistence.loadForceSquareCorners(this@CarPlayHostActivity) && realSdkInt() >= 21) {
