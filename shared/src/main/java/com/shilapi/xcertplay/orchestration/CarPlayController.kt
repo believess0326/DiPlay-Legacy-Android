@@ -230,6 +230,10 @@ class CarPlayController(
     @Volatile private var closed = false
     @Volatile private var phase = Phase.IDLE
     @Volatile private var wiredAborted = false
+    /** Issue #275: a wired session reached activation in this process run. */
+    @Volatile private var wiredSessionActivatedThisRun = false
+    /** Issue #275: the one forced vendor re-enumeration for the current attach episode. */
+    @Volatile private var forcedReenumerationForAttach = false
     private val wiredTeardownPending = AtomicBoolean(false)
     private val wiredGeneration = AtomicInteger(0)
     @Volatile private var wiredUsbSession: Iap2UsbSession? = null
@@ -337,7 +341,10 @@ class CarPlayController(
             if (replacement) restoreDashboardContent(session)
             // Issue #95: wired first-TCP watchdog 鈥?a session only becomes active after the
             // iPhone opened the AirPlay TCP connection and completed the handshake.
-            if (config.transport != CarPlayTransport.WIRELESS) wiredTcpArrived.set(true)
+            if (config.transport != CarPlayTransport.WIRELESS) {
+                wiredTcpArrived.set(true)
+                wiredSessionActivatedThisRun = true
+            }
             if (config.transport == CarPlayTransport.WIRELESS) {
                 wirelessChain(12, "SUCCESS: AirPlay session active")
             }
@@ -2334,7 +2341,18 @@ class CarPlayController(
                                     }}",
                             )
                             if (configuration != null) {
-                                openDataPaths(result.device, configuration)
+                                if (shouldForceReenumerationBeforeReuse() &&
+                                    reenumerationAttempts < MAXIMUM_REENUMERATION_ATTEMPTS
+                                ) {
+                                    forcedReenumerationForAttach = true
+                                    connectionDiagnostic(
+                                        "Previous wired session completed this run; forcing one vendor " +
+                                            "re-enumeration before reusing configuration ${configuration.id} (issue #275)",
+                                    )
+                                    beginReenumeration(result.device)
+                                } else {
+                                    openDataPaths(result.device, configuration)
+                                }
                             } else if (reenumerationAttempts < MAXIMUM_REENUMERATION_ATTEMPTS) {
                                 beginReenumeration(result.device)
                             } else {
@@ -2480,10 +2498,35 @@ class CarPlayController(
         }
     }
 
+    /**
+     * Issue #275: after a completed wired session, a replugged iPhone may keep its
+     * CarPlay configuration while its AirPlay transport is still half torn down (the
+     * previous session ended on peer EOF): it then never opens TCP to the receiver
+     * (syn=0) even though iAP2 and mDNS look healthy. The first connect only worked
+     * because the missing configuration forced a vendor re-enumeration. When a
+     * previous session reached activation in this run, force exactly one vendor
+     * re-enumeration per physical attach before reusing a ready-made configuration.
+     */
+    private fun shouldForceReenumerationBeforeReuse(): Boolean =
+        wiredSessionActivatedThisRun && !forcedReenumerationForAttach
+
     private fun useIphoneConfiguration(device: UsbDevice, configuration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration?) {
         connectionDiagnostic("USB descriptor inspection sdk=${Build.VERSION.SDK_INT} " +
             "configuration=${configuration?.id ?: "none"} transitions=$reenumerationAttempts")
-        if (configuration != null) openDataPaths(device, configuration)
+        if (configuration != null) {
+            if (shouldForceReenumerationBeforeReuse() &&
+                reenumerationAttempts < MAXIMUM_REENUMERATION_ATTEMPTS
+            ) {
+                forcedReenumerationForAttach = true
+                connectionDiagnostic(
+                    "Previous wired session completed this run; forcing one vendor " +
+                        "re-enumeration before reusing configuration ${configuration.id} (issue #275)",
+                )
+                beginReenumeration(device)
+                return
+            }
+            openDataPaths(device, configuration)
+        }
         else if (reenumerationAttempts < MAXIMUM_REENUMERATION_ATTEMPTS) beginReenumeration(device)
         else fail(IphoneUsbException.Protocol("iPhone did not expose a complete CarPlay USB configuration"))
     }
@@ -2555,6 +2598,9 @@ class CarPlayController(
             }
             Phase.IPHONE, Phase.DATAPATHS, Phase.CONTROL -> {
                 debugLog("wired iPhone detached; resetting to waiting for iPhone")
+                // A real detach ends the attach episode: the next plug may need its
+                // own forced re-enumeration after a completed session (issue #275).
+                forcedReenumerationForAttach = false
                 phase = Phase.IPHONE
                 beginWiredTeardown()
                 mainHandler.post {
