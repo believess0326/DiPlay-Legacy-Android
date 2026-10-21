@@ -1,3 +1,13 @@
+# DiPlay 0.2.83 — 2026-10-21
+
+- Direct USB usbfs mode (#266): add direct usbfs discovery and raw connection fallback via sysfs device enumeration and root permission escalation for customized ROMs with broken Android USB host framework; add direct-mode setting in Advanced.
+- Wired reconnect lifecycle & retry guard (#275 / #270 / #243): proactively trigger vendor re-enumeration on reconnect after completed sessions to prevent iPhone syn=0; halt futile reconnect loops and prompt driver to re-plug after consecutive TCP timeouts; log stale-session dataPort traffic and unmatched mDNS queries.
+- Telephony Opus decoder fallback (#272): automatically fall back to software decoding and retry in-stream when MediaCodec hardware decoder initialization fails, eliminating silent voice calls.
+- USB Bluetooth stream reuse & handshake fallback (#274): purge closed dead RFCOMM streams before reusing cached endpoints; fall back to default iAP2 channel 1 when iOS rejects or times out on SDP queries; tolerate delayed reader thread exits on legacy Android kernels.
+- Compatibility & diagnostic improvements: support versatile UsbInterface hidden constructor shapes across Android versions; record detailed failure reasons in wireless stop diagnostics.
+
+See [v0.2.83 release notes](docs/RELEASE-NOTES-0.2.83.md) for verification and device-testing limits.
+
 # DiPlay 0.2.82 — 2026-10-21
 
 - Fix CM390 SDP UUID search encoding, L2CAP configuration channel IDs and handshake completion, and RFCOMM session direction/C/R bits; retain explicit discovery and peer-refusal errors.
