@@ -3508,14 +3508,42 @@ class CarPlayController(
 
     private fun closeBestEffort(name: String, close: () -> Unit) {
         val started = System.nanoTime()
-        var completed = false
+        val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+        var timedOut = false
+        // Issue #281: a close can block indefinitely on a dead channel (e.g. the
+        // wireless stack closing an RFCOMM channel whose peer is gone). Teardown ran
+        // every close inline on one thread, so a single stuck resource wedged the
+        // whole teardown: no "teardown end" line, the session executor never shut
+        // down, and the app could not start again. Bound each close; a stuck one is
+        // abandoned on its daemon thread as a zombie and teardown moves on.
+        val done = CountDownLatch(1)
+        val worker = Thread(
+            {
+                try {
+                    close()
+                    completed.set(true)
+                } catch (error: Throwable) {
+                    debugLog("$name teardown failed", error)
+                } finally {
+                    done.countDown()
+                }
+            },
+            "xcertplay-teardown-close",
+        )
+        worker.isDaemon = true
+        worker.start()
         try {
-            close()
-            completed = true
-        } catch (error: Throwable) {
-            debugLog("$name teardown failed", error)
+            if (!done.await(TEARDOWN_RESOURCE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                timedOut = true
+                debugLog("$name teardown timed out; abandoning the stuck close")
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
         } finally {
-            connectionDiagnostic("teardown resource=$name completed=$completed elapsedMs=${elapsedMillis(started)}")
+            connectionDiagnostic(
+                "teardown resource=$name completed=${completed.get()} timedOut=$timedOut " +
+                    "elapsedMs=${elapsedMillis(started)}",
+            )
         }
     }
 
@@ -3872,6 +3900,8 @@ class CarPlayController(
         /** Issue #266: minimum spacing between direct usbfs bring-up attempts. */
         private const val DIRECT_ATTEMPT_MIN_INTERVAL_NANOS = 10_000_000_000L
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
+        /** Issue #281: per-resource bound for teardown closes; a stuck close is abandoned. */
+        private const val TEARDOWN_RESOURCE_TIMEOUT_MILLIS = 3_000L
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"
         private val BLUETOOTH_ADDRESS = Regex("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
     }
