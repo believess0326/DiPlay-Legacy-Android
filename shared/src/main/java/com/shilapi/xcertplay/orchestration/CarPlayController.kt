@@ -3163,7 +3163,15 @@ class CarPlayController(
         val timeoutMillis = if (hotspotMode == WirelessHotspotMode.WIFI_P2P) {
             WIFI_P2P_START_TIMEOUT_MILLIS
         } else if (hotspotMode == WirelessHotspotMode.MANUAL) {
-            ((readyDeadline - System.nanoTime()) / 1_000_000).coerceAtLeast(1)
+            // Issue #284: the observation budget used to be whatever remained of the
+            // shared 15 s after the auto-enable step ate its share. On slow head
+            // units (Changan CS75 Plus) enabling takes most of it, the interface is
+            // then never observed stable in time, and the attempt fails even though
+            // the hotspot came up seconds later — retries only succeed when the two
+            // phases happen to interleave favourably (~90 s in the report). Give the
+            // observation phase its own full readiness budget; the outer retry cap
+            // still bounds the total.
+            WirelessStartupPolicy.HOTSPOT_READY_MILLIS
         } else {
             HOTSPOT_START_TIMEOUT_MILLIS
         }
