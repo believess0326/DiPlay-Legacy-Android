@@ -357,7 +357,27 @@ class IphoneUsbHost(
                     "out=0x${endpoints.first.address.toString(16)} " +
                     "in=0x${endpoints.second.address.toString(16)}",
             )
-            val muxClaim = claimUsbMuxWithRetry(sharedConnection, usbMux)
+            var muxClaim = claimUsbMuxWithRetry(sharedConnection, usbMux)
+            if (!muxClaim.claimed && muxClaim.errno == ERRNO_NO_SUCH_FILE) {
+                // Issues #256/#286: on the Festa/Telechips unit the plain claim retries
+                // are not enough — the kernel never registered the just-selected
+                // configuration's interfaces (the same desync the direct path met in
+                // #266: SET_CONFIGURATION reported success, the kernel did not follow).
+                // Re-select the configuration once, then run the claim loop again.
+                diagnosticLog(
+                    "usb mux claim hit ENOENT; re-selecting configuration ${configuration.id} and retrying the claim",
+                )
+                val reselected = LegacyUsbHostCompat.selectConfiguration(
+                    sharedConnection, configuration, onDiagnostic = ::diagnosticLog,
+                )
+                diagnosticLog(
+                    "setConfiguration (retry) target=${configuration.id} ok=${reselected.selected} " +
+                        "active=${reselected.activeConfiguration ?: "unknown"} errno=${reselected.errno}",
+                )
+                if (reselected.selected) {
+                    muxClaim = claimUsbMuxWithRetry(sharedConnection, usbMux)
+                }
+            }
             val activeAfterClaim = LegacyUsbHostCompat.activeConfiguration(sharedConnection)
             diagnosticLog(
                 "usb mux claim iface=${usbMux.id} ok=${muxClaim.claimed} errno=${muxClaim.errno} " +
@@ -492,6 +512,8 @@ class IphoneUsbHost(
         /** Issue #256: claim retry budget for head units whose kernel settles slowly. */
         private const val USB_CLAIM_MAX_ATTEMPTS = 4
         private const val USB_CLAIM_RETRY_DELAY_MILLIS = 400L
+        /** usbfs ENOENT: the kernel has no such interface (configuration not adopted). */
+        private const val ERRNO_NO_SUCH_FILE = 2
         private const val USB_VENDOR_DEVICE_IN = 0xc0
         private const val CARPLAY_CONFIGURATION_REQUEST = 0x52
         private const val CARPLAY_CONFIGURATION_INDEX = 0x0004
