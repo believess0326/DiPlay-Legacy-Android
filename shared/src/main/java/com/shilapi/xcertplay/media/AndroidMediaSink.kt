@@ -645,8 +645,17 @@ class AndroidMediaSink(
             communicationModeStream = null
             val line = try {
                 manager.mode = savedAudioMode
+                if (manager.mode != savedAudioMode) {
+                    // Some vendor audio services drop the first restore after a call
+                    // (issue #251: the mode stayed IN_COMMUNICATION, and later calls
+                    // were then routed by the car as if still in a call). Retry once
+                    // and report whether the readback now matches.
+                    manager.mode = savedAudioMode
+                    Log.i("xcertplay-usb", "audio mode restore needed a retry, now ${manager.mode}")
+                }
                 Log.i("xcertplay-usb", "audio mode restored to ${manager.mode}")
-                "Audio: mode restored requested=$savedAudioMode now=${manager.mode} stream=$active"
+                "Audio: mode restored requested=$savedAudioMode now=${manager.mode} stream=$active" +
+                    " modeRestoreFailed=${manager.mode != savedAudioMode}"
             } catch (error: RuntimeException) {
                 Log.w("xcertplay-usb", "could not restore audio mode $savedAudioMode", error)
                 "Audio: mode restore failed requested=$savedAudioMode now=${manager.mode}" +
@@ -1296,6 +1305,16 @@ private class VideoDecoder(
 
     private fun recover(reason: String) {
         Log.w(TAG, "Video recovery: $reason; waiting for keyframe")
+        // Issue #251: while a keyframe wait is already running, rebuilding the
+        // decoder races the keyframe's arrival — the rebuild discards the
+        // configured codec, an IDR that lands mid-rebuild is wasted, and the
+        // wait restarts; on a busy control channel this looped hundreds of
+        // times over tens of seconds while frames kept arriving. Only a
+        // recovery that does not find a keyframe wait in progress rebuilds;
+        // later ones just reset the (already broken) chain and re-ask. A
+        // genuinely wedged codec still gets rebuilt once per keyframe cycle:
+        // accepting an IDR clears the wait, so the next recovery rebuilds.
+        val rebuild = !referenceChain.needsKeyFrame
         consecutiveInputWithoutOutput = 0
         consecutiveDroppedWithoutKeyFrame = 0
         keyframeWaitStartedNs = 0L
@@ -1303,7 +1322,7 @@ private class VideoDecoder(
         stats.onRecovery()
         report("recovery: $reason; waiting for keyframe")
         // Recreate with codec-specific data: flush can discard CSD before the first output.
-        releaseDecoder()
+        if (rebuild) releaseDecoder()
         referenceChain.reset()
         requestKeyFrameIfDue(force = true)
     }
