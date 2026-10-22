@@ -3099,8 +3099,15 @@ class CarPlayController(
             // connected to it. The manual manager is the readiness authority there:
             // it samples the interfaces itself and times out precisely if the AP is
             // genuinely absent.
+            val knownOff = com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(appContext) == false
+            val blockedByConfig = knownOff && (
+                result == com.shilapi.xcertplay.network.CarHotspotTethering.Result.UNSUPPORTED ||
+                result == com.shilapi.xcertplay.network.CarHotspotTethering.Result.PERMISSION_REQUIRED
+            )
             val manualFallback = hotspotMode == WirelessHotspotMode.MANUAL &&
-                result != com.shilapi.xcertplay.network.CarHotspotTethering.Result.READY
+                result != com.shilapi.xcertplay.network.CarHotspotTethering.Result.READY &&
+                result != com.shilapi.xcertplay.network.CarHotspotTethering.Result.CANCELLED &&
+                !blockedByConfig
             if (manualFallback) {
                 debugLog("car hotspot auto-enable ended with $result; continuing with the manual hotspot manager (issue #271)")
             }
