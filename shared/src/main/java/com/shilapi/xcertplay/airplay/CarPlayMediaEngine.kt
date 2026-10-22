@@ -26,6 +26,8 @@ interface MediaSink {
     /** A frame with the iPhone's frame time and its arrival time (System.nanoTime); see [ScreenStream.Listener]. */
     fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) =
         onVideoFrame(type, naluBytes)
+    /** A received frame was dropped upstream of the sink, breaking the video reference chain. */
+    fun onVideoFrameDropped(type: Int) {}
     fun setVideoRecoveryHandler(type: Int, handler: () -> Unit) {}
     fun setVideoDiagnosticHandler(type: Int, handler: (String) -> Unit) {}
     fun onScreenStreamActive(type: Int, active: Boolean) {}
@@ -55,6 +57,7 @@ internal fun currentScreenListener(type: Int, sink: MediaSink, isCurrent: () -> 
     override fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
         if (isCurrent()) sink.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos)
     }
+    override fun onFrameDropped() { if (isCurrent()) sink.onVideoFrameDropped(type) }
 }
 
 class CarPlayMediaEngine(

@@ -35,6 +35,8 @@ class ScreenStream(
          * arriving ([arrivalNanos], System.nanoTime). Listeners that do not pace frames ignore both.
          */
         fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) = onFrame(naluBytes)
+        /** A received frame was dropped before delivery (decrypt queue overflow), breaking the reference chain. */
+        fun onFrameDropped() {}
         fun onClosed(cause: Throwable?) {}
     }
 
@@ -180,6 +182,11 @@ class ScreenStream(
                     if (dropped == 1L || dropped % 60L == 0L) {
                         onDiagnostic("video decrypt queue full; dropped frames=$dropped")
                     }
+                    // The decoder cannot see this loss: without a signal it keeps
+                    // decoding dependent frames against the missing reference and
+                    // the picture stays mosaic until a decoder error happens to
+                    // trigger recovery (issue #288).
+                    listener.onFrameDropped()
                 }
             }
             OP_VIDEO_CONFIG -> {
@@ -216,6 +223,9 @@ class ScreenStream(
                 Log.w(TAG, "video frame auth failed, skipping frame (consecutive=$consecutive, nonce=$frameNonce)", error)
                 onDiagnostic("video frame auth failed, skipped consecutive=$consecutive")
                 if (consecutive >= MAX_CONSECUTIVE_DECRYPT_FAILURES) throw error
+                // A skipped frame breaks the reference chain the same way a
+                // queue drop does (issue #288).
+                listener.onFrameDropped()
                 return
             }
         } else {

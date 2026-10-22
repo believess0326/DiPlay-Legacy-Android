@@ -20,6 +20,8 @@ internal sealed interface VideoJob {
     /** Ask the iPhone for a keyframe, so a surface that just came back gets a picture without waiting for motion. */
     data object RefreshPicture : VideoJob
     data object Resync : VideoJob
+    /** A frame was lost before it reached this queue, so the reference chain is broken (issue #288). */
+    data object ReferenceLost : VideoJob
 }
 
 /** Do not resume dependent pictures after losing a reference frame. */
@@ -27,6 +29,8 @@ internal class VideoReferenceChain {
     var needsKeyFrame = true
         private set
     fun reset() { needsKeyFrame = true }
+    /** A frame dropped upstream (e.g. the decrypt queue) breaks the chain just the same. */
+    fun onReferenceLost() { needsKeyFrame = true }
     fun accepts(bytes: ByteArray, codec: VideoCodec): Boolean =
         !needsKeyFrame || MediaCodecSupport.isRandomAccess(bytes, codec)
     fun onQueued() { needsKeyFrame = false }
