@@ -1,3 +1,13 @@
+# DiPlay 0.2.85 — 2026-10-22
+
+- Wired reconnect anti-deadlock & USB retry (#286 / #275 / #269 / #256): resolve kernel D-state freeze on Allwinner T3 (Android 4.4.2) upon physical cable replug by lifting usbfs release delay to 400ms and skipping lock waits on aborted/detached connections; retry USBMUX claim with configuration reselection on ENOENT; promote re-enumeration latch to process scope.
+- Native software Opus telephony decoder (#272): bundle built-in libopus native software decoder fallback for platforms lacking system Opus MediaCodec, resolving inaudible CarPlay phone calls on legacy Android ROMs.
+- Independent media & navigation volume (#253 / #263): add independent media and navigation stream volume settings with digital gain scaling in the audio sink.
+- Wireless hotspot & Bluetooth teardown hardening (#271 / #281): bypass auto-enable hard failure in manual hotspot mode to accommodate ROMs whose AP runs outside Android framework; force disconnect and purge stale ACLs upon repeated L2CAP 0x4 rejection; enforce 3-second per-resource deadline during teardown to avoid stalled disconnects.
+- Display, touch & updater improvements (#216 / #251 / #282 / #283): escalate keyframe wait timeout (>5s) to full recovery request; refresh frame on window focus gain; handle video layer container in sharp-corner mode; record touch scaling coordinates; strip UTF-8 BOM in update client.
+
+See [v0.2.85 release notes](docs/RELEASE-NOTES-0.2.85.md) for details.
+
 # DiPlay 0.2.84 — 2026-10-21
 
 - Wired NCM bulk-out failure probing & interface reselect (#279): probe OUT endpoint status word via GET_STATUS upon first bulk-out failure to identify halt/STALL conditions; trigger SET_INTERFACE to reset data toggle and clear halt upon 5 consecutive transmit failures to recover Wedged host queues.
