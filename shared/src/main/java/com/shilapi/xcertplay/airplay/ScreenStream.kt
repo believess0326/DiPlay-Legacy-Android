@@ -156,7 +156,26 @@ class ScreenStream(
                 // We capture the nonce at reception time so each frame keeps its exact
                 // nonce regardless of worker queue depth, delays, or dropped frames (#249).
                 val frameNonce = frameCounter.getAndIncrement()
-                if (!decryptQueue.offer(PendingFrame(header, body, stats, arrivalNanos, frameNonce))) {
+                // Issues #249/#288: a plain offer() drops the frame the moment the
+                // queue is full. On units whose software decryption is barely as fast
+                // as the stream, one slow frame (GC/JIT spikes reach 300 ms+) fills
+                // the 10-frame queue and the overflow drops shatter the reference
+                // chain — mosaic blocks and a frozen picture while rx stays healthy.
+                // Wait briefly for a slot instead: the receive loop stalls, TCP
+                // backpressure paces the phone, and spikes degrade into latency
+                // rather than lost frames. Sustained overload still drops after the
+                // wait, and the nonce was already captured above, so a drop never
+                // corrupts later frames' decryption.
+                val queued = try {
+                    decryptQueue.offer(
+                        PendingFrame(header, body, stats, arrivalNanos, frameNonce),
+                        DECRYPT_QUEUE_OFFER_WAIT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS,
+                    )
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    false
+                }
+                if (!queued) {
                     val dropped = droppedFrames.incrementAndGet()
                     if (dropped == 1L || dropped % 60L == 0L) {
                         onDiagnostic("video decrypt queue full; dropped frames=$dropped")
@@ -239,6 +258,8 @@ class ScreenStream(
         const val MAX_CONSECUTIVE_DECRYPT_FAILURES = 30
         /** Bounded decrypt backlog (#249): at 30 fps this is ~0.3 s of video. */
         const val DECRYPT_QUEUE_CAPACITY = 10
+        /** How long the receive loop waits for a decrypt slot before dropping a frame. */
+        const val DECRYPT_QUEUE_OFFER_WAIT_MILLIS = 120L
     }
 }
 
