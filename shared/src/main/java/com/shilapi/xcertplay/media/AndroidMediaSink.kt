@@ -553,6 +553,15 @@ class AndroidMediaSink(
         // This callback runs on the downlink thread; microphone failures must not stop playback.
         try {
             if (config.audioType == "telephony" && !callMicCompatibility) enterCommunicationMode(id)
+            // Issue #272 follow-up: call echo complaints were undiagnosable because a
+            // missing echo reference was silent — the uplink only logs when one is
+            // present. State all three inputs whenever a call microphone starts.
+            if (config.audioType == TELEPHONY_AUDIO_TYPE) {
+                onAudioDiagnostic(
+                    "Microphone: echo state aecSetting=$callEchoCancellation micCompatibility=$callMicCompatibility " +
+                        "referencePresent=${callEchoReferences[id] != null}",
+                )
+            }
             val uplink = microphoneUplinks.computeIfAbsent(id) {
                 MicrophoneUplink(
                     config = config,
