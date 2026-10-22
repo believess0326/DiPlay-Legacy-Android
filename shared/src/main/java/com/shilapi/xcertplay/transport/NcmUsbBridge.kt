@@ -50,6 +50,10 @@ class NcmUsbBridge internal constructor(
     }
     private var sequence = 0
     private var loggedWriteTimeout = false
+    /** Issue #137: in-flight write start (nanoTime; 0 = idle), read by the wedge watchdog. */
+    @Volatile private var writeInFlightSinceNs = 0L
+    private val writeWatchdogStarted = AtomicBoolean(false)
+    private val writeWatchdogFired = AtomicBoolean(false)
     private var inboundFrameSeen = false
     private var consecutiveWriteFailures = 0
     /** Issue #279: the data-interface reset is attempted once per failure run. */
@@ -94,8 +98,14 @@ class NcmUsbBridge internal constructor(
             this.sequence.also { this.sequence = (this.sequence + 1) and 0xffff }
         }
         val block = Ntb16Codec.build(frame, sequence)
-        val transferred = writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
-            sharedConnection.bulkTransfer(outEndpoint, block, offset, count, timeout)
+        ensureWriteWatchdog()
+        writeInFlightSinceNs = System.nanoTime()
+        val transferred = try {
+            writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
+                sharedConnection.bulkTransfer(outEndpoint, block, offset, count, timeout)
+            }
+        } finally {
+            writeInFlightSinceNs = 0L
         }
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
         // resulting timeout as -1; it is not a detach and later packets must be allowed to retry.
@@ -114,20 +124,21 @@ class NcmUsbBridge internal constructor(
             // latched, so try to release one before counting this as a fault.
             clearOutEndpointHalt()
             consecutiveWriteFailures += 1
-            Log.i(
-                IphoneCarPlayConfiguration.TAG,
-                "ncm bulk-out failed $consecutiveWriteFailures/$MAX_CONSECUTIVE_WRITE_FAILURES " +
-                    "while the data path was live: endpoint=0x${outEndpoint.address.toString(16)} " +
-                    "requested=${block.size} transferred=$transferred",
-            )
+            val failureLine = "ncm bulk-out failed $consecutiveWriteFailures/$MAX_CONSECUTIVE_WRITE_FAILURES " +
+                "while the data path was live: endpoint=0x${outEndpoint.address.toString(16)} " +
+                "requested=${block.size} transferred=$transferred"
+            Log.i(IphoneCarPlayConfiguration.TAG, failureLine)
+            // Reports only carry the diagnostic channel; the probe lines below
+            // were logcat-only, so a report could never show the halt state
+            // they exist to capture (issue #137).
+            onDiagnostic(failureLine)
             if (consecutiveWriteFailures == 1) {
                 // Issue #279: the framework transfer result carries no errno, so probe
                 // the endpoint status word instead — halt=1 means the device latched a
                 // stall; halt=0 with failing transfers points at the host side.
-                Log.i(
-                    IphoneCarPlayConfiguration.TAG,
-                    "ncm bulk-out endpoint status: ${probeOutEndpointStatus()}",
-                )
+                val statusLine = "ncm bulk-out endpoint status: ${probeOutEndpointStatus()}"
+                Log.i(IphoneCarPlayConfiguration.TAG, statusLine)
+                onDiagnostic(statusLine)
             }
             if (consecutiveWriteFailures == INTERFACE_RESET_AT_FAILURE && !interfaceResetAttempted) {
                 interfaceResetAttempted = true
@@ -152,6 +163,46 @@ class NcmUsbBridge internal constructor(
             loggedWriteTimeout = false
             Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out became ready")
         }
+    }
+
+    /**
+     * Issue #137: on some kernels (the reporter's i.MX6/API 19 unit, the T3 class
+     * from issue #168) a bulk-OUT transfer never returns at all — it ignores its
+     * timeout, so the failure counting, halt clearing and interface reset in
+     * [send] (all gated on a transfer result) never run, the write lock stays
+     * held, and even close() queues behind it until the session's teardown
+     * abandonment. Watch the in-flight write from a side thread: one send far
+     * beyond its own deadline means the write path is wedged. Record the session
+     * failure, stop further writes, and close the framework connection — that is
+     * what makes the stuck transfer come back with an error, so the session
+     * tears down and reconnects instead of waiting out the 30 s no-TCP timer.
+     * Raw usbfs connections have no framework connection to close; their
+     * failure is still recorded and reported.
+     */
+    private fun ensureWriteWatchdog() {
+        if (!writeWatchdogStarted.compareAndSet(false, true)) return
+        Thread({
+            while (!closed) {
+                try {
+                    Thread.sleep(WATCHDOG_POLL_MILLIS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+                val since = writeInFlightSinceNs
+                if (since == 0L || closed) continue
+                if (System.nanoTime() - since < WRITE_WEDGE_NANOS) continue
+                if (!writeWatchdogFired.compareAndSet(false, true)) break
+                if (closed) break
+                onDiagnostic(
+                    "ncm bulk-out wedged: one send in flight over " +
+                        "${WRITE_WEDGE_NANOS / 1_000_000}ms; failing the session",
+                )
+                failSession("NCM bulk-out transfer did not return; the USB write path is wedged")
+                markAborted()
+                runCatching { sharedConnection.frameworkConnection?.close() }
+                break
+            }
+        }, "ncm-write-watchdog").apply { isDaemon = true; start() }
     }
 
     /**
@@ -460,10 +511,9 @@ class NcmUsbBridge internal constructor(
 
     private fun clearOutEndpointHalt() {
         val result = clearUsbEndpointHalt(sharedConnection, outEndpoint)
-        Log.i(
-            IphoneCarPlayConfiguration.TAG,
-            "ncm bulk-out failed; clear-halt on endpoint 0x${outEndpoint.address.toString(16)} returned $result",
-        )
+        val line = "ncm bulk-out failed; clear-halt on endpoint 0x${outEndpoint.address.toString(16)} returned $result"
+        Log.i(IphoneCarPlayConfiguration.TAG, line)
+        onDiagnostic(line)
     }
 
     /**
@@ -543,6 +593,9 @@ class NcmUsbBridge internal constructor(
         private const val MAX_QUEUED_FRAMES = 256
         private const val MAX_QUEUED_BYTES = 1 shl 20
         private const val MAX_CONSECUTIVE_WRITE_FAILURES = 25
+        /** Issue #137: one send may legitimately run to its 2 s deadline; 10 s in flight means wedged. */
+        private const val WRITE_WEDGE_NANOS = 10_000_000_000L
+        private const val WATCHDOG_POLL_MILLIS = 500L
         /** Issue #279: consecutive failures at which the one-shot interface reset runs. */
         private const val INTERFACE_RESET_AT_FAILURE = 5
         private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
