@@ -647,6 +647,7 @@
     <string name="diagnostic_report_copy_hint">Tap "Copy all" to copy the full report to the clipboard. Use this if no sharing app is available.</string>
     <string name="copy_all">Copy all</string>
     <string name="diagnostic_report_copied">Full report copied to the clipboard.</string>
+    <string name="clipboard_copy_failed">Copying is not available on this head unit.</string>
     <string name="diagnostic_report_preview_unavailable">The report preview could not be displayed on this device, but the full report was saved to storage.</string>
     <string name="wheel_map_zoom">Zoom the dashboard map with the wheel</string>
     <string name="wheel_map_zoom_description">BYD\'s custom key switches the volume keys between volume and dashboard map zoom while the dashboard shows the CarPlay map. A call always keeps the volume. On some cars the console volume sends the same keys, so it zooms too while zoom is on. Uses DiPlay\'s wheel key service; the note on the dashboard needs ADB.</string>

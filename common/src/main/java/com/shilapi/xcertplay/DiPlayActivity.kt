@@ -2512,15 +2512,11 @@ class DiPlayActivity : ComponentActivity() {
             setPadding(0, dp(16), 0, dp(16))
         })
         body.addView(button(getString(R.string.copy_command), false) {
-            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
-                getSystemService(android.content.ClipboardManager::class.java)
+            if (copyToClipboard(getString(R.string.clipboard_usage_access), command)) {
+                toast(getString(R.string.copied_to_the_car_clipboard_run_the_command_on_your_comput))
             } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                toast(getString(R.string.clipboard_copy_failed))
             }
-            clipboard?.setPrimaryClip(
-                android.content.ClipData.newPlainText(getString(R.string.clipboard_usage_access), command))
-            toast(getString(R.string.copied_to_the_car_clipboard_run_the_command_on_your_comput))
         }, matchButton(0, 56))
         body.addView(label(getString(R.string.cluster_adb_multi_device, packageName), 14, MUTED))
         body.addView(label(getString(R.string.s_3_tap_check_and_enable_below_this_enables_the_cluster_ma), 16, TEXT))
@@ -2655,16 +2651,11 @@ class DiPlayActivity : ComponentActivity() {
             setBackgroundColor(0x22FFFFFF)
         })
         body.addView(button(getString(R.string.copy_command), false) {
-            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
-                getSystemService(android.content.ClipboardManager::class.java)
+            if (copyToClipboard("DiPlay ADB Command", adbCmd)) {
+                toast(getString(R.string.copied_to_the_car_clipboard_run_the_command_on_your_comput))
             } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                toast(getString(R.string.clipboard_copy_failed))
             }
-            clipboard?.setPrimaryClip(
-                android.content.ClipData.newPlainText("DiPlay ADB Command", adbCmd)
-            )
-            toast(getString(R.string.copied_to_the_car_clipboard_run_the_command_on_your_comput))
         }, matchButton(8, 50))
 
         AlertDialog.Builder(this)
@@ -4698,6 +4689,26 @@ class DiPlayActivity : ComponentActivity() {
         }, "diplay-export").start()
     }
 
+    /**
+     * Clipboard writes can throw inside the framework on API 17/19 head units whose
+     * clipboard service is stubbed out (an NPE out of ClipboardManager.setPrimaryClip
+     * was reported on a 4.4 unit), so a null check on the manager is not enough:
+     * guard the call itself and let the caller fall back to a failure toast.
+     */
+    private fun copyToClipboard(label: String, text: String): Boolean = runCatching {
+        val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
+            getSystemService(android.content.ClipboardManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        }
+        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+        clipboard != null
+    }.getOrElse { error ->
+        Log.w("DiPlay", "clipboard copy failed", error)
+        false
+    }
+
     private fun showDiagnosticReport(report: String) {
         // Some head units (e.g. Allwinner T3, real API 19) choke laying out a multi-hundred-KB
         // TextView: the tap then appears dead. Show only the tail in-app; the full report is
@@ -4714,15 +4725,11 @@ class DiPlayActivity : ComponentActivity() {
             // Long-press text selection (setTextIsSelectable) crashes on some API 17/19 head
             // units when the selection ActionMode starts, so copy via an explicit button
             // instead of relying on the selection machinery.
-            val clipboard = if (realSdkInt() >= Build.VERSION_CODES.M) {
-                getSystemService(android.content.ClipboardManager::class.java)
+            if (copyToClipboard(getString(R.string.view_diagnostic_report), report)) {
+                toast(getString(R.string.diagnostic_report_copied))
             } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                toast(getString(R.string.clipboard_copy_failed))
             }
-            clipboard?.setPrimaryClip(
-                android.content.ClipData.newPlainText(getString(R.string.view_diagnostic_report), report))
-            toast(getString(R.string.diagnostic_report_copied))
         })
         try {
             body.addView(label(preview, 13, TEXT).apply {

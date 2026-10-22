@@ -584,6 +584,7 @@
     <string name="diagnostic_report_copy_hint">點「全部複製」即可把全文複製到剪貼簿。如果沒有可用的分享 App，可以使用此方式。</string>
     <string name="copy_all">全部複製</string>
     <string name="diagnostic_report_copied">全文已複製到剪貼簿。</string>
+    <string name="clipboard_copy_failed">這台車機不支援複製。</string>
     <string name="wheel_map_zoom">用方向盤按鍵縮放儀表板地圖</string>
     <string name="wheel_map_zoom_description">儀表板顯示 CarPlay 地圖時，比亞迪自訂按鍵可在音量和儀表板地圖縮放之間切換音量鍵。通話時按鍵始終調整音量。部分車型的中控音量與方向盤傳送相同按鍵，因此縮放模式下它也會縮放地圖。使用 DiPlay 方向盤按鍵服務；儀表板上的提示需要 ADB。</string>
     <string name="wheel_keys_service_on">方向盤按鍵服務：已開啟</string>

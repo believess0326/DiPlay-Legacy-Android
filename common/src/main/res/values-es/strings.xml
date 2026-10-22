@@ -557,6 +557,7 @@
     <string name="diagnostic_report_copy_hint">Toca «Copiar todo» para copiar el informe completo al portapapeles. Puedes usar esta opción si no hay una aplicación para compartir.</string>
     <string name="copy_all">Copiar todo</string>
     <string name="diagnostic_report_copied">Informe completo copiado al portapapeles.</string>
+    <string name="clipboard_copy_failed">La copia no está disponible en esta unidad.</string>
     <string name="wheel_map_zoom">Zoom del mapa del panel con el volante</string>
     <string name="wheel_map_zoom_description">El botón personalizable de BYD cambia los botones de volumen entre el volumen y el zoom del mapa del panel mientras el panel de instrumentos muestra el mapa de CarPlay. Durante una llamada siempre controlan el volumen. En algunos coches el volumen de la consola envía los mismos botones, así que también hace zoom mientras el zoom está activo. Usa el servicio de botones del volante de DiPlay; el aviso en el panel necesita ADB.</string>
     <string name="wheel_keys_service_on">Servicio de botones del volante: activado</string>
