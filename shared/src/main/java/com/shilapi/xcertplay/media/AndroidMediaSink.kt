@@ -503,6 +503,13 @@ class AndroidMediaSink(
         }
     }
 
+    override fun onVideoFrameDropped(type: Int) {
+        synchronized(videoOwnershipLock) {
+            if (videoClosed) return
+            videoDecoders[type]?.notifyReferenceLost()
+        }
+    }
+
     override fun onScreenStreamActive(type: Int, active: Boolean) {
         synchronized(videoOwnershipLock) {
             if (videoClosed) return
@@ -603,8 +610,12 @@ class AndroidMediaSink(
             earpieceFallbackTried = false
             Log.i("xcertplay-usb", "audio mode $savedAudioMode -> ${manager.mode} for telephony stream=$id")
             runCatching {
+                // Some vendor audio services silently refuse the mode change (the
+                // readback stays NORMAL); platform echo cancellation hangs off this
+                // mode, so flag the refusal explicitly in the report (issue #272).
                 onAudioDiagnostic("Audio: mode entered communication from=$savedAudioMode" +
-                    " now=${manager.mode} stream=$id")
+                    " now=${manager.mode} stream=$id" +
+                    " modeRefused=${manager.mode != AudioManager.MODE_IN_COMMUNICATION}")
             }
         }
     }
@@ -899,6 +910,11 @@ private class VideoDecoder(
         queue.offer(VideoJob.RefreshPicture)
     }
 
+    /** A frame was dropped before it reached this decoder (decrypt queue overflow). */
+    fun notifyReferenceLost() {
+        queue.offer(VideoJob.ReferenceLost)
+    }
+
     override fun close() {
         running = false
         thread.interrupt()
@@ -925,6 +941,10 @@ private class VideoDecoder(
                             requestKeyFrame()
                         }
                         is VideoJob.Resync -> recover("video queue overflow")
+                        // A frame lost upstream broke the reference chain: dependent
+                        // frames are rejected from here on, and the loop below keeps
+                        // requesting a keyframe until one lands (issue #288).
+                        is VideoJob.ReferenceLost -> referenceChain.onReferenceLost()
                         null -> Unit
                     }
                     decoder?.let(::drainOutput)
