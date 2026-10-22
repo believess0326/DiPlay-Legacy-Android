@@ -1832,6 +1832,21 @@ class CarPlayHostActivity : ComponentActivity() {
         sidePanelBattery?.text = battery?.let { "🔋 ${Math.round(it.batteryPercent)} %  ·  ${it.rangeKm} km" }.orEmpty()
     }
 
+    /** Card treatment matching the main settings UI: surface fill, 1dp border, 20dp corners. */
+    private fun menuCardBackground(): GradientDrawable = GradientDrawable().apply {
+        setColor(MENU_SURFACE)
+        cornerRadius = dp(20).toFloat()
+        setStroke(dp(1), MENU_BORDER)
+    }
+
+    /** Filled rounded background for the menu's buttons, in place of API 21+ background tints. */
+    private fun menuButtonBackground(fill: Int, radiusDp: Int = 20): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(radiusDp).toFloat()
+            setStroke(dp(1), if (fill == MENU_BUTTON) MENU_BORDER else fill)
+        }
+
     private fun buildSettingsMenu(): View {
         val overlay = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -1845,6 +1860,30 @@ class CarPlayHostActivity : ComponentActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(48), dp(36), dp(48), dp(36))
         }
+        // Sections are grouped into cards like the main settings UI: startCard opens
+        // a card with its category header, addBlock files the following rows into it,
+        // and anything added while no card is open (title, footer actions) stays on
+        // the page itself.
+        var currentCard: LinearLayout? = null
+        fun startCard(header: String) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = menuCardBackground()
+                setPadding(dp(24), dp(20), dp(24), dp(20))
+            }
+            card.addView(settingsCategoryHeader(header))
+            content.addView(
+                card,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(20) },
+            )
+            currentCard = card
+        }
+        fun addBlock(view: View, params: LinearLayout.LayoutParams) {
+            (currentCard ?: content).addView(view, params)
+        }
         content.addView(
             menuText(getString(R.string.carplay_settings), 32f, Color.WHITE, bold = true).apply {
                 setPadding(dp(56), 0, 0, 0)
@@ -1857,22 +1896,20 @@ class CarPlayHostActivity : ComponentActivity() {
         if (sessionDisplay?.viewAreas?.sidePanel() != null) {
             content.addView(Button(this).apply {
                 text = getString(if (sidePanelShown) R.string.side_panel_full_screen else R.string.side_panel_show)
+                isAllCaps = false
                 textSize = 20f
+                setTextColor(Color.WHITE)
+                background = menuButtonBackground(MENU_BUTTON)
+                minHeight = dp(52)
                 setOnClickListener {
                     cancelSettingsEdits()
                     showSidePanel(!sidePanelShown)
                 }
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        content.addView(
-            settingsCategoryHeader(getString(R.string.connection)),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(32) },
-        )
+        startCard(getString(R.string.connection))
 
-        content.addView(
+        addBlock(
             buildMfiTargetSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1900,7 +1937,7 @@ class CarPlayHostActivity : ComponentActivity() {
             )
             requestStartupPrerequisites()
         }
-        content.addView(
+        addBlock(
             wirelessRowResult.rowView,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1908,7 +1945,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(30) },
         )
 
-        content.addView(
+        addBlock(
             buildHotspotModeSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1916,7 +1953,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(30) },
         )
 
-        content.addView(
+        addBlock(
             menuText(getString(R.string.hotspot_status), 20f, MENU_SECONDARY),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1924,7 +1961,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(18) },
         )
         val hotspotStatusView = menuText("", 16f, MENU_ACCENT)
-        content.addView(
+        addBlock(
             hotspotStatusView,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1932,14 +1969,8 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(6) },
         )
 
-        content.addView(
-            settingsCategoryHeader(getString(R.string.automatic_connection)),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(36) },
-        )
-        content.addView(
+        startCard(getString(R.string.automatic_connection))
+        addBlock(
             settingsSwitchRow(
                 label = getString(R.string.auto_start_on_boot),
                 checked = autoStartOnBoot,
@@ -1954,14 +1985,8 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(12) },
         )
 
-        content.addView(
-            settingsCategoryHeader(getString(R.string.settings_navigation)),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(36) },
-        )
-        content.addView(
+        startCard(getString(R.string.settings_navigation))
+        addBlock(
             buildLocationReportingSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1970,14 +1995,8 @@ class CarPlayHostActivity : ComponentActivity() {
         )
 
         if (advancedAudioChannelMappingSupported) {
-            content.addView(
-                settingsCategoryHeader(getString(R.string.audio)),
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(36) },
-            )
-            content.addView(
+            startCard(getString(R.string.audio))
+            addBlock(
                 settingsSwitchRow(
                     label = getString(R.string.advanced_audio_channel_mapping),
                     checked = advancedAudioChannelMapping,
@@ -1997,48 +2016,36 @@ class CarPlayHostActivity : ComponentActivity() {
             )
         }
 
-        content.addView(
-            settingsCategoryHeader(getString(R.string.settings_vehicle)),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(36) },
-        )
-        content.addView(
+        startCard(getString(R.string.settings_vehicle))
+        addBlock(
             buildIdentitySettingsSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(12) },
         )
-        content.addView(
+        addBlock(
             buildAirPlayIconSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(26) },
         )
-        content.addView(
+        addBlock(
             buildDrivingSideSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(26) },
         )
-        content.addView(
+        addBlock(
             buildDockSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(26) },
         )
-        content.addView(
-            settingsCategoryHeader(getString(R.string.settings_display)),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(40) },
-        )
+        startCard(getString(R.string.settings_display))
 
         val resolutionControl = DisplaySettingsSection.createResolutionSlider(
             context = this,
@@ -2050,7 +2057,7 @@ class CarPlayHostActivity : ComponentActivity() {
             updateResolutionMenu()
         }
         val resolutionValue = resolutionControl.valueTextView
-        content.addView(
+        addBlock(
             resolutionControl.container,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2058,7 +2065,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ),
         )
 
-        content.addView(
+        addBlock(
             buildStepSliderSection(
                 title = getString(R.string.frame_rate),
                 values = (
@@ -2078,7 +2085,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(24) },
         )
 
-        content.addView(
+        addBlock(
             settingsChoiceRow(
                 label = getString(R.string.physical_size_basis),
                 options = listOf(
@@ -2096,7 +2103,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(24) },
         )
 
-        content.addView(
+        addBlock(
             buildStepSliderSection(
                 title = getString(R.string.physical_length),
                 values = (
@@ -2130,7 +2137,7 @@ class CarPlayHostActivity : ComponentActivity() {
             )
             updateResolutionMenu()
         }
-        content.addView(
+        addBlock(
             hevcRow.rowView,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2152,7 +2159,7 @@ class CarPlayHostActivity : ComponentActivity() {
             updateResolutionMenu()
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            content.addView(
+            addBlock(
                 softwareHevcRow.rowView,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2161,7 +2168,7 @@ class CarPlayHostActivity : ComponentActivity() {
             )
         }
 
-        content.addView(
+        addBlock(
             buildSafeAreaSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2169,7 +2176,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(30) },
         )
 
-        content.addView(
+        addBlock(
             buildFullscreenSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2177,14 +2184,8 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(12) },
         )
 
-        content.addView(
-            settingsCategoryHeader(getString(R.string.diagnostics)),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(40) },
-        )
-        content.addView(
+        startCard(getString(R.string.diagnostics))
+        addBlock(
             buildDebugLogsSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2193,14 +2194,8 @@ class CarPlayHostActivity : ComponentActivity() {
         )
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            content.addView(
-                settingsCategoryHeader(getString(R.string.android_9_compatibility)),
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(40) },
-            )
-            content.addView(
+            startCard(getString(R.string.android_9_compatibility))
+            addBlock(
                 menuText(
                     getString(R.string.settings_android9_compat),
                     16f,
@@ -2213,6 +2208,7 @@ class CarPlayHostActivity : ComponentActivity() {
             )
         }
 
+        currentCard = null
         val preview = menuText("", 17f, MENU_SECONDARY)
         content.addView(
             preview,
@@ -2227,7 +2223,7 @@ class CarPlayHostActivity : ComponentActivity() {
             isAllCaps = false
             textSize = 17f
             setTextColor(MENU_BUTTON_TEXT)
-            ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(MENU_ACCENT))
+            background = menuButtonBackground(MENU_ACCENT)
             minHeight = dp(52)
             setOnClickListener { saveSettingsAndReconnect() }
         }
@@ -2244,7 +2240,7 @@ class CarPlayHostActivity : ComponentActivity() {
             isAllCaps = false
             textSize = 17f
             setTextColor(Color.WHITE)
-            ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(MENU_DANGER))
+            background = menuButtonBackground(MENU_DANGER)
             minHeight = dp(52)
             setOnClickListener { exitApplication() }
         }
@@ -2261,7 +2257,7 @@ class CarPlayHostActivity : ComponentActivity() {
             isAllCaps = false
             textSize = 17f
             setTextColor(Color.WHITE)
-            ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(MENU_DANGER))
+            background = menuButtonBackground(MENU_DANGER)
             minHeight = dp(52)
             setOnClickListener { restartApplication() }
         }
@@ -2276,11 +2272,19 @@ class CarPlayHostActivity : ComponentActivity() {
         content.addView(Button(this).apply {
             text = getString(R.string.language_app_language)
             isAllCaps = false
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            background = menuButtonBackground(MENU_BUTTON)
+            minHeight = dp(52)
             setOnClickListener { AppLocale.showPicker(this@CarPlayHostActivity) }
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
 
         val gestureButton = Button(this).apply {
             isAllCaps = false
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            background = menuButtonBackground(MENU_BUTTON)
+            minHeight = dp(52)
             setOnClickListener {
                 gestureFingerCount = if (gestureFingerCount >= 4) 2 else gestureFingerCount + 1
                 text = getString(R.string.settings_gesture_fingers, gestureFingerCount)
@@ -2294,7 +2298,7 @@ class CarPlayHostActivity : ComponentActivity() {
             isAllCaps = false
             textSize = 17f
             setTextColor(Color.WHITE)
-            ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(MENU_TRACK_OFF))
+            background = menuButtonBackground(MENU_BUTTON)
             minHeight = dp(52)
             setOnClickListener {
                 cancelSettingsEdits()
@@ -2332,7 +2336,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 isAllCaps = false
                 textSize = 22f
                 setTextColor(Color.WHITE)
-                ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(MENU_TRACK_OFF))
+                background = menuButtonBackground(MENU_BUTTON, radiusDp = 12)
                 contentDescription = getString(R.string.discard_changes_and_exit_settings)
                 minWidth = 0
                 minHeight = 0
@@ -2672,16 +2676,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     textOn = ""
                     textOff = ""
                 }
-                if (realSdkInt() >= Build.VERSION_CODES.M) {
-                    thumbTintList = ColorStateList(
-                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                        intArrayOf(MENU_ACCENT, MENU_SECONDARY),
-                    )
-                    trackTintList = ColorStateList(
-                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                        intArrayOf(MENU_ACCENT_TRACK, MENU_TRACK_OFF),
-                    )
-                }
+                SettingsWidgets.styleSwitch(this, this@CarPlayHostActivity, SettingsTheme.OVERLAY)
                 setOnCheckedChangeListener { _, checked ->
                     onLocationReportingChanged(checked)
                 }
@@ -2777,6 +2772,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val seekBar = SeekBar(this).apply {
             max = (values.size - 1).coerceAtLeast(0)
             progress = selectedIndex
+            SettingsWidgets.styleSeekBarThumb(this, this@CarPlayHostActivity, SettingsTheme.OVERLAY)
             if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
                 splitTrack = false
                 progressTintList = ColorStateList.valueOf(MENU_ACCENT)
@@ -2839,6 +2835,8 @@ class CarPlayHostActivity : ComponentActivity() {
             Button(this).apply {
                 text = getString(R.string.preset_brand_icons)
                 isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = menuButtonBackground(MENU_BUTTON)
                 setOnClickListener { showCarBrandPresetsDialog() }
             },
             LinearLayout.LayoutParams(
@@ -2850,6 +2848,8 @@ class CarPlayHostActivity : ComponentActivity() {
             Button(this).apply {
                 text = getString(R.string.choose_image)
                 isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = menuButtonBackground(MENU_BUTTON)
                 setOnClickListener {
                     externalActivityInProgress = true
                     launchCarButtonImagePicker(
@@ -2874,6 +2874,8 @@ class CarPlayHostActivity : ComponentActivity() {
             Button(this).apply {
                 text = getString(R.string.default_icon)
                 isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = menuButtonBackground(MENU_BUTTON)
                 setOnClickListener {
                     AirPlayPersistence.clearCustomAirPlayIcon(this@CarPlayHostActivity)
                     updateAirPlayIconPreview()
@@ -2965,6 +2967,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 id = View.generateViewId()
                 text = getString(labels.getValue(dock))
                 setTextColor(Color.WHITE)
+                SettingsWidgets.styleRadioButton(this, this@CarPlayHostActivity, SettingsTheme.OVERLAY)
                 isChecked = carPlayDock == dock
             }.also { group.addView(it) }
         }
@@ -3010,12 +3013,14 @@ class CarPlayHostActivity : ComponentActivity() {
             id = View.generateViewId()
             text = getString(R.string.left_hand_drive)
             setTextColor(Color.WHITE)
+            SettingsWidgets.styleRadioButton(this, this@CarPlayHostActivity, SettingsTheme.OVERLAY)
             isChecked = !rightHandDrive
         }
         val right = RadioButton(this).apply {
             id = View.generateViewId()
             text = getString(R.string.right_hand_drive)
             setTextColor(Color.WHITE)
+            SettingsWidgets.styleRadioButton(this, this@CarPlayHostActivity, SettingsTheme.OVERLAY)
             isChecked = rightHandDrive
         }
         group.addView(left)
@@ -3096,6 +3101,8 @@ class CarPlayHostActivity : ComponentActivity() {
             Button(this).apply {
                 text = getString(R.string.set)
                 isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = menuButtonBackground(MENU_BUTTON)
                 setOnClickListener { openSafeAreaEditor() }
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
@@ -3104,6 +3111,8 @@ class CarPlayHostActivity : ComponentActivity() {
             Button(this).apply {
                 text = getString(R.string.reset)
                 isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = menuButtonBackground(MENU_BUTTON)
                 setOnClickListener { resetSafeAreaForCurrentSize() }
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -3168,6 +3177,8 @@ class CarPlayHostActivity : ComponentActivity() {
             Button(this).apply {
                 text = getString(R.string.cancel)
                 isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = menuButtonBackground(MENU_BUTTON)
                 setOnClickListener { closeSafeAreaEditor() }
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
@@ -3176,6 +3187,8 @@ class CarPlayHostActivity : ComponentActivity() {
             Button(this).apply {
                 text = getString(R.string.save)
                 isAllCaps = false
+                setTextColor(MENU_BUTTON_TEXT)
+                background = menuButtonBackground(MENU_ACCENT)
                 setOnClickListener { saveSafeAreaEditor() }
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -3219,7 +3232,15 @@ class CarPlayHostActivity : ComponentActivity() {
                 textSize = 18f
                 setTextColor(Color.WHITE)
                 setHintTextColor(MENU_SECONDARY)
-                ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(MENU_ACCENT))
+                // Rounded filled field matching the main settings UI; the stock
+                // underline came from the framework background, whose tint needs
+                // API 21+ and silently fell back to the ROM style on older units.
+                background = GradientDrawable().apply {
+                    setColor(MENU_BUTTON)
+                    cornerRadius = dp(12).toFloat()
+                    setStroke(dp(1), MENU_BORDER)
+                }
+                setPadding(dp(14), 0, dp(14), 0)
                 minHeight = dp(48)
                 isSingleLine = true
                 inputType = when {
@@ -3313,10 +3334,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 text = label
                 textSize = 18f
                 setTextColor(MENU_SECONDARY)
-                CompoundButtonCompat.setButtonTintList(this, ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                    intArrayOf(MENU_ACCENT, MENU_SECONDARY),
-                ))
+                SettingsWidgets.styleRadioButton(this, this@CarPlayHostActivity, SettingsTheme.OVERLAY)
                 tag = mode
                 isChecked = wirelessHotspotMode == mode
             }
@@ -5690,12 +5708,18 @@ class CarPlayHostActivity : ComponentActivity() {
         const val SETTINGS_SWIPE_DISTANCE_DP = 72
         const val SETTINGS_SWIPE_DIRECTION_RATIO = 1.15f
         const val MAX_SETTINGS_MENU_WIDTH_PX = 1200
-        val MENU_BACKGROUND = Color.rgb(12, 16, 19)
-        val MENU_SECONDARY = Color.rgb(170, 180, 190)
-        val MENU_ACCENT = Color.rgb(127, 205, 154)
-        val MENU_ACCENT_TRACK = Color.rgb(78, 143, 102)
-        val MENU_TRACK_OFF = Color.rgb(64, 74, 80)
-        val MENU_BUTTON_TEXT = Color.rgb(8, 17, 11)
+        // The in-session menu shares the main settings palette (DiPlayActivity's
+        // BG/SURFACE/BUTTON/BORDER and the CARD theme), so the two settings
+        // surfaces read as one product.
+        val MENU_BACKGROUND = Color.rgb(12, 17, 27)
+        val MENU_SURFACE = Color.rgb(21, 30, 44)
+        val MENU_BUTTON = Color.rgb(31, 43, 61)
+        val MENU_BORDER = Color.rgb(42, 56, 75)
+        val MENU_SECONDARY = Color.rgb(168, 182, 202)
+        val MENU_ACCENT = Color.rgb(166, 200, 255)
+        val MENU_ACCENT_TRACK = Color.rgb(0x32, 0x58, 0x8c)
+        val MENU_TRACK_OFF = Color.rgb(42, 56, 75)
+        val MENU_BUTTON_TEXT = Color.rgb(12, 17, 27)
         val MENU_DANGER = Color.rgb(190, 45, 45)
         val NO_VIDEO_BACKGROUND = Color.rgb(0x16, 0x16, 0x18)
     }

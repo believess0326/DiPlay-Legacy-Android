@@ -5,6 +5,9 @@ import com.shilapi.xcertplay.compat.realSdkInt
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -46,14 +49,80 @@ object SettingsWidgets {
         val seekBar: SeekBar,
     )
 
+    /**
+     * Self-drawn radio indicator: an accent ring with a dot when checked, a muted
+     * ring otherwise. CompoundButton tint lists only exist on API 21+, so on older
+     * head units the framework fell back to the ROM's stock drawable and the menu
+     * left the app theme entirely; a state-list drawable renders the same everywhere.
+     */
+    fun radioDrawable(context: Context, theme: SettingsTheme): StateListDrawable {
+        fun ring(color: Int, checked: Boolean): LayerDrawable {
+            val outer = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.TRANSPARENT)
+                setStroke(theme.dp(context, 2), color)
+                setSize(theme.dp(context, 22), theme.dp(context, 22))
+            }
+            if (!checked) return LayerDrawable(arrayOf(outer))
+            val dot = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+            }
+            val inset = theme.dp(context, 6)
+            return LayerDrawable(arrayOf(outer, dot)).apply {
+                setLayerInset(1, inset, inset, inset, inset)
+            }
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_checked), ring(theme.accent, checked = true))
+            addState(intArrayOf(), ring(theme.textSecondary, checked = false))
+        }
+    }
+
+    fun styleRadioButton(button: RadioButton, context: Context, theme: SettingsTheme) {
+        button.setButtonDrawable(radioDrawable(context, theme))
+    }
+
+    /** Self-drawn switch thumb and track in theme colors; Switch tint lists need API 23+. */
+    fun styleSwitch(switch: Switch, context: Context, theme: SettingsTheme) {
+        fun thumb(color: Int) = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
+            setSize(theme.dp(context, 24), theme.dp(context, 24))
+        }
+        switch.thumbDrawable = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_checked), thumb(Color.WHITE))
+            addState(intArrayOf(), thumb(theme.textSecondary))
+        }
+        fun track(color: Int) = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = theme.dp(context, 14).toFloat()
+            setColor(color)
+            setSize(theme.dp(context, 46), theme.dp(context, 28))
+        }
+        switch.trackDrawable = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_checked), track(theme.accentTrack))
+            addState(intArrayOf(), track(theme.trackOff))
+        }
+    }
+
+    /** Accent slider thumb drawn directly; the SeekBar thumb tint needs API 21+. */
+    fun styleSeekBarThumb(seekBar: SeekBar, context: Context, theme: SettingsTheme) {
+        seekBar.thumb = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(theme.accent)
+            setSize(theme.dp(context, 20), theme.dp(context, 20))
+        }
+    }
+
     fun createCategoryHeader(
         context: Context,
         title: String,
         theme: SettingsTheme = SettingsTheme.OVERLAY,
     ): TextView = TextView(context).apply {
         text = title
-        textSize = if (theme.isOverlay) 16f else 22f
-        setTextColor(if (theme.isOverlay) theme.accent else theme.textPrimary)
+        textSize = 22f
+        setTextColor(theme.textPrimary)
         applyTextStyle(context, theme, bold = true)
     }
 
@@ -82,16 +151,7 @@ object SettingsWidgets {
                 textOff = ""
             }
             if (theme.isOverlay) {
-                if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
-                    thumbTintList = ColorStateList(
-                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                        intArrayOf(theme.accent, theme.textSecondary),
-                    )
-                    trackTintList = ColorStateList(
-                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                        intArrayOf(theme.accentTrack, theme.trackOff),
-                    )
-                }
+                styleSwitch(this, context, theme)
             } else {
                 minHeight = theme.dp(context, 56)
                 if (realSdkInt() >= android.os.Build.VERSION_CODES.LOLLIPOP) {
@@ -214,10 +274,7 @@ object SettingsWidgets {
                 this.text = text
                 textSize = 17f
                 setTextColor(theme.textSecondary)
-                androidx.core.widget.CompoundButtonCompat.setButtonTintList(this, ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                    intArrayOf(theme.accent, theme.textSecondary),
-                ))
+                styleRadioButton(this, context, theme)
                 tag = value
                 isChecked = value == selected
             }
@@ -297,6 +354,7 @@ object SettingsWidgets {
         val seekBar = SeekBar(context).apply {
             max = CarPlayDisplayScale.MAX_PERCENT - CarPlayDisplayScale.MIN_PERCENT
             progress = initial - CarPlayDisplayScale.MIN_PERCENT
+            styleSeekBarThumb(this, context, theme)
             if (realSdkInt() >= 21) {
                 splitTrack = false
                 progressTintList = ColorStateList.valueOf(theme.accent)
