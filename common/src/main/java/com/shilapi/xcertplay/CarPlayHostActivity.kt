@@ -3946,11 +3946,41 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun loadAirPlayIcon(): AirPlayIcon {
         val customBytes = AirPlayPersistence.loadCustomAirPlayIconBytes(this)
         if (customBytes != null) {
-            decodeAirPlayIcon(customBytes)?.let { return it }
+            decodeAirPlayIcon(normalizeAirPlayIconBytes(customBytes))?.let { return it }
             Log.w(TAG, "Custom AirPlay icon could not be decoded, falling back to default")
         }
         return decodeAirPlayIcon(defaultAirPlayIconBytes())
             ?: throw IllegalStateException("Packaged AirPlay icon is invalid")
+    }
+
+    /**
+     * The icon bytes travel inline in the session's /info payload, so an oversized
+     * custom icon (a photo crop can encode to several MB) breaks session setup on
+     * the phone side — the connection then fails or drops while the small packaged
+     * icons work. Shrink oversized icons until the payload fits the same order of
+     * magnitude as the packaged ones; already-saved icons are fixed here too,
+     * without the user having to pick the image again.
+     */
+    private fun normalizeAirPlayIconBytes(encoded: ByteArray): ByteArray {
+        if (encoded.size <= MAX_AIRPLAY_ICON_BYTES) return encoded
+        val bitmap = BitmapFactory.decodeByteArray(encoded, 0, encoded.size) ?: return encoded
+        var result = encoded
+        for (target in intArrayOf(768, 512, 384, 256, 192)) {
+            if (bitmap.width <= target && bitmap.height <= target) continue
+            val scaled = Bitmap.createScaledBitmap(bitmap, target, target, true)
+            val output = java.io.ByteArrayOutputStream()
+            val encodedOk = scaled.compress(Bitmap.CompressFormat.PNG, 100, output)
+            if (scaled !== bitmap) scaled.recycle()
+            if (!encodedOk) break
+            result = output.toByteArray()
+            if (result.size <= MAX_AIRPLAY_ICON_BYTES) break
+        }
+        Log.i(
+            TAG,
+            "Custom AirPlay icon payload ${encoded.size} -> ${result.size} bytes (cap $MAX_AIRPLAY_ICON_BYTES)",
+        )
+        bitmap.recycle()
+        return result
     }
 
     private fun decodeAirPlayIcon(encoded: ByteArray): AirPlayIcon? {
@@ -5708,6 +5738,8 @@ class CarPlayHostActivity : ComponentActivity() {
         const val SETTINGS_SWIPE_DISTANCE_DP = 72
         const val SETTINGS_SWIPE_DIRECTION_RATIO = 1.15f
         const val MAX_SETTINGS_MENU_WIDTH_PX = 1200
+        /** Cap for the OEM icon payload embedded in the session /info data. */
+        const val MAX_AIRPLAY_ICON_BYTES = 256_000
         // The in-session menu shares the main settings palette (DiPlayActivity's
         // BG/SURFACE/BUTTON/BORDER and the CARD theme), so the two settings
         // surfaces read as one product.
