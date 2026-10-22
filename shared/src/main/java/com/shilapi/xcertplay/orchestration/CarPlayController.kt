@@ -230,10 +230,6 @@ class CarPlayController(
     @Volatile private var closed = false
     @Volatile private var phase = Phase.IDLE
     @Volatile private var wiredAborted = false
-    /** Issue #275: a wired session reached activation in this process run. */
-    @Volatile private var wiredSessionActivatedThisRun = false
-    /** Issue #275: the one forced vendor re-enumeration for the current attach episode. */
-    @Volatile private var forcedReenumerationForAttach = false
     private val wiredTeardownPending = AtomicBoolean(false)
     private val wiredGeneration = AtomicInteger(0)
     @Volatile private var wiredUsbSession: Iap2UsbSession? = null
@@ -2517,9 +2513,16 @@ class CarPlayController(
      * previous session reached activation in this run, force exactly one vendor
      * re-enumeration per physical attach before reusing a ready-made configuration.
      */
+    /**
+     * Issue #275 (extended by #269): force exactly one vendor re-enumeration per
+     * physical attach when a previous session reached activation, because the phone
+     * keeps a zombie accessory session after an unclean end and then never answers
+     * the new control channel. Process-wide on purpose: the activity recreates the
+     * controller on every reconnect, so instance state forgot the completed session
+     * and the forced re-enumeration never fired across reconnect cycles.
+     */
     private fun shouldForceReenumerationBeforeReuse(): Boolean =
-        realSdkInt() >= Build.VERSION_CODES.LOLLIPOP &&
-            wiredSessionActivatedThisRun && !forcedReenumerationForAttach
+        wiredSessionActivatedThisRun && !forcedReenumerationForAttach
 
     private fun useIphoneConfiguration(device: UsbDevice, configuration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration?) {
         connectionDiagnostic("USB descriptor inspection sdk=${Build.VERSION.SDK_INT} " +
@@ -3090,8 +3093,17 @@ class CarPlayController(
                 timeoutMillis = ((readyDeadline - System.nanoTime()) / 1_000_000).coerceAtLeast(1),
                 log = { debugLog("generation=$generation atNs=${System.nanoTime()} $it; awaiting hotspot interface") },
             )
-            val manualFallback = result == com.shilapi.xcertplay.network.CarHotspotTethering.Result.UNSUPPORTED &&
-                com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(appContext) == null
+            // Issue #271: in manual mode the driver runs the hotspot themselves, so a
+            // failed auto-enable must not hard-block the attempt — some vendor ROMs
+            // run the AP outside the framework and report it off while phones are
+            // connected to it. The manual manager is the readiness authority there:
+            // it samples the interfaces itself and times out precisely if the AP is
+            // genuinely absent.
+            val manualFallback = hotspotMode == WirelessHotspotMode.MANUAL &&
+                result != com.shilapi.xcertplay.network.CarHotspotTethering.Result.READY
+            if (manualFallback) {
+                debugLog("car hotspot auto-enable ended with $result; continuing with the manual hotspot manager (issue #271)")
+            }
             if (result != com.shilapi.xcertplay.network.CarHotspotTethering.Result.READY && !manualFallback) {
                 throw WirelessStartupException(
                     if (result == com.shilapi.xcertplay.network.CarHotspotTethering.Result.TIMED_OUT ||
@@ -3899,6 +3911,10 @@ class CarPlayController(
         private const val MAXIMUM_REENUMERATION_ATTEMPTS = 2
         /** Issue #266: minimum spacing between direct usbfs bring-up attempts. */
         private const val DIRECT_ATTEMPT_MIN_INTERVAL_NANOS = 10_000_000_000L
+        /** Issues #275/#269: a wired session reached activation in this process. */
+        @Volatile private var wiredSessionActivatedThisRun = false
+        /** Issues #275/#269: the one forced re-enumeration for this attach episode. */
+        @Volatile private var forcedReenumerationForAttach = false
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
         /** Issue #281: per-resource bound for teardown closes; a stuck close is abandoned. */
         private const val TEARDOWN_RESOURCE_TIMEOUT_MILLIS = 3_000L
