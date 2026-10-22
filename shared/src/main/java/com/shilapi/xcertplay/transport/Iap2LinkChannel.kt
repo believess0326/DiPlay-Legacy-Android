@@ -253,6 +253,10 @@ class Iap2LinkChannel private constructor(
                 }
 
                 is Iap2LinkEngine.Event.Control -> {
+                    // Issue #292: once closing starts nobody consumes queued controls
+                    // any more, so a final burst must be dropped, not counted — the
+                    // overflow otherwise fails a teardown that was otherwise clean.
+                    if (isClosing()) continue
                     val overflow = synchronized(lock) {
                         if (controls.size >= MAX_PENDING_CONTROLS ||
                             event.bytes.size > MAX_PENDING_CONTROL_BYTES - controlBytes

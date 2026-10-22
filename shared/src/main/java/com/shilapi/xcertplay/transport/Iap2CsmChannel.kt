@@ -142,6 +142,9 @@ class Iap2CsmChannel private constructor(
     }
 
     private fun enqueue(frame: Iap2Frame) {
+        // Issue #292: after close() nobody drains this queue, so a late frame is
+        // dropped instead of failing the close with a queue-limit error.
+        synchronized(stateLock) { if (closed) return }
         val encodedBytes = frame.encodedFrame().size
         if (receivedFrames.size >= MAX_PENDING_FRAMES || encodedBytes > MAX_PENDING_FRAME_BYTES - receivedBytes) {
             failClosed(IOException("CSM received-frame queue limit exceeded"))
