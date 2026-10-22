@@ -1397,7 +1397,13 @@ class CarPlayHostActivity : ComponentActivity() {
             // without pausing the activity, so onResume's picture refresh never runs
             // when it closes — the (still decoding) picture stayed black for seconds
             // until the stream happened to refresh itself. Refresh on focus regain.
-            if (activeAirPlaySession != null) sink?.refreshPicture(SCREEN_TYPE_MAIN)
+            // Issue #290: the same cycle can leave the fitted video bounds at the
+            // shrunken camera size; focus regain is when the window size is final,
+            // so recompute the fit there too.
+            if (activeAirPlaySession != null) {
+                sink?.refreshPicture(SCREEN_TYPE_MAIN)
+                reapplyVideoLayout()
+            }
         } else {
             mainHandler.removeCallbacks(hideDockRunnable)
             dockEdgeSwipeActive = false
@@ -4639,7 +4645,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 "keeping CarPlay session canvas=${display.width}x${display.height}"
             appendLog(message)
             Log.i(TAG, message)
-            videoView?.let { updateVideoLayout(it.width, it.height) }
+            reapplyVideoLayout()
         } else {
             restartCarPlay(
                 "Display changed ${previous.width}x${previous.height} -> ${size.width}x${size.height}",
@@ -4775,6 +4781,21 @@ class CarPlayHostActivity : ComponentActivity() {
             })
         }
         if (sidePanelShown) placeSidePanel(viewWidth, viewHeight)
+    }
+
+    /**
+     * Recompute the fitted video bounds now and once more after the pending layout
+     * pass. Around camera shrink/restore cycles some ROMs deliver the size change
+     * before the video view has actually been laid out at it, so a single pass can
+     * fit the picture to the size the window just left — the picture then stays
+     * letterboxed at the shrunken size until the process restarts (issue #290).
+     */
+    private fun reapplyVideoLayout() {
+        val view = videoView ?: return
+        updateVideoLayout(view.width, view.height)
+        view.post {
+            if (!isDestroyed && videoView === view) updateVideoLayout(view.width, view.height)
+        }
     }
 
     private fun revealDockTemporarily(view: View) {
