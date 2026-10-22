@@ -557,10 +557,12 @@ class AndroidMediaSink(
             // missing echo reference was silent — the uplink only logs when one is
             // present. State all three inputs whenever a call microphone starts.
             if (config.audioType == TELEPHONY_AUDIO_TYPE) {
-                onAudioDiagnostic(
-                    "Microphone: echo state aecSetting=$callEchoCancellation micCompatibility=$callMicCompatibility " +
-                        "referencePresent=${callEchoReferences[id] != null}",
-                )
+                runCatching {
+                    onAudioDiagnostic(
+                        "Microphone: echo state aecSetting=$callEchoCancellation micCompatibility=$callMicCompatibility " +
+                            "referencePresent=${callEchoReferences[id] != null}",
+                    )
+                }
             }
             val uplink = microphoneUplinks.computeIfAbsent(id) {
                 MicrophoneUplink(
