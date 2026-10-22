@@ -3086,7 +3086,22 @@ class CarPlayController(
         if (config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P && realSdkInt() < 28) {
             return startLegacyWifiDirectWithFallback(generation)
         }
-        val readyDeadline = System.nanoTime() + WirelessStartupPolicy.HOTSPOT_READY_MILLIS * 1_000_000
+        // Within the first minutes after a cold boot the car hotspot may simply
+        // not exist yet (the vendor service brings it up well after apps start),
+        // so both the auto-enable step and the readiness observation below get
+        // the longer boot budget instead of failing attempts against a hotspot
+        // that is still starting. Manual connects later in the session keep the
+        // regular budget.
+        val bootGrace = SystemClock.elapsedRealtime() < WirelessStartupPolicy.BOOT_GRACE_MILLIS
+        val readyMillis = if (bootGrace) {
+            WirelessStartupPolicy.BOOT_HOTSPOT_READY_MILLIS
+        } else {
+            WirelessStartupPolicy.HOTSPOT_READY_MILLIS
+        }
+        if (bootGrace) {
+            debugLog("generation=$generation hotspot readiness on boot budget ${readyMillis}ms")
+        }
+        val readyDeadline = System.nanoTime() + readyMillis * 1_000_000
         val hotspotMode = config.wirelessHotspotMode
         if (com.shilapi.xcertplay.network.CarHotspotSettings.shouldEnable(
                 appContext, config.transport == CarPlayTransport.WIRELESS, hotspotMode,
@@ -3176,8 +3191,9 @@ class CarPlayController(
             // the hotspot came up seconds later — retries only succeed when the two
             // phases happen to interleave favourably (~90 s in the report). Give the
             // observation phase its own full readiness budget; the outer retry cap
-            // still bounds the total.
-            WirelessStartupPolicy.HOTSPOT_READY_MILLIS
+            // still bounds the total. On the boot budget both phases get the longer
+            // window (see bootGrace above).
+            readyMillis
         } else {
             HOTSPOT_START_TIMEOUT_MILLIS
         }
