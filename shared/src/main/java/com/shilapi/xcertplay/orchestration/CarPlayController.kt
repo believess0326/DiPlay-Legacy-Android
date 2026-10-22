@@ -341,7 +341,9 @@ class CarPlayController(
             // iPhone opened the AirPlay TCP connection and completed the handshake.
             if (config.transport != CarPlayTransport.WIRELESS) {
                 wiredTcpArrived.set(true)
-                wiredSessionActivatedThisRun = true
+                // Persisted, not just in memory: the head unit may kill this process
+                // before the next reconnect (issue #269).
+                persistWiredSessionCompleted(true)
             }
             if (config.transport == CarPlayTransport.WIRELESS) {
                 wirelessChain(12, "SUCCESS: AirPlay session active")
@@ -2505,24 +2507,27 @@ class CarPlayController(
     }
 
     /**
-     * Issue #275: after a completed wired session, a replugged iPhone may keep its
-     * CarPlay configuration while its AirPlay transport is still half torn down (the
-     * previous session ended on peer EOF): it then never opens TCP to the receiver
-     * (syn=0) even though iAP2 and mDNS look healthy. The first connect only worked
-     * because the missing configuration forced a vendor re-enumeration. When a
-     * previous session reached activation in this run, force exactly one vendor
-     * re-enumeration per physical attach before reusing a ready-made configuration.
-     */
-    /**
      * Issue #275 (extended by #269): force exactly one vendor re-enumeration per
      * physical attach when a previous session reached activation, because the phone
      * keeps a zombie accessory session after an unclean end and then never answers
-     * the new control channel. Process-wide on purpose: the activity recreates the
-     * controller on every reconnect, so instance state forgot the completed session
-     * and the forced re-enumeration never fired across reconnect cycles.
+     * the new control channel (or never opens TCP). The "a session completed" fact
+     * is persisted on purpose: #269's log showed the head unit killing the app
+     * process between the successful session and the reconnect, so process-level
+     * state forgot it — preferences are the only memory that survives, and a real
+     * detach (handled in onIphoneDetached) clears it again.
      */
     private fun shouldForceReenumerationBeforeReuse(): Boolean =
-        wiredSessionActivatedThisRun && !forcedReenumerationForAttach
+        !forcedReenumerationForAttach && runCatching {
+            appContext.getSharedPreferences(WIRED_SESSION_PREFS, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_WIRED_SESSION_COMPLETED, false)
+        }.getOrDefault(false)
+
+    private fun persistWiredSessionCompleted(completed: Boolean) {
+        runCatching {
+            appContext.getSharedPreferences(WIRED_SESSION_PREFS, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_WIRED_SESSION_COMPLETED, completed).apply()
+        }
+    }
 
     private fun useIphoneConfiguration(device: UsbDevice, configuration: com.shilapi.xcertplay.transport.CarPlayUsbConfiguration?) {
         connectionDiagnostic("USB descriptor inspection sdk=${Build.VERSION.SDK_INT} " +
@@ -2615,6 +2620,7 @@ class CarPlayController(
                 // A real detach ends the attach episode: the next plug may need its
                 // own forced re-enumeration after a completed session (issue #275).
                 forcedReenumerationForAttach = false
+                persistWiredSessionCompleted(false)
                 // A replug is a fresh start, not a retry: direct pacing restarts too.
                 lastDirectAttemptStartNanos = 0L
                 phase = Phase.IPHONE
@@ -3926,9 +3932,10 @@ class CarPlayController(
         private const val MAXIMUM_REENUMERATION_ATTEMPTS = 2
         /** Issue #266: minimum spacing between direct usbfs bring-up attempts. */
         private const val DIRECT_ATTEMPT_MIN_INTERVAL_NANOS = 10_000_000_000L
-        /** Issues #275/#269: a wired session reached activation in this process. */
-        @Volatile private var wiredSessionActivatedThisRun = false
-        /** Issues #275/#269: the one forced re-enumeration for this attach episode. */
+        /** Issues #275/#269: persisted "a wired session completed" marker + its store. */
+        private const val WIRED_SESSION_PREFS = "wired_session_state"
+        private const val KEY_WIRED_SESSION_COMPLETED = "wired_session_completed"
+        /** Issues #275/#269: the one forced re-enumeration latch for this attach episode. */
         @Volatile private var forcedReenumerationForAttach = false
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
         /** Issue #281: per-resource bound for teardown closes; a stuck close is abandoned. */
