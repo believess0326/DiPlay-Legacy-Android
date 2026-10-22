@@ -1,3 +1,13 @@
+# DiPlay 0.2.86 — 2026-10-22
+
+- Video decrypt queue slot wait & backpressure (#288): wait up to 120ms for slot availability instead of discarding frames when decrypt queue fills on slow decoders, replacing reference-breaking drops with TCP backpressure to avoid severe artifacts and 0fps freezes.
+- Brand logo styling overhaul (#263): recolor Nissan and Audi brand logos with silver-white lines, ensuring clear visibility on dark CarPlay app tile backgrounds.
+- Persistent session completion flag for wired reconnect (#269): persist completed session state to SharedPreferences so forced re-enumeration survives head-unit process kills on replug.
+- Independent observation budget for manual hotspot (#284): dedicate a full readiness observation budget instead of sharing a 15-second deadline with auto-enable, resolving false unready loops on Chang'an CS75 Plus and customized ROMs.
+- Call microphone diagnostic & error isolation (#272): log echo cancellation state triad (AEC setting, compatibility mode, echo reference) upon call mic start, protected against diagnostic callback exceptions.
+
+See [v0.2.86 release notes](docs/RELEASE-NOTES-0.2.86.md) for details.
+
 # DiPlay 0.2.85 — 2026-10-22
 
 - Wired reconnect anti-deadlock & USB retry (#286 / #275 / #269 / #256): resolve kernel D-state freeze on Allwinner T3 (Android 4.4.2) upon physical cable replug by lifting usbfs release delay to 400ms and skipping lock waits on aborted/detached connections; retry USBMUX claim with configuration reselection on ENOENT; promote re-enumeration latch to process scope.
