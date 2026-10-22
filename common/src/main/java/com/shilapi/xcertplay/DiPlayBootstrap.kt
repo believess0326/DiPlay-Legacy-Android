@@ -12,6 +12,29 @@ import java.security.MessageDigest
 /** Installs the private beta's experimental identity. It has no remote fallback. */
 internal object DiPlayBootstrap {
     @Volatile private var ready = false
+    @Volatile private var usbBtRestoreTried = false
+
+    /**
+     * Issue #281: restore the USB Bluetooth dongle the user started earlier. Once per
+     * process, off the main thread; wireless bring-up enables the dongle as well, this
+     * covers simply opening the app (no connection started yet).
+     */
+    @Synchronized fun restoreUsbBluetooth(context: Context) {
+        if (usbBtRestoreTried) return
+        usbBtRestoreTried = true
+        if (!AirPlayPersistence.loadUsbBtAutoStart(context)) return
+        val appContext = context.applicationContext
+        Thread({
+            runCatching {
+                val dongle = com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(appContext).usbDongle
+                    ?: return@runCatching
+                val status = dongle.getStatus()
+                if (status.isSupported && status.hasPermission && !status.isEnabled) {
+                    dongle.enable()
+                }
+            }
+        }, "diplay-usbbt-restore").apply { isDaemon = true; start() }
+    }
 
     @Synchronized fun ensure(context: Context, mfiTarget: MfiTarget) {
         if (mfiTarget != MfiTarget.LOCAL) return

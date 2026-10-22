@@ -57,6 +57,7 @@ object AirPlayPersistence {
     private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
     private const val KEY_NAVIGATION_STREAM_TYPE = "navigation_stream_type"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
+    private const val KEY_USB_BT_AUTO_START = "usb_bt_auto_start"
     private const val KEY_WIRELESS_HOTSPOT_MODE = "wireless_hotspot_mode"
     private const val KEY_WIFI_P2P_PREFERRED_CHANNEL = "wifi_p2p_preferred_channel"
     private const val KEY_MANUAL_HOTSPOT_SSID = "manual_hotspot_ssid"
@@ -312,6 +313,21 @@ object AirPlayPersistence {
     fun saveWirelessEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_WIRELESS_ENABLED, enabled)
+            .apply()
+    }
+
+    /**
+     * Issue #281: whether the user has started the USB Bluetooth dongle. The settings
+     * card's start/stop used to be runtime-only, so after every process restart the
+     * dongle looked "switched off" even though the user had turned it on.
+     */
+    fun loadUsbBtAutoStart(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_USB_BT_AUTO_START, false)
+
+    fun saveUsbBtAutoStart(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_USB_BT_AUTO_START, enabled)
             .apply()
     }
 

@@ -648,6 +648,7 @@ class CarPlayHostActivity : ComponentActivity() {
             startActivity(Intent(this, DiPlayActivity::class.java))
             finish(); return
         }
+        DiPlayBootstrap.restoreUsbBluetooth(this)
         WheelKeyService.restoreIfNeeded(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
             val displayManager = if (realSdkInt() >= Build.VERSION_CODES.M) {

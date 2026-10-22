@@ -318,6 +318,7 @@ class DiPlayActivity : ComponentActivity() {
             android.util.Log.e("DiPlaySetup", "CarPlay authentication could not be loaded", it)
             getString(R.string.setup_error_auth)
         }
+        DiPlayBootstrap.restoreUsbBluetooth(this)
         pendingCarHotspotSetup = savedInstanceState?.getBoolean("pending_car_hotspot") ?: false
         bydVehicleAdvancedExpanded = savedInstanceState?.getBoolean("byd_vehicle_advanced") ?: false
         settingsCategory = savedInstanceState?.getString("settings_category")
@@ -4386,6 +4387,7 @@ class DiPlayActivity : ComponentActivity() {
                         setPadding(0, dp(2), 0, dp(4))
                     })
                     val stopBtn = button(getString(R.string.settings_usb_bluetooth_stop), false) {
+                        AirPlayPersistence.saveUsbBtAutoStart(applicationContext, false)
                         Thread({
                             usbDongle.shutdown()
                             runOnUiThread { refreshCard() }
@@ -4394,6 +4396,7 @@ class DiPlayActivity : ComponentActivity() {
                     actionLayout.addView(stopBtn, matchButton(8, 60))
                 } else {
                     val startBtn = button(getString(R.string.settings_usb_bluetooth_start), false) {
+                        AirPlayPersistence.saveUsbBtAutoStart(applicationContext, true)
                         Thread({
                             usbDongle.enable()
                             runOnUiThread { refreshCard() }
