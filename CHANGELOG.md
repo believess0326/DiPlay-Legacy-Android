@@ -1,3 +1,11 @@
+# DiPlay 0.2.87 — 2026-10-23
+
+- Boot-time car hotspot readiness budget: grant a 60-second readiness budget for both auto-enable and interface observation during the first 3 minutes after system boot, accommodating slow head units (Allwinner T3) where vendor AP services start well after DiPlay autostart.
+- iAP2 control message drop during teardown (#292): drop late-arriving control messages once link/CSM teardown begins instead of rejecting them as queue-full failures, ensuring clean session termination without false completed=false teardown errors.
+- In-session settings menu style overhaul: align the three-finger overlay menu with the main settings card theme, using custom self-drawn drawables for radios, switches, and sliders to achieve uniform visuals on API 19+ head units.
+
+See [v0.2.87 release notes](docs/RELEASE-NOTES-0.2.87.md) for details.
+
 # DiPlay 0.2.86 — 2026-10-22
 
 - Video decrypt queue slot wait & backpressure (#288): wait up to 120ms for slot availability instead of discarding frames when decrypt queue fills on slow decoders, replacing reference-breaking drops with TCP backpressure to avoid severe artifacts and 0fps freezes.
