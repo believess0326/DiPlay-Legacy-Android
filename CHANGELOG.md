@@ -4,7 +4,7 @@
 - Experimental Root hostapd hotspot backend (#294 / #299): add root hostapd option in Advanced settings for custom ROMs lacking framework hotspot APIs.
 - Audio focus lifecycle & channel isolation: release permanent STREAM_MUSIC focus hold; isolate focus lease return to media channels only.
 - API 17-18 compatibility hardening: eliminate API 19+ exception classes in catch clauses to prevent Dalvik verification failures on Android 4.2/4.3.
-- Wired NCM link diagnostics & UI fixes: report bulk-out errno and NCM state; dark waiting screen in day mode; commit display scale before reconnect.
+- Multi-window surface yield & wired NCM diagnostics (#300): yield video surface while another window owns display to prevent split-screen blanking; report bulk-out errno and NCM state; dark waiting screen in day mode.
 - Security enhancements: eliminate hardcoded keystore passwords; restrict remote MFi HTTP to local network; unexport BootReceiver.
 
 See [v0.2.89 release notes](docs/RELEASE-NOTES-0.2.89.md) for details.

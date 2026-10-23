@@ -28,7 +28,7 @@
     "whats": "New in v0.2.89",
     "features": [
       "Native ChaCha20-Poly1305 screen decryptor with JNI bridge across ARMv7, ARM64, and x86, cutting CPU usage and frame drops.",
-      "Root hostapd hotspot backend option in Advanced settings for head units lacking system hotspot APIs (#294 / #299).",
+      "Yield video surface while another window owns the display for smooth multi-window (#300); root hostapd backend option (#294 / #299).",
       "Audio focus release on STREAM_MUSIC and channel-isolated lease return; API 17-18 exception compatibility fixes.",
       "Wired NCM bulk-out errno reporting; dark waiting screen in day mode; secure keystore credentials requirement."
     ],
@@ -266,7 +266,7 @@
     "whats": "v0.2.89 更新亮点",
     "features": [
       "原生 C 编写的 ChaCha20-Poly1305 视频帧解密模块与 JNI 桥接，大幅减轻 CPU 负载，杜绝高帧率卡顿（#249）。",
-      "高级设置新增 Root hostapd 车载热点后端，支持精简 ROM 底层直启车载 Wi-Fi（#294 / #299）。",
+      "多窗口与分屏让出视频 Surface 释放图层占用（#300），高级设置新增可选 Root hostapd 车载热点后端（#294 / #299）。",
       "释放 STREAM_MUSIC 永久音频焦点，音频焦点租约精细隔离；清理低版本 Android 运行时异常类型引用。",
       "有线 NCM 链路上报 bulk-out errno 与连接状态；CarPlay 日间等待背景保持舒适暗色；增强安全密钥合规。"
     ],
@@ -330,7 +330,7 @@
     "whats": "v0.2.64 更新亮點",
     "features": [
       "原生 C 編寫的 ChaCha20-Poly1305 視訊訊框解密模組與 JNI 橋接，大幅減輕 CPU 負載，杜絕高影格率卡頓（#249）。",
-      "進階設定新增 Root hostapd 車載熱點後端，支援精簡 ROM 底層直啟車載 Wi-Fi（#294 / #299）。",
+      "多視窗與分屏讓出視訊 Surface 釋放圖層占用（#300），進階設定新增可選 Root hostapd 車載熱點後端（#294 / #299）。",
       "釋放 STREAM_MUSIC 永久音訊焦點，音訊焦點租約精細隔離；清理舊版 Android 執行期例外類型參照。",
       "有線 NCM 鏈路上報 bulk-out errno 與連線狀態；CarPlay 日間等待背景保持舒適暗色；增強安全密鑰合規。"
     ],
