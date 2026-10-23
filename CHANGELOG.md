@@ -1,3 +1,14 @@
+# DiPlay 0.2.89 — 2026-10-23
+
+- Native ChaCha20-Poly1305 screen frame decryptor (#249): bundle native C decryptor with JNI bridge across ARMv7, ARM64, and x86, drastically reducing CPU load and frame drops on legacy head units.
+- Experimental Root hostapd hotspot backend (#294 / #299): add root hostapd option in Advanced settings for custom ROMs lacking framework hotspot APIs.
+- Audio focus lifecycle & channel isolation: release permanent STREAM_MUSIC focus hold; isolate focus lease return to media channels only.
+- API 17-18 compatibility hardening: eliminate API 19+ exception classes in catch clauses to prevent Dalvik verification failures on Android 4.2/4.3.
+- Wired NCM link diagnostics & UI fixes: report bulk-out errno and NCM state; dark waiting screen in day mode; commit display scale before reconnect.
+- Security enhancements: eliminate hardcoded keystore passwords; restrict remote MFi HTTP to local network; unexport BootReceiver.
+
+See [v0.2.89 release notes](docs/RELEASE-NOTES-0.2.89.md) for details.
+
 # DiPlay 0.2.88 — 2026-10-23
 
 - Wireless P2P group reuse & frequency adaptation (#293 / #582): reuse retained P2P groups with existing clients to cut reconnection times; skip 5 GHz attempts on 2.4 GHz-only radios; advertise alternative address families upon first-TCP timeouts.
