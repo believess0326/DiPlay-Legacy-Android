@@ -41,6 +41,13 @@ class RemoteMfiAuthenticationClient(
         require(baseAddress.startsWith("http://") || baseAddress.startsWith("https://")) {
             "Remote MFI server address must use http:// or https://"
         }
+        // The bearer token and the MFi challenge/response cross this channel,
+        // so plain HTTP is only acceptable on the local link: the intended
+        // deployment is a server on the same car/home LAN. Public HTTP
+        // endpoints are refused; use HTTPS for anything beyond the LAN.
+        require(!baseAddress.startsWith("http://") || isLocalHttpHost(baseAddress)) {
+            "Plain HTTP remote MFI servers must be on a local address; use https:// for remote servers"
+        }
         require(connectTimeoutMillis > 0) { "connectTimeoutMillis must be positive" }
         require(readTimeoutMillis > 0) { "readTimeoutMillis must be positive" }
         require(maximumAttempts > 0) { "maximumAttempts must be positive" }
@@ -289,6 +296,30 @@ class RemoteMfiAuthenticationClient(
         private const val SHA256_BYTES = 32
         private const val SHA256_HEX_LENGTH = SHA256_BYTES * 2
         private const val BAA_PACKAGE_HEADER_BYTES = 8
+
+        /**
+         * Whether an http:// base address stays on the local link. Decided
+         * from the literal host only (no DNS): "localhost", "*.local" mDNS
+         * names, and loopback / link-local / site-local IP literals qualify.
+         */
+        internal fun isLocalHttpHost(baseAddress: String): Boolean {
+            val host = try {
+                java.net.URI(baseAddress).host
+            } catch (_: Exception) {
+                null
+            } ?: return false
+            if (host.equals("localhost", ignoreCase = true) ||
+                host.endsWith(".local", ignoreCase = true)
+            ) return true
+            val isIpLiteral = host.all { it.isDigit() || it == '.' } || ':' in host
+            if (!isIpLiteral) return false
+            val address = try {
+                java.net.InetAddress.getByName(host)
+            } catch (_: Exception) {
+                return false
+            }
+            return address.isLoopbackAddress || address.isLinkLocalAddress || address.isSiteLocalAddress
+        }
     }
 }
 

@@ -171,6 +171,22 @@ class RemoteMfiAuthenticationClientTest {
         assertEquals(1, requests.get())
     }
 
+    @Test
+    fun plainHttpIsRefusedBeyondTheLocalLink() {
+        // The bearer token crosses this channel: public HTTP endpoints are
+        // refused, LAN/loopback HTTP and any HTTPS endpoint are accepted.
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMfiAuthenticationClient("http://203.0.113.10:8080")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMfiAuthenticationClient("http://mfi.example.com")
+        }
+        RemoteMfiAuthenticationClient("http://192.168.1.10:8080")
+        RemoteMfiAuthenticationClient("http://10.0.0.5")
+        RemoteMfiAuthenticationClient("http://nas.local:8080")
+        RemoteMfiAuthenticationClient("https://mfi.example.com")
+    }
+
     private fun serverAddress(): String = "http://127.0.0.1:${server.address.port}"
 
     private fun HttpExchange.respond(statusCode: Int, body: String) {

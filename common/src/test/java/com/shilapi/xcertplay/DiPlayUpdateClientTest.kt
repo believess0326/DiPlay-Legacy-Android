@@ -43,6 +43,13 @@ class DiPlayUpdateClientTest {
         assertEquals(listOf("https://example.com/test.apk"), DiPlayUpdateClient.downloadCandidates("https://example.com/test.apk"))
     }
 
+    @Test fun checksumIsFetchedFromTheCanonicalUrlOnly() {
+        // The .sha256 anchors the APK's integrity: a mirror that serves the
+        // APK must never also get to serve the hash it is checked against.
+        val url = "$prefix$name.sha256"
+        assertEquals(listOf(url), DiPlayUpdateClient.checksumCandidates(url))
+    }
+
     @Test fun approvedHostsAllowGitHubAndDomesticMirrors() {
         assertTrue(DiPlayUpdateClient.isApprovedHost("api.github.com"))
         assertTrue(DiPlayUpdateClient.isApprovedHost("github.com"))

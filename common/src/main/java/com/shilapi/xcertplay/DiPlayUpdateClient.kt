@@ -116,7 +116,14 @@ internal object DiPlayUpdateClient {
         return Release(tag, root.optString("body").take(6000), apk, apkUrl, shaUrl, bytes)
     }
 
-    /** Prefer domestic relay for canonical GitHub release assets, not release metadata. */
+    /**
+     * Prefer domestic relay for the canonical GitHub release APK, not release
+     * metadata. The checksum is deliberately NOT fetched through these
+     * candidates: it is the integrity anchor for whichever mirror serves the
+     * APK, so it only ever comes from the canonical GitHub URL (see
+     * [checksumCandidates]). The install-time check additionally requires the
+     * downloaded APK's signing certificate to match the installed app.
+     */
     internal fun downloadCandidates(url: String): List<String> {
         val canonical = "https://github.com/$REPO/releases/download/"
         return if (url.startsWith(canonical)) listOf(
@@ -126,6 +133,9 @@ internal object DiPlayUpdateClient {
         )
         else listOf(url)
     }
+
+    /** The SHA-256 file is fetched from the canonical URL only, never a mirror. */
+    internal fun checksumCandidates(url: String): List<String> = listOf(url)
 
     private fun <T> withDownloadFallback(url: String, action: (String) -> T): T {
         var failure: Exception? = null
@@ -139,8 +149,17 @@ internal object DiPlayUpdateClient {
         throw failure ?: IOException("No update download source")
     }
 
-    fun checksum(release: Release): String =
-        parseChecksum(withDownloadFallback(release.checksumUrl) { readText(it, MAX_DIGEST_FILE) }, release.apkName)
+    fun checksum(release: Release): String {
+        var failure: Exception? = null
+        for (candidate in checksumCandidates(release.checksumUrl)) {
+            try {
+                return parseChecksum(readText(candidate, MAX_DIGEST_FILE), release.apkName)
+            } catch (error: Exception) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
+            }
+        }
+        throw failure ?: IOException("No update checksum source")
+    }
 
     internal fun parseChecksum(content: String, apkName: String): String {
         val words = content.removePrefix("\uFEFF").trim().split(Regex("\\s+"))
