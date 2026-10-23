@@ -1,3 +1,12 @@
+# DiPlay 0.2.91 — 2026-10-24
+
+- Root hostapd staged config deployment (#301 / #306): deploy hostapd configuration via staged file copy instead of root shell heredocs, resolving empty config files on customized/busybox shells (Honda Civic).
+- Custom icon save-time limits enforcement (512px / 256KB) (#263): sample-decode and scale custom brand logos at save time, protecting AirPlay session payloads and memory.
+- Fake-version ROM diagnostic export resilience (#300): gate secondary-volume scans behind verified runtime capabilities so diagnostic reports export safely on ROMs with spoofed build.prop versions.
+- NCM diagnostic NTB OUT offset fix (#307): read NTB OUT parameters at the correct struct offsets during link-state probing.
+
+See [v0.2.91 release notes](docs/RELEASE-NOTES-0.2.91.md) for details.
+
 # DiPlay 0.2.90 — 2026-10-23
 
 - Root hostapd multi-path probe (#301): probe for hostapd and dnsmasq across /system/bin, /system/xbin, /vendor/bin rather than hardcoding /system/bin, accommodating Honda Civic and customized ROMs.
