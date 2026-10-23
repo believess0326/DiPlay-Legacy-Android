@@ -641,12 +641,7 @@ class NcmUsbBridge internal constructor(
                 ENDPOINT_STATUS_TIMEOUT_MILLIS,
             )
         }.getOrDefault(-1)
-        if (read < NDP_OUT_OFFSET) return "unavailable (transferred=$read)"
-        val formats = readU16(buffer, 2)
-        val outMax = readU32(buffer, 14).toLong() and 0xffff_ffffL
-        return "formats=0x${formats.toString(16)} outMaxBytes=$outMax " +
-            "outDivisor=${readU16(buffer, 18)} outRemainder=${readU16(buffer, 20)} " +
-            "outAlignment=${readU16(buffer, 22)} maxDatagrams=${readU16(buffer, 24)}"
+        return describeNtbParameters(buffer, read)
     }
 
     /** Linux errno values, spelled out so a log line alone identifies the fault. */
@@ -672,16 +667,42 @@ class NcmUsbBridge internal constructor(
         if (closed) throw IphoneUsbException.DeviceUnavailable("NCM bridge is closed")
     }
 
-    private fun readU16(source: ByteArray, offset: Int): Int =
-        (source[offset].toInt() and 0xff) or ((source[offset + 1].toInt() and 0xff) shl 8)
-
-    private fun readU32(source: ByteArray, offset: Int): Int =
-        (source[offset].toInt() and 0xff) or
-            ((source[offset + 1].toInt() and 0xff) shl 8) or
-            ((source[offset + 2].toInt() and 0xff) shl 16) or
-            ((source[offset + 3].toInt() and 0xff) shl 24)
-
     companion object {
+        private fun readU16(source: ByteArray, offset: Int): Int =
+            (source[offset].toInt() and 0xff) or ((source[offset + 1].toInt() and 0xff) shl 8)
+
+        private fun readU32(source: ByteArray, offset: Int): Int =
+            (source[offset].toInt() and 0xff) or
+                ((source[offset + 1].toInt() and 0xff) shl 8) or
+                ((source[offset + 2].toInt() and 0xff) shl 16) or
+                ((source[offset + 3].toInt() and 0xff) shl 24)
+
+        /**
+         * Formats a GET_NTB_PARAMETERS reply for the diagnostic log.
+         *
+         * CDC NCM NTB parameter block layout: wLength@0, formats@2,
+         * dwNtbInMaxSize@4, IN divisor/remainder/alignment@8/10/12, a 2-byte
+         * reserved field@14, then the OUT block — dwNtbOutMaxSize@16,
+         * wNdpOutDivisor@20, wNdpOutPayloadRemainder@22, wNdpOutAlignment@24,
+         * wNtbOutMaxDatagrams@26. This probe previously read the OUT fields
+         * 2 bytes early (skipping the reserved field), which made every
+         * healthy phone report divisor=0 and a garbage max size (issue #307).
+         */
+        internal fun describeNtbParameters(buffer: ByteArray, read: Int): String {
+            if (read <= 0) return "unavailable (transferred=$read)"
+            val hex = buffer.take(minOf(read, NTB_PARAMETERS_LENGTH))
+                .joinToString(" ") { "%02x".format(it) }
+            if (read < NTB_PARAMETERS_LENGTH) return "truncated (transferred=$read) raw=$hex"
+            val formats = readU16(buffer, 2)
+            val outMax = readU32(buffer, 16).toLong() and 0xffff_ffffL
+            val outDivisor = readU16(buffer, 20)
+            val parsed = "formats=0x${formats.toString(16)} outMaxBytes=$outMax " +
+                "outDivisor=$outDivisor outRemainder=${readU16(buffer, 22)} " +
+                "outAlignment=${readU16(buffer, 24)} maxDatagrams=${readU16(buffer, 26)}"
+            val implausible = outDivisor == 0 || outMax == 0L || outMax > MAX_PLAUSIBLE_NTB_BYTES
+            return if (implausible) "$parsed IMPLAUSIBLE raw=$hex" else "$parsed raw=$hex"
+        }
+
         private const val READ_CHUNK_BYTES = 32 * 1024
         private const val USB_PACKET_SIZE = 512
         private const val NTH16_LENGTH = 12
@@ -708,8 +729,8 @@ class NcmUsbBridge internal constructor(
         private const val INTERFACE_RECIPIENT = 0x01
         private const val GET_NTB_PARAMETERS = 0x80
         private const val NTB_PARAMETERS_LENGTH = 28
-        /** Offset of dwNtbOutMaxSize: a shorter reply does not describe the OUT direction. */
-        private const val NDP_OUT_OFFSET = 18
+        /** Phones advertise NTB sizes in the KB range; anything past 1 MB is a parse/peer error. */
+        private const val MAX_PLAUSIBLE_NTB_BYTES = 1_048_576L
         private const val REQUEST_DRAIN_TIMEOUT_MILLIS = 2_000L
 
         private const val ALT_SETTING_ATTEMPTS = 5
