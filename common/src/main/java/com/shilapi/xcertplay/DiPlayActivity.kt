@@ -4554,6 +4554,29 @@ class DiPlayActivity : ComponentActivity() {
         runCatching { export.launch(reportFileName()) }.onFailure { exportDiagnostics() }
     }
 
+    /**
+     * Issue #289: the core of the report (header plus session logs) with no
+     * subsystem probes, used when the full build throws on an OEM ROM — the
+     * session logs are the part worth exporting in almost every case.
+     */
+    private fun buildCoreDiagnosticReport(buildError: Throwable): String = buildString {
+        appendLine("DiPlay ${version()} · private beta diagnostic report (core)")
+        appendLine("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
+        appendLine("Head unit: ${Build.MANUFACTURER} ${Build.MODEL}")
+        appendLine("Full report build failed: ${buildError.javaClass.simpleName}: ${buildError.message}")
+        appendLine()
+        val names = listOf("bluetooth-diagnostic.log") + SessionLogFile.REPORT_NAMES.toList()
+        names.forEach { name ->
+            val file = File(filesDir, "logs/$name")
+            if (file.isFile) {
+                appendLine("--- $name ---")
+                runCatching {
+                    file.useLines { lines -> lines.forEach { line -> DiagnosticRedactor.redact(line)?.let { appendLine(it) } } }
+                }
+            }
+        }
+    }
+
     /** Builds the full diagnostic report text (used by view-log and export). */
     private fun buildDiagnosticReport(): String = buildString {
         val appContext = applicationContext
@@ -4641,7 +4664,17 @@ class DiPlayActivity : ComponentActivity() {
         Thread({
             var builtReport: String? = null
             val result = runCatching {
-        val report = buildDiagnosticReport()
+        val report = try {
+            buildDiagnosticReport()
+        } catch (buildError: Throwable) {
+            // Issue #289: one failing subsystem probe on an OEM ROM killed the
+            // whole export before any save was attempted, while the failure
+            // dialog blamed storage space. Fall back to the core report (header
+            // plus the session logs) so the export still succeeds, and keep the
+            // build failure visible inside the exported text.
+            Log.w("DiPlay", "full diagnostic report build failed; exporting core report", buildError)
+            buildCoreDiagnosticReport(buildError)
+        }
         builtReport = report
         val savedReport = if (uri != null) {
             DiagnosticExportStore.write(appContext.contentResolver, uri, report)
@@ -4677,7 +4710,10 @@ class DiPlayActivity : ComponentActivity() {
         } else {
             val failedReport = builtReport
             AlertDialog.Builder(this).setTitle(getString(R.string.could_not_save_the_report))
-                .setMessage(getString(R.string.check_that_storage_is_available_or_choose_another_save_loc))
+                .setMessage(
+                    getString(R.string.check_that_storage_is_available_or_choose_another_save_loc) +
+                        (result.exceptionOrNull()?.let { "\n\n${it.javaClass.simpleName}: ${it.message ?: ""}" } ?: ""),
+                )
                 .setPositiveButton(getString(R.string.choose_location)) { _, _ -> chooseReportDestination() }
                 .apply {
                     if (failedReport != null) {
