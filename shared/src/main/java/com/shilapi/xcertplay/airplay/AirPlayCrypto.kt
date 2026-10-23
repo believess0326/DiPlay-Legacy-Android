@@ -130,15 +130,32 @@ object AirPlayCrypto {
             platformState.get()?.implementation = "BouncyCastle"
         }
 
+    /**
+     * Decrypts [ciphertextAndTag] (ciphertext followed by its 16-byte tag).
+     *
+     * The native path decrypts **in place**: on success [ciphertextAndTag] itself is
+     * overwritten and the returned array is a copy of the plaintext prefix. The fallback
+     * paths leave the argument untouched. Both only write after the tag verifies, so a
+     * rejected frame leaves the buffer as it arrived.
+     */
     fun chachaOpen(
         key: ByteArray,
         nonce: ByteArray,
         ciphertextAndTag: ByteArray,
         aad: ByteArray = ByteArray(0),
-    ): ByteArray = platformChacha(Cipher.DECRYPT_MODE, key, nonce, ciphertextAndTag, aad)
-        ?: chachaOpenBouncyCastle(key, nonce, ciphertextAndTag, aad).also {
-            platformState.get()?.implementation = "BouncyCastle"
+    ): ByteArray {
+        // Issue #249: on API 17 the framework Cipher has no updateAAD(), so every screen
+        // frame (AAD = the 128-byte header) fell through to the pure-Java fallback at
+        // ~0.2 MB/s. The native path runs first; the JCE and BouncyCastle paths stay as
+        // fallbacks for ROMs where the library cannot load or fails its self-test.
+        if (NativeChaCha.available) {
+            NativeChaCha.open(key, nonce, aad, ciphertextAndTag)?.let { return it }
         }
+        return platformChacha(Cipher.DECRYPT_MODE, key, nonce, ciphertextAndTag, aad)
+            ?: chachaOpenBouncyCastle(key, nonce, ciphertextAndTag, aad).also {
+                platformState.get()?.implementation = "BouncyCastle"
+            }
+    }
 
     /** Dynamically detected whether the platform Cipher supports updateAAD(byte[]). */
     internal var hasUpdateAAD: Boolean = runCatching {

@@ -17,6 +17,8 @@ internal class SharedUsbDeviceConnection private constructor(
 ) : SharedUsbConnection {
     private var references = 1
     private var closed = false
+    /** Serializes raw usbfs transfers so two threads never share one ioctl staging buffer. */
+    private val usbfsLock = Any()
     private val usbCompat = UsbRequestCompat()
     private val completions = UsbCompletionRouter<UsbRequest> { usbCompat.requestWait(connection, it) }
 
@@ -35,6 +37,33 @@ internal class SharedUsbDeviceConnection private constructor(
     override fun bulkTransfer(
         endpoint: android.hardware.usb.UsbEndpoint, buffer: ByteArray, offset: Int, length: Int, timeoutMillis: Int,
     ): Int = bulkTransferCompat(connection, endpoint, buffer, offset, length, timeoutMillis)
+
+    /**
+     * usbfs ioctl on the framework connection's own descriptor. The framework's bulkTransfer is
+     * the same ioctl, so this reaches the identical endpoint; the difference is that the errno
+     * survives instead of collapsing into -1.
+     */
+    override fun bulkTransferErrno(
+        endpoint: android.hardware.usb.UsbEndpoint, buffer: ByteArray, offset: Int, length: Int, timeoutMillis: Int,
+    ): Int {
+        val descriptor = connection.fileDescriptor
+        if (descriptor < 0) return UsbfsIoNative.ERRNO_UNAVAILABLE
+        if (offset < 0 || length < 0 || offset + length > buffer.size) return UsbfsIoNative.ERRNO_UNAVAILABLE
+        val isIn = endpoint.address and 0x80 != 0
+        val staging = ByteBuffer.allocateDirect(maxOf(length, 1))
+        if (!isIn && length > 0) {
+            staging.put(buffer, offset, length)
+            staging.flip()
+        }
+        val transferred = synchronized(usbfsLock) {
+            UsbfsIoNative.bulk(descriptor, endpoint.address, staging, length, timeoutMillis)
+        }
+        if (transferred > 0 && isIn) {
+            staging.rewind()
+            staging.get(buffer, offset, minOf(transferred, length))
+        }
+        return transferred
+    }
 
     override fun claimInterface(usbInterface: android.hardware.usb.UsbInterface, force: Boolean): Boolean =
         connection.claimInterface(usbInterface, force)

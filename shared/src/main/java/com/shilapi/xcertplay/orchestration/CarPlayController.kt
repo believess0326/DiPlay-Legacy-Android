@@ -3525,9 +3525,9 @@ class CarPlayController(
     private fun isBluetoothDeviceConnected(device: BluetoothDevice): Boolean = try {
         val method = BluetoothDevice::class.java.getMethod("isConnected")
         method.invoke(device) as? Boolean == true
-    } catch (error: ReflectiveOperationException) {
-        false
-    } catch (error: RuntimeException) {
+    } catch (error: Exception) {
+        // ReflectiveOperationException is API 19 and Android 4.2's verifier rejects the
+        // whole class when a catch type cannot be resolved, so keep this at Exception.
         Log.w(IphoneCarPlayConfiguration.TAG, "Could not read Bluetooth connection state", error)
         false
     }
