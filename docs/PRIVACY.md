@@ -1,6 +1,8 @@
 # Privacy and diagnostics
 
-DiPlay's product flow uses local authentication and a direct USB/Wi-Fi connection to the iPhone. No account, remote authentication service or automatic diagnostic upload is used. The iPhone's CarPlay apps have their own internet and privacy behavior.
+DiPlay's product flow uses local authentication and a direct USB/Wi-Fi connection to the iPhone. No account or automatic diagnostic upload is used, and no remote authentication service is contacted by default. The iPhone's CarPlay apps have their own internet and privacy behavior.
+
+An optional remote MFi authentication mode exists for advanced self-hosted setups. It stays off unless you enter a server address yourself; DiPlay then sends that server the authentication challenges it receives, with the bearer token you entered, and nothing else. Plain HTTP is accepted only for servers on a local address (loopback, link-local, private LAN or *.local); anything beyond the local link must use HTTPS.
 
 The head unit stores app preferences, paired-device selections, pairing data and bounded diagnostic logs in app storage. Authentication and pairing material are kept out of Android backup. Uninstalling removes app-private data; exported reports in Downloads remain until you delete them.
 
