@@ -1,3 +1,13 @@
+# DiPlay 0.2.88 — 2026-10-23
+
+- Wireless P2P group reuse & frequency adaptation (#293 / #582): reuse retained P2P groups with existing clients to cut reconnection times; skip 5 GHz attempts on 2.4 GHz-only radios; advertise alternative address families upon first-TCP timeouts.
+- Wired bulk-OUT watchdog (#137): watchdog timer for hanging bulk-OUT transfers on legacy USB controllers (Allwinner T3), terminating unresponsive pipes cleanly.
+- Video decoder thrashing mitigation & frame-loss notification (#251 / #288 / #290): debounce keyframe-wait recovery; notify decoder upon upstream frame loss; two-stage video layout reapply upon Surface rebuilds and reverse camera exits.
+- Bluetooth Dongle persistence & structured AEC diagnostics (#272 / #281 / #289): remember USB Bluetooth dongle choice across replugs; structured AEC status in audio diagnostics; resilient export across empty ARP and clipboard NPEs.
+- Silver-white Volkswagen and Toyota logos & custom icon payload cap.
+
+See [v0.2.88 release notes](docs/RELEASE-NOTES-0.2.88.md) for details.
+
 # DiPlay 0.2.87 — 2026-10-23
 
 - Boot-time car hotspot readiness budget: grant a 60-second readiness budget for both auto-enable and interface observation during the first 3 minutes after system boot, accommodating slow head units (Allwinner T3) where vendor AP services start well after DiPlay autostart.
