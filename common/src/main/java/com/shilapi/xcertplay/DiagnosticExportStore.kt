@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.File
 import java.io.IOException
 
@@ -47,12 +48,25 @@ internal object DiagnosticExportStore {
         return saved.copy(copyPaths = copyPaths)
     }
 
+    /**
+     * App-specific dirs on secondary volumes. `getExternalFilesDirs` is API 19+,
+     * and some head-unit ROMs fake `Build.VERSION.SDK_INT` upward (displayed
+     * 4.4.4, real API below 19), where the direct call dies with
+     * NoSuchMethodError and takes the whole report export with it (issue #300).
+     * Gate on the real API level; older units simply have no secondary dirs
+     * here and are still covered by the /storage and /mnt scans below.
+     */
+    private fun secondaryExternalFilesDirs(context: Context): List<File> {
+        if (realSdkInt() < Build.VERSION_CODES.KITKAT) return emptyList()
+        return runCatching {
+            context.getExternalFilesDirs(null)?.drop(1)?.filterNotNull()
+        }.getOrNull().orEmpty()
+    }
+
     /** Exposes writable USB-like volumes to the in-app KitKat destination picker. */
     fun availableUsbVolumes(context: Context): List<File> {
         val candidates = linkedSetOf<File>()
-        runCatching {
-            context.getExternalFilesDirs(null)?.drop(1)?.filterNotNull()?.forEach { candidates.add(it) }
-        }
+        secondaryExternalFilesDirs(context).forEach { candidates.add(it) }
         val usbName = Regex("(?i).*(usb|udisk|usbotg|otg|removable|external_usb).*")
         for (base in listOf("/storage", "/mnt", "/mnt/media_rw")) {
             for (child in File(base).listFiles().orEmpty()) {
@@ -120,14 +134,12 @@ internal object DiagnosticExportStore {
     /** All USB-like volume roots, writable or not, for the app-private fallback. */
     private fun allUsbVolumeCandidates(context: Context): List<File> {
         val candidates = linkedSetOf<File>()
-        runCatching {
-            context.getExternalFilesDirs(null)?.drop(1)?.filterNotNull()?.forEach {
-                // The app-private dir itself is writable; its volume root is what we need.
-                var root: File? = it
-                // Walk up past Android/data/<package>/files to the volume root.
-                repeat(4) { root = root?.parentFile }
-                root?.let { candidates.add(it) }
-            }
+        secondaryExternalFilesDirs(context).forEach {
+            // The app-private dir itself is writable; its volume root is what we need.
+            var root: File? = it
+            // Walk up past Android/data/<package>/files to the volume root.
+            repeat(4) { root = root?.parentFile }
+            root?.let { candidates.add(it) }
         }
         val basePaths = listOf("/storage", "/mnt", "/mnt/media_rw")
         val usbNames = Regex("(?i).*(usb|udisk|usbotg|otg|removable|external_usb).*")
@@ -149,9 +161,7 @@ internal object DiagnosticExportStore {
     /** First writable USB-like volume, for the single-copy export. See [availableUsbVolumes]. */
     private fun firstWritableUsbVolume(context: Context): File? {
         val candidates = linkedSetOf<File>()
-        runCatching {
-            context.getExternalFilesDirs(null)?.drop(1)?.filterNotNull()?.forEach { candidates.add(it) }
-        }
+        secondaryExternalFilesDirs(context).forEach { candidates.add(it) }
         val basePaths = listOf("/storage", "/mnt", "/mnt/media_rw")
         val usbNames = Regex("(?i).*(usb|udisk|usbotg|otg|removable|external_usb).*")
         for (base in basePaths) {
