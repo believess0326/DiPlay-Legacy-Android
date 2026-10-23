@@ -47,6 +47,8 @@ import com.shilapi.xcertplay.mfi.MfiAuthenticationClient
 import com.shilapi.xcertplay.mfi.RemoteMfiAuthenticationClient
 import com.shilapi.xcertplay.mfi.LocalMfiAuthenticationClient
 import com.shilapi.xcertplay.network.CarPlayBonjour
+import com.shilapi.xcertplay.network.HotspotAddressPolicy
+import com.shilapi.xcertplay.network.HotspotAddressRecovery
 import com.shilapi.xcertplay.network.diagnosticSummary
 import com.shilapi.xcertplay.network.CarPlayVpnService
 import com.shilapi.xcertplay.network.LocalOnlyHotspotManager
@@ -103,6 +105,7 @@ import java.io.Closeable
 import java.io.IOException
 import java.net.InetAddress
 import java.net.Inet6Address
+import java.net.NetworkInterface
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -277,6 +280,13 @@ class CarPlayController(
     private val wirelessResourceLock = Any()
     private val wirelessFailureReported = AtomicBoolean(false)
     @Volatile private var firstTcpWatchdog: FirstTcpWatchdog? = null
+    // Issue #293 (upstream port): the address family advertised to the phone, its
+    // alternate-family candidate, and the recovery sampler used to flip families
+    // after a first-TCP timeout. Without the flip every retry re-advertised the
+    // same family and repeated the identical failure.
+    @Volatile private var wirelessPublishedAddress: InetAddress? = null
+    @Volatile private var wirelessAlternateAddress: InetAddress? = null
+    @Volatile private var wirelessAddressRecovery: HotspotAddressRecovery? = null
     /**
      * Issue #95: set when a wired AirPlay session becomes active, cleared when the wired
      * control loop sends StartSession. Lets the wired live loop fail fast when the iPhone
@@ -1356,6 +1366,7 @@ class CarPlayController(
                 },
                 onTimeout = {
                     if (!closed && generation == wirelessGeneration.get()) {
+                        flipWirelessAddressFamily(generation)
                         fail(WirelessStartupException(WirelessStartupFailure.FIRST_TCP_TIMEOUT,
                             "No AirPlay TCP after CarPlay StartSession"), generation)
                         Thread({ closeWirelessStack(generation = generation) }, "diplay-startup-cleanup")
@@ -1377,10 +1388,28 @@ class CarPlayController(
             wirelessConnectionProof.begin(generation) {
                 if (!isStaleWirelessRun(generation)) startedHotspot?.onCarPlayConfirmed()
             }
-            val hostAddress = hotspotInfo.hostAddress
+            val preferredFamily = HotspotAddressPolicy.parseFamily(
+                appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
+                    .getString(HOTSPOT_FAMILY_PREFERENCE_KEY, null),
+            )
+            val addressRecovery = HotspotAddressRecovery(
+                sample = { hotspotCandidates(hotspotInfo, fallbackToSnapshot = false) },
+                cancelled = { isStaleWirelessRun(generation) },
+                pause = Thread::sleep,
+                log = { if (!isStaleWirelessRun(generation)) debugLog(it) },
+            )
+            val candidates = addressRecovery.awaitCandidates(hotspotCandidates(hotspotInfo), preferredFamily)
+            val hostAddress = HotspotAddressPolicy.select(candidates, preferredFamily)
+                ?: hotspotInfo.hostAddress
                 ?: throw IOException(
                     "Wireless hotspot did not provide a usable host address",
                 )
+            synchronized(wirelessResourceLock) {
+                if (isStaleWirelessRun(generation)) return
+                wirelessPublishedAddress = hostAddress
+                wirelessAlternateAddress = HotspotAddressPolicy.alternateFamilyCandidate(candidates, hostAddress)
+                wirelessAddressRecovery = addressRecovery
+            }
             if (
                 hostAddress is Inet6Address &&
                 (!hostAddress.isLinkLocalAddress || hostAddress.scopeId == 0)
@@ -1398,6 +1427,8 @@ class CarPlayController(
                 "wireless hotspot backend=${hotspotInfo.backend.label} " +
                     "iface=${hotspotInfo.interfaceName ?: "unknown"} " +
                     "family=${if (hostAddress is Inet6Address) "IPv6" else "IPv4"} " +
+                    "preference=${preferredFamily ?: "default"} " +
+                    "alternate=${wirelessAlternateAddress != null} " +
                     "identitySource=${if (deviceIdentifier == hotspotInfo.bssid) "interface" else "saved"} " +
                     "host=$hostAddressText " +
                     "band=${hotspotInfo.bandLabel} channel=${hotspotInfo.channel} " +
@@ -3480,6 +3511,9 @@ class CarPlayController(
             if (activeHotspot != null) closeBestEffort("wireless hotspot") { activeHotspot.close() }
             wirelessRuntimeIdentification = null
             wirelessAirPlayEndpoint = null
+            wirelessPublishedAddress = null
+            wirelessAlternateAddress = null
+            wirelessAddressRecovery = null
             wirelessHandoffRequested.set(false)
             wirelessTunnelReady.set(false)
             wirelessActiveReported.set(false)
@@ -3553,6 +3587,40 @@ class CarPlayController(
             throw IOException("LocalOnlyHotspot host address is unavailable")
         }
         return text
+    }
+
+    /** Issue #293 (upstream port): after a first-TCP timeout, advertise the other address family next time. */
+    private fun flipWirelessAddressFamily(generation: Int) = synchronized(wirelessResourceLock) {
+        if (isStaleWirelessRun(generation)) return@synchronized
+        val published = wirelessPublishedAddress
+        val next = published?.let { wirelessAddressRecovery?.nextFamily(it) }
+        val from = published?.let {
+            if (it is Inet6Address) HotspotAddressPolicy.FAMILY_IPV6 else HotspotAddressPolicy.FAMILY_IPV4
+        }
+        if (isStaleWirelessRun(generation)) return@synchronized
+        if (next == null || from == null) {
+            debugLog(
+                "wireless address family flip skipped published=${from ?: "none"} " +
+                    "alternate=${next != null}",
+            )
+            return@synchronized
+        }
+        appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(HOTSPOT_FAMILY_PREFERENCE_KEY, next)
+            .apply()
+        debugLog("wireless address family flip published=$from next=$next")
+    }
+
+    private fun hotspotCandidates(info: WirelessHotspotInfo, fallbackToSnapshot: Boolean = true): List<InetAddress> {
+        val name = info.interfaceName ?: return info.hostAddresses
+        val scanned = try {
+            NetworkInterface.getByName(name)?.inetAddresses?.toList().orEmpty()
+        } catch (error: Exception) {
+            debugLog("wireless interface scan failed iface=$name error=${error.javaClass.simpleName}")
+            emptyList()
+        }
+        return if (scanned.isEmpty() && fallbackToSnapshot) info.hostAddresses else scanned
     }
 
     private fun closeBestEffort(name: String, close: () -> Unit) {
@@ -3950,6 +4018,8 @@ class CarPlayController(
         private const val DIRECT_ATTEMPT_MIN_INTERVAL_NANOS = 10_000_000_000L
         /** Issues #275/#269: persisted "a wired session completed" marker + its store. */
         private const val WIRED_SESSION_PREFS = "wired_session_state"
+        private const val WIRELESS_PREFS = "diplay_wireless"
+        private const val HOTSPOT_FAMILY_PREFERENCE_KEY = "hotspot_address_family"
         private const val KEY_WIRED_SESSION_COMPLETED = "wired_session_completed"
         /** Issues #275/#269: the one forced re-enumeration latch for this attach episode. */
         @Volatile private var forcedReenumerationForAttach = false
