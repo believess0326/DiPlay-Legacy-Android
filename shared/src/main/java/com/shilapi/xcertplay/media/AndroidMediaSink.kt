@@ -50,6 +50,7 @@ internal class AudioFocusCoordinator(
     private val enabled: Boolean,
     private val muteMediaOnTransientLoss: Boolean = true,
     private val report: (String) -> Unit = {},
+    private val nowNs: () -> Long = System::nanoTime,
 ) {
     private data class Entry(val channel: AudioChannel, val attributes: Any?, var appliedVolume: Float = FULL_VOLUME)
 
@@ -61,6 +62,10 @@ internal class AudioFocusCoordinator(
     private var closed = false
     private var focusGeneration = 0L
     private var currentListener = listenerFor(focusGeneration)
+    /** Wall clock of the last accepted PCM write; only read by the idle check. */
+    @Volatile private var lastRenderNanos = 0L
+    @Volatile private var idleTimerArmed = false
+    private val idleHandler by lazy { Handler(Looper.getMainLooper()) }
     internal val listener: AudioManager.OnAudioFocusChangeListener get() = currentListener
     /** Diagnostic only: an AudioTrack playing PCM does not prove the vendor audio source is selected. */
     @Suppress("DEPRECATION")
@@ -143,20 +148,19 @@ internal class AudioFocusCoordinator(
         val primary = active.values.maxByOrNull { it.channel.focusPriority() }
         if (primary == null) {
             focusGeneration += 1
-            val abandoned = request
-            request = null
-            requestedChannel = null
             mediaVolume = FULL_VOLUME
-            if (realSdkInt() >= 26) abandoned?.let { manager?.abandonAudioFocusRequest(it as AudioFocusRequest) }
-            else manager?.abandonAudioFocus(currentListener)
+            abandonFocusLocked()
             return
         }
         if (requestedChannel == primary.channel) return
         focusGeneration += 1
-        if (realSdkInt() >= 26) request?.let { manager?.abandonAudioFocusRequest(it as AudioFocusRequest) }
-        else if (requestedChannel != null) manager?.abandonAudioFocus(currentListener)
+        abandonFocusLocked()
         val gain = when (primary.channel) {
-            AudioChannel.MEDIA -> AudioManager.AUDIOFOCUS_GAIN
+            // Never AUDIOFOCUS_GAIN: a permanent request on STREAM_MUSIC is what the head unit
+            // reported as "DiPlay owns the music stream", and the unit's own music player and
+            // WeChat were then denied the stream instead of ducking CarPlay (issue report).
+            // May-duck keeps CarPlay audible while every other player keeps its output.
+            AudioChannel.MEDIA -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             AudioChannel.PHONE -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             AudioChannel.ASSISTANT -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             // Lone navigation takes transient focus so the head unit opens its audio path
@@ -176,6 +180,57 @@ internal class AudioFocusCoordinator(
         val line = "Audio: focus requested channel=${primary.channel} gain=$gain granted=$result activeTracks=${active.size}"
         Log.i(TAG, line)
         runCatching { report(line) }
+    }
+
+    /** Abandons the live request without touching the per-track volume bookkeeping. */
+    private fun abandonFocusLocked() {
+        val abandoned = request
+        request = null
+        requestedChannel = null
+        if (realSdkInt() >= 26) abandoned?.let { manager?.abandonAudioFocusRequest(it as AudioFocusRequest) }
+        else manager?.abandonAudioFocus(currentListener)
+    }
+
+    /**
+     * Called from the audio writer on every accepted PCM write.
+     *
+     * CarPlay keeps its AudioTracks open for a whole session, so track lifetime is the wrong
+     * signal for focus: a permanent request held while the phone played nothing took the head
+     * unit's music stream away from its own players (issue report: 汽水音乐 and WeChat silent,
+     * guidance fine because it uses a separate vendor stream). The request is therefore dropped
+     * after a silent window and taken again by the next sample.
+     */
+    fun onPcmRendered() {
+        lastRenderNanos = nowNs()
+        synchronized(this) {
+            if (closed || !enabled) return
+            // Focus was given back while the tracks stayed open; the phone is audible again.
+            if (requestedChannel == null && active.isNotEmpty()) refreshRequest()
+            if (idleTimerArmed) return
+            idleTimerArmed = true
+        }
+        idleHandler.postDelayed(idleRelease, IDLE_RELEASE_MILLIS)
+    }
+
+    private val idleRelease: Runnable = Runnable {
+        val recheckMillis: Long
+        synchronized(this) {
+            idleTimerArmed = false
+            if (closed || requestedChannel == null) return@Runnable
+            val idleNanos = nowNs() - lastRenderNanos
+            if (idleNanos < IDLE_RELEASE_NANOS) {
+                recheckMillis = (IDLE_RELEASE_NANOS - idleNanos) / 1_000_000L + IDLE_RECHECK_MILLIS
+                idleTimerArmed = true
+            } else {
+                focusGeneration += 1
+                abandonFocusLocked()
+                val line = "Audio: focus released after ${idleNanos / 1_000_000L}ms without PCM"
+                Log.i(TAG, line)
+                runCatching { report(line) }
+                return@Runnable
+            }
+        }
+        idleHandler.postDelayed(idleRelease, recheckMillis)
     }
 
     private fun setMediaVolume(volume: Float) {
@@ -202,6 +257,10 @@ internal class AudioFocusCoordinator(
         const val TAG = "DiPlay-AudioFocus"
         const val FULL_VOLUME = 1f
         const val DUCKED_VOLUME = 0.2f
+        /** CarPlay media may pause between songs; only a long silence gives focus back. */
+        const val IDLE_RELEASE_MILLIS = 10_000L
+        const val IDLE_RELEASE_NANOS = IDLE_RELEASE_MILLIS * 1_000_000L
+        const val IDLE_RECHECK_MILLIS = 500L
     }
 }
 
@@ -2317,6 +2376,8 @@ private class AudioRenderer(
             }
             if (count < writeLength) partialWritesThisWindow++
             written += count
+            // Keeps the focus lease alive only while audio is actually flowing.
+            audioFocusCoordinator.onPcmRendered()
             val framesWritten = count / frameBytes
             totalWrittenFrames += framesWritten
             writtenFramesThisWindow += framesWritten

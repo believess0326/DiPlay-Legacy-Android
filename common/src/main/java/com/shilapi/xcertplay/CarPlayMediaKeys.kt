@@ -44,6 +44,14 @@ import kotlin.math.roundToInt
  */
 internal object CarPlayMediaKeys {
     private const val TAG = "DiPlay-MediaKeys"
+    /**
+     * Never AUDIOFOCUS_GAIN. A permanent request on STREAM_MUSIC made the head unit treat
+     * DiPlay as the sole owner of the music stream, so its own players were denied output
+     * (issue report: 汽水音乐 and WeChat silent, guidance fine because the unit routes it on
+     * a separate vendor stream). May-duck keeps the media session and wheel keys while every
+     * other player stays audible.
+     */
+    private const val MEDIA_FOCUS_GAIN = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
     private const val ACTIONS = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
         PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS
 
@@ -173,7 +181,7 @@ internal object CarPlayMediaKeys {
             audio.requestAudioFocus((focusRequest ?: return) as AudioFocusRequest)
         } else {
             @Suppress("DEPRECATION")
-            audio.requestAudioFocus(legacyFocusListener ?: return, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+            audio.requestAudioFocus(legacyFocusListener ?: return, AudioManager.STREAM_MUSIC, MEDIA_FOCUS_GAIN)
         }
         focusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (focusHeld) forwardGrantedFocusLocked()
@@ -201,7 +209,7 @@ internal object CarPlayMediaKeys {
         val listener = AudioManager.OnAudioFocusChangeListener { change ->
             onFocusChanged(expectedController, owner, change)
         }
-        val request: Any? = if (realSdkInt() >= 26) AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+        val request: Any? = if (realSdkInt() >= 26) AudioFocusRequest.Builder(MEDIA_FOCUS_GAIN)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -214,7 +222,7 @@ internal object CarPlayMediaKeys {
         val result = if (realSdkInt() >= 26 && request != null) audio?.requestAudioFocus(request as AudioFocusRequest)
         else {
             @Suppress("DEPRECATION")
-            audio?.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+            audio?.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, MEDIA_FOCUS_GAIN)
         }
         val granted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         focusRequest = request
