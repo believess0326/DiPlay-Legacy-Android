@@ -4952,6 +4952,9 @@ class CarPlayHostActivity : ComponentActivity() {
             wiredNoTcpFailures += 1
             if (wiredNoTcpFailures >= WIRED_NO_TCP_FAILURE_LIMIT) {
                 appendLog("wired no-TCP failures=$wiredNoTcpFailures on legacy API ${realSdkInt()}; automatic retry stopped, manual replug required generation=$restartGeneration")
+                // Issue #298: mirror the wireless-exhausted branch — without this flag,
+                // repeated failure reports kept re-entering here and re-logging.
+                startupRetryStopped = true
                 startupRetryButton?.visibility = View.VISIBLE
                 setConnectionStage(getString(R.string.wired_no_tcp_replug_required))
                 return
