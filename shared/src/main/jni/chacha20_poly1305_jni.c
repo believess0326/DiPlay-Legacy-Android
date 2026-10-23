@@ -41,8 +41,11 @@ Java_com_shilapi_xcertplay_airplay_NativeChaCha_nativeOpen(JNIEnv *env, jobject 
     if ((*env)->GetArrayLength(env, key_array) < CPP_KEY_SIZE) return RESULT_UNAVAILABLE;
     if ((*env)->GetArrayLength(env, nonce_array) < CPP_NONCE_SIZE) return RESULT_UNAVAILABLE;
     if (ciphertext_length < 0) return RESULT_UNAVAILABLE;
-    if ((*env)->GetArrayLength(env, data_array) < ciphertext_length + CPP_TAG_SIZE) {
-        return RESULT_UNAVAILABLE;
+    {
+        // Compared as a difference so a length close to INT_MAX cannot wrap the sum.
+        jsize data_length = (*env)->GetArrayLength(env, data_array);
+        if (data_length < (jsize)CPP_TAG_SIZE) return RESULT_UNAVAILABLE;
+        if (ciphertext_length > data_length - (jsize)CPP_TAG_SIZE) return RESULT_UNAVAILABLE;
     }
 
     (*env)->GetByteArrayRegion(env, key_array, 0, CPP_KEY_SIZE, (jbyte *)key);

@@ -2,6 +2,7 @@
 #define XCERTPLAY_CHACHA20_POLY1305_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define CPP_KEY_SIZE 32
 #define CPP_NONCE_SIZE 12

@@ -130,6 +130,14 @@ object AirPlayCrypto {
             platformState.get()?.implementation = "BouncyCastle"
         }
 
+    /**
+     * Decrypts [ciphertextAndTag] (ciphertext followed by its 16-byte tag).
+     *
+     * The native path decrypts **in place**: on success [ciphertextAndTag] itself is
+     * overwritten and the returned array is a copy of the plaintext prefix. The fallback
+     * paths leave the argument untouched. Both only write after the tag verifies, so a
+     * rejected frame leaves the buffer as it arrived.
+     */
     fun chachaOpen(
         key: ByteArray,
         nonce: ByteArray,

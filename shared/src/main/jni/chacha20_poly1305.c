@@ -9,6 +9,7 @@
 
 #include "chacha20_poly1305.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #define ROTL32(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
