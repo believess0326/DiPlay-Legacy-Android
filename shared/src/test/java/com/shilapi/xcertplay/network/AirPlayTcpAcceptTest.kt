@@ -16,6 +16,13 @@ import java.util.concurrent.TimeUnit
 @Config(sdk = [29], manifest = Config.NONE)
 class AirPlayTcpAcceptTest {
     @Test fun bothAddressFamiliesReportOwnerAndOldCleanupPreservesNewListener() {
+        val ipv6Reachable = try {
+            java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("::1")).use { s ->
+                java.net.Socket(java.net.InetAddress.getByName("::1"), s.localPort).use { true }
+            }
+        } catch (_: Exception) { false }
+        org.junit.Assume.assumeTrue("Host environment supports IPv6 loopback connection", ipv6Reachable)
+
         val service = Robolectric.buildService(CarPlayVpnService::class.java).create().get()
         val received = LinkedBlockingQueue<AirPlayTcpAccepted>()
         val address = InetAddress.getByName("127.0.0.1")

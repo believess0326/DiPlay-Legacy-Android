@@ -10,6 +10,13 @@ class AirPlayDualListenerTest {
     private val addresses = listOf(InetAddress.getByName("::1"), InetAddress.getByName("127.0.0.1"))
 
     @Test fun acceptsBothFamiliesOnTheSamePort() {
+        val ipv6Reachable = try {
+            java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("::1")).use { s ->
+                java.net.Socket(java.net.InetAddress.getByName("::1"), s.localPort).use { true }
+            }
+        } catch (_: Exception) { false }
+        org.junit.Assume.assumeTrue("Host environment supports IPv6 loopback connection", ipv6Reachable)
+
         val servers = AirPlayPortSelector.bindAll(addresses, 0)
         try {
             val port = servers.first().localPort

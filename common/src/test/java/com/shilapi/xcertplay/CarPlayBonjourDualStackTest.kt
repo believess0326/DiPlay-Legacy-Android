@@ -96,6 +96,13 @@ class CarPlayBonjourDualStackTest {
     }
 
     @Test fun dualLanThenSingleP2pThenDualLanServesAirPlayInfo() {
+        val ipv6Reachable = try {
+            java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("::1")).use { s ->
+                java.net.Socket(java.net.InetAddress.getByName("::1"), s.localPort).use { true }
+            }
+        } catch (_: Exception) { false }
+        org.junit.Assume.assumeTrue("Host environment supports IPv6 loopback connection", ipv6Reachable)
+
         val controller = Robolectric.buildService(CarPlayVpnService::class.java).create()
         val events = java.util.concurrent.CopyOnWriteArrayList<String>()
         var activeSessions = 0
