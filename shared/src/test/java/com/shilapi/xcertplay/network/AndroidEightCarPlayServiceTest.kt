@@ -41,10 +41,25 @@ class AndroidEightCarPlayServiceTest {
                 assertFalse((info["hidDevices"] as List<*>).isEmpty())
                 service.detach()
                 assertFalse("Detached on attempt $attempt", service.isAttached())
-                ServerSocket().use { released ->
-                    released.reuseAddress = true
-                    released.bind(InetSocketAddress(address, port))
+                // The listener close and the /info connection's release finish
+                // asynchronously, so on a loaded machine the port can stay
+                // bound briefly after detach() returns. Poll for the release
+                // instead of racing a single bind (this check flaked in CI).
+                val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5)
+                var portReleased = false
+                while (System.nanoTime() < deadline) {
+                    try {
+                        ServerSocket().use { probe ->
+                            probe.reuseAddress = true
+                            probe.bind(InetSocketAddress(address, port))
+                        }
+                        portReleased = true
+                        break
+                    } catch (_: java.net.BindException) {
+                        Thread.sleep(50)
+                    }
                 }
+                assertTrue("Port $port released after detach on attempt $attempt", portReleased)
             }
         } finally { controller.destroy() }
     }
