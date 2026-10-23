@@ -23,6 +23,11 @@ object RootShell {
             .start()
         try {
             process.outputStream.bufferedWriter().use { writer ->
+                // mksh creates heredoc temp files under $TMPDIR, which on some
+                // firmware points at /sqlite_stmt_journals — a directory that
+                // does not exist there, killing every heredoc (issue #301).
+                // /data/local/tmp exists on stock Android and is root-writable.
+                writer.write("export TMPDIR=/data/local/tmp\n")
                 writer.write(script)
                 writer.write("\nexit\n")
             }

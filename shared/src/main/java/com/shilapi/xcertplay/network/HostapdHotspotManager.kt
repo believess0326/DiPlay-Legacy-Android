@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.os.Looper
 import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
+import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.InetAddress
@@ -107,15 +108,24 @@ class HostapdHotspotManager(
         }
 
         val conf = HostapdConfig.renderConf(ssid, passphrase, channel)
-        val deployed = RootShell.writeFile(HostapdConfig.TMP_CONF_PATH, conf)
+        // Deploy by staging the file in app-private storage and copying it
+        // into place as root — the recipe proven on-device (issue #301). The
+        // earlier heredoc write depends on the root shell's temp directory,
+        // which does not exist on some firmware, and on shell printf quirks;
+        // a plain file write plus `cp` avoids both.
+        val staged = File(appContext.filesDir, "hostapd_full.conf")
+        try {
+            staged.writeText(conf)
+        } catch (error: Exception) {
+            throw IOException("hostapd: hostapd_full.conf deploy failed: could not stage the config: ${error.message}")
+        }
+        val deployed = RootShell.run(
+            "mkdir -p /data/misc/wifi; cp ${staged.absolutePath} ${HostapdConfig.TMP_CONF_PATH}" +
+                " && cp ${HostapdConfig.TMP_CONF_PATH} ${HostapdConfig.CONF_PATH}",
+            10_000,
+        )
         if (!deployed.success) {
             throw IOException("hostapd: hostapd_full.conf deploy failed: ${deployed.output.trim().take(200)}")
-        }
-        val copied = RootShell.run(
-            "mkdir -p /data/misc/wifi; cp ${HostapdConfig.TMP_CONF_PATH} ${HostapdConfig.CONF_PATH}", 5_000,
-        )
-        if (!copied.success) {
-            throw IOException("hostapd: could not install ${HostapdConfig.CONF_PATH}")
         }
         checkActive()
 
