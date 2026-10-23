@@ -66,11 +66,22 @@ class HostapdHotspotManager(
                     "the root hotspot mode needs a rooted unit",
             )
         }
-        val binaries = RootShell.run(
-            "ls /system/bin/hostapd /system/bin/dnsmasq 2>/dev/null | wc -l", 5_000,
-        )
-        if (!binaries.success || binaries.output.trim().lines().lastOrNull()?.trim() != "2") {
-            throw IOException("hostapd: /system/bin/hostapd or /system/bin/dnsmasq is missing on this head unit")
+        // Probe for the binaries instead of assuming /system/bin: firmware
+        // variants ship them in different directories, and the first field
+        // report (issue #301) failed this check on a unit whose binaries
+        // exist elsewhere. The raw probe output goes to the diagnostic log
+        // either way, so a "missing" verdict carries its own evidence.
+        val probe = RootShell.run(HostapdConfig.binaryProbeScript(), 5_000)
+        val probeText = probe.output.trim().replace('\n', ' ').take(300)
+        onDiagnostic("hostapd: binary probe: $probeText")
+        val binaries = HostapdConfig.parseBinaryProbe(probe.output)
+        val hostapdPath = binaries["hostapd"]
+        val dnsmasqPath = binaries["dnsmasq"]
+        if (hostapdPath == null || dnsmasqPath == null) {
+            throw IOException(
+                "hostapd: hostapd or dnsmasq not found in " +
+                    HostapdConfig.BINARY_DIRS.joinToString(" ") + " (probe: $probeText)",
+            )
         }
 
         RootShell.run(HostapdConfig.killStaleScript(), 10_000)
@@ -86,7 +97,12 @@ class HostapdHotspotManager(
             }
             if (closed || isCancelled()) throw InterruptedIOException("Hostapd hotspot startup cancelled")
             if (!interfaceExists()) {
-                throw IOException("hostapd: wlan0 did not appear after enabling Wi-Fi")
+                val netdevs = RootShell.run("ls /sys/class/net 2>/dev/null", 3_000)
+                    .output.trim().replace('\n', ' ').take(200)
+                throw IOException(
+                    "hostapd: ${HostapdConfig.INTERFACE_NAME} did not appear after enabling Wi-Fi " +
+                        "(netdevs: $netdevs)",
+                )
             }
         }
 
@@ -103,8 +119,11 @@ class HostapdHotspotManager(
         }
         checkActive()
 
+        // Release any half-up state before hostapd claims the interface
+        // (the proven on-device recipe does the same).
+        RootShell.run("ifconfig ${HostapdConfig.INTERFACE_NAME} down 2>/dev/null", 5_000)
         val launched = RootShell.run(
-            "/system/bin/hostapd -B ${HostapdConfig.CONF_PATH} >${HostapdConfig.HOSTAPD_LOG_PATH} 2>&1 & sleep 1; " +
+            "$hostapdPath -B ${HostapdConfig.CONF_PATH} >${HostapdConfig.HOSTAPD_LOG_PATH} 2>&1 & sleep 1; " +
                 "ps | grep hostapd | grep -v grep | wc -l",
             15_000,
         )
@@ -135,7 +154,7 @@ class HostapdHotspotManager(
             throw IOException("hostapd: ${HostapdConfig.HOST_ADDRESS} is not assignable on ${HostapdConfig.INTERFACE_NAME}")
         }
 
-        RootShell.run(HostapdConfig.dnsmasqCommand(), 10_000)
+        RootShell.run(HostapdConfig.dnsmasqCommand(dnsmasqPath), 10_000)
         started = true
         onDiagnostic(
             "hostapd: hotspot ready iface=${HostapdConfig.INTERFACE_NAME} addr=${HostapdConfig.HOST_ADDRESS}",

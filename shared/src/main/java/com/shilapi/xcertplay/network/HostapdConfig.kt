@@ -56,9 +56,39 @@ object HostapdConfig {
         append("max_num_sta=8\n")
     }
 
+    /** Directories searched for the hostapd/dnsmasq binaries, in order. */
+    val BINARY_DIRS = listOf("/system/bin", "/system/xbin", "/vendor/bin", "/bin")
+
+    /**
+     * Shell probe that echoes `hostapd=<path>` / `dnsmasq=<path>` for the
+     * first executable found per binary. Most units ship both in
+     * /system/bin, but firmware variants move them; a fixed-path existence
+     * check reported the backend unusable on a unit whose own modified
+     * build drives the same binaries from a different directory
+     * (issue #301).
+     */
+    fun binaryProbeScript(): String =
+        "for b in hostapd dnsmasq; do for d in ${BINARY_DIRS.joinToString(" ")}; do " +
+            "if [ -x \$d/\$b ]; then echo \"\$b=\$d/\$b\"; break; fi; done; done"
+
+    /** Parses [binaryProbeScript] output into binary name → absolute path. */
+    fun parseBinaryProbe(output: String): Map<String, String> =
+        output.lineSequence().mapNotNull { line ->
+            val trimmed = line.trim()
+            val eq = trimmed.indexOf('=')
+            if (eq <= 0) return@mapNotNull null
+            val name = trimmed.substring(0, eq)
+            val path = trimmed.substring(eq + 1).trim()
+            if ((name == "hostapd" || name == "dnsmasq") && path.startsWith("/")) {
+                name to path
+            } else {
+                null
+            }
+        }.toMap()
+
     /** dnsmasq invocation: DHCP only (DNS port disabled), gateway/DNS = the AP address. */
-    fun dnsmasqCommand(): String =
-        "/system/bin/dnsmasq --pid-file=$DNSMASQ_PID_PATH --no-resolv --no-hosts --no-poll " +
+    fun dnsmasqCommand(dnsmasqPath: String = "/system/bin/dnsmasq"): String =
+        "$dnsmasqPath --pid-file=$DNSMASQ_PID_PATH --no-resolv --no-hosts --no-poll " +
             "--port=0 --bind-interfaces --dhcp-lease-max=16 " +
             "--dhcp-leasefile=$LEASES_PATH --interface=$INTERFACE_NAME " +
             "--dhcp-range=192.168.42.10,192.168.42.50,255.255.255.0,12h " +

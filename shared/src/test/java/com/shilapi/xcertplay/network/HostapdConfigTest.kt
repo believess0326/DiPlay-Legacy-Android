@@ -67,4 +67,23 @@ class HostapdConfigTest {
         assertTrue(HostapdConfig.parseLeases("").isEmpty())
         assertFalse(HostapdConfig.activeLeases("", 1L).isNotEmpty())
     }
+
+    @Test fun binaryProbeParsesResolvedPaths() {
+        val parsed = HostapdConfig.parseBinaryProbe(
+            "hostapd=/system/bin/hostapd\ndnsmasq=/system/xbin/dnsmasq\n",
+        )
+        assertEquals("/system/bin/hostapd", parsed["hostapd"])
+        assertEquals("/system/xbin/dnsmasq", parsed["dnsmasq"])
+    }
+
+    @Test fun binaryProbeIgnoresShellNoiseAndMissingEntries() {
+        // Interactive su sessions can add prompt/warning lines around the
+        // probe output; only well-formed name=/abs/path lines count.
+        val parsed = HostapdConfig.parseBinaryProbe(
+            "WARNING: su binary insecure\nhostapd=/vendor/bin/hostapd\nrandom=line\ndnsmasq=relative\n",
+        )
+        assertEquals("/vendor/bin/hostapd", parsed["hostapd"])
+        assertEquals(null, parsed["dnsmasq"])
+        assertTrue(HostapdConfig.parseBinaryProbe("").isEmpty())
+    }
 }
