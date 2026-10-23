@@ -313,6 +313,10 @@ class CarPlayHostActivity : ComponentActivity() {
     private var videoView: View? = null
     private var fallbackVideoView: SurfaceView? = null
     private var fallbackVideoBounds: CarPlaySurfaceBounds? = null
+    // Issue #300: while another window (the reverse-camera overlay) owns the
+    // display, the video view is hidden so its surface leaves composition
+    // entirely instead of showing through or alternating with the camera.
+    private var videoYieldedToOverlay = false
     // Smooth video (a setting): SurfaceView output with frames released at the iPhone's frame time.
     private var smoothVideo = false
     // Direct SurfaceView output: hardware overlay without TextureView composition overhead.
@@ -1410,6 +1414,11 @@ class CarPlayHostActivity : ComponentActivity() {
             touchOutsideContent = false
             refreshConfiguration(source = ThemeModeDiagnostics.Source.WINDOW_FOCUS)
             applyFullscreenMode()
+            if (videoYieldedToOverlay) {
+                videoYieldedToOverlay = false
+                videoView?.visibility = View.VISIBLE
+                appendLog("Display: video restored after the overlay released the display")
+            }
             // Issues #251/#252: a reverse-camera overlay usually takes window focus
             // without pausing the activity, so onResume's picture refresh never runs
             // when it closes — the (still decoding) picture stayed black for seconds
@@ -1429,6 +1438,19 @@ class CarPlayHostActivity : ComponentActivity() {
             if (dockRevealed) {
                 dockRevealed = false
                 videoView?.let { updateVideoLayout(it.width, it.height) }
+            }
+            // Issue #300: on units whose reverse camera is a translucent or
+            // separately-planed overlay rather than an opaque activity, the
+            // still-composited CarPlay surface shows through the camera area
+            // and the two alternate on screen for as long as reverse is
+            // engaged. Yield the display completely: hiding the video view
+            // destroys the SurfaceView surface (releasing its overlay plane)
+            // and removes the TextureView from composition, leaving the
+            // black root under the camera until focus returns.
+            if (activeAirPlaySession != null && !isDestroyed && !isFinishing && !videoYieldedToOverlay) {
+                videoYieldedToOverlay = true
+                videoView?.visibility = View.GONE
+                appendLog("Display: video yielded while another window owns the display")
             }
         }
     }
