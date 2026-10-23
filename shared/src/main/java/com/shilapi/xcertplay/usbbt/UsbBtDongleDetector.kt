@@ -312,9 +312,17 @@ class UsbBtDongleDetector(private val appContext: Context) {
      * user must confirm the system dialog first.
      */
     fun ensurePermission(usbManager: UsbManager, dongle: Dongle): PermissionState {
-        if (usbManager.hasPermission(dongle.device)) return PermissionState.Granted
-        if (UsbDefaultGrant.tryGrantWithRoot(appContext, dongle.device)) {
-            if (usbManager.hasPermission(dongle.device)) return PermissionState.Granted
+        // Stage-by-stage diagnostics (issue #291): on units where the system
+        // permission dialog never appears, the report must show which stage
+        // was reached — previously a click left no trace at all.
+        if (usbManager.hasPermission(dongle.device)) {
+            UsbBtLog.log(appContext, TAG, "USB permission already granted for dongle")
+            return PermissionState.Granted
+        }
+        val rootGranted = UsbDefaultGrant.tryGrantWithRoot(appContext, dongle.device)
+        UsbBtLog.log(appContext, TAG, "USB permission root grant attempted: success=$rootGranted")
+        if (rootGranted && usbManager.hasPermission(dongle.device)) {
+            return PermissionState.Granted
         }
         val intent = Intent(permissionAction(appContext.packageName))
             .setPackage(appContext.packageName)
@@ -322,6 +330,11 @@ class UsbBtDongleDetector(private val appContext: Context) {
             (if (realSdkInt() >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
         val pi = PendingIntent.getBroadcast(appContext, 0, intent, flags)
         usbManager.requestPermission(dongle.device, pi)
+        UsbBtLog.log(
+            appContext, TAG,
+            "USB permission requested from the system; a system dialog should appear " +
+                "(still no permission afterwards means the firmware swallowed the dialog)",
+        )
         return PermissionState.RequestSent
     }
 }
