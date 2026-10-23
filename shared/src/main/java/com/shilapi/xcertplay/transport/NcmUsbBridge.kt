@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.Closeable
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
 import java.util.concurrent.TimeoutException
@@ -100,9 +101,26 @@ class NcmUsbBridge internal constructor(
         val block = Ntb16Codec.build(frame, sequence)
         ensureWriteWatchdog()
         writeInFlightSinceNs = System.nanoTime()
+        var failedAfterNanos = 0L
+        var errno = 0
         val transferred = try {
             writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
-                sharedConnection.bulkTransfer(outEndpoint, block, offset, count, timeout)
+                val started = System.nanoTime()
+                val written = sharedConnection.bulkTransfer(outEndpoint, block, offset, count, timeout)
+                if (written > 0) return@writeUsbChunks written
+                failedAfterNanos = System.nanoTime() - started
+                // The framework collapses every failure into -1, which hides the one fact that
+                // decides the fix: a phone that NAKs (ETIMEDOUT) needs the link brought up, a
+                // stale endpoint (ENODEV/EPIPE) needs it re-acquired. A transfer that consumed
+                // its timeout may still be on the wire and must never be re-sent; one that failed
+                // at once never left the host, so the usbfs ioctl can be asked for the same write
+                // to recover the errno (and keep the data if it lands).
+                if (failedAfterNanos < timeout.toLong() * SLOW_FAILURE_NANOS_PER_MILLIS) {
+                    val probed = sharedConnection.bulkTransferErrno(outEndpoint, block, offset, count, timeout)
+                    if (probed > 0) return@writeUsbChunks probed
+                    errno = if (probed < 0) -probed else 0
+                }
+                written
             }
         } finally {
             writeInFlightSinceNs = 0L
@@ -126,7 +144,8 @@ class NcmUsbBridge internal constructor(
             consecutiveWriteFailures += 1
             val failureLine = "ncm bulk-out failed $consecutiveWriteFailures/$MAX_CONSECUTIVE_WRITE_FAILURES " +
                 "while the data path was live: endpoint=0x${outEndpoint.address.toString(16)} " +
-                "requested=${block.size} transferred=$transferred"
+                "requested=${block.size} transferred=$transferred errno=${errnoLabel(errno)} " +
+                "elapsedMs=${failedAfterNanos / NANOS_PER_MILLISECOND} timeoutMs=$timeoutMillis"
             Log.i(IphoneCarPlayConfiguration.TAG, failureLine)
             // Reports only carry the diagnostic channel; the probe lines below
             // were logcat-only, so a report could never show the halt state
@@ -136,7 +155,8 @@ class NcmUsbBridge internal constructor(
                 // Issue #279: the framework transfer result carries no errno, so probe
                 // the endpoint status word instead — halt=1 means the device latched a
                 // stall; halt=0 with failing transfers points at the host side.
-                val statusLine = "ncm bulk-out endpoint status: ${probeOutEndpointStatus()}"
+                val statusLine = "ncm bulk-out endpoint status: ${probeOutEndpointStatus()}; " +
+                    "${describeLinkState()}; ntb=[${probeNtbParameters()}]"
                 Log.i(IphoneCarPlayConfiguration.TAG, statusLine)
                 onDiagnostic(statusLine)
             }
@@ -554,12 +574,88 @@ class NcmUsbBridge internal constructor(
             return
         }
         val result = runCatching { LegacyUsbHostCompat.select(sharedConnection, usbInterface) }.getOrNull()
+        // The target alt setting is logged because usbfs may short-circuit SET_INTERFACE to the
+        // setting the interface is already on: ok=true then proves the call was accepted, not
+        // that the phone rebuilt its data pipes.
+        val targetAlternate = runCatching { IphoneCarPlayConfiguration.alternateSetting(usbInterface) }.getOrNull()
         Log.i(
             IphoneCarPlayConfiguration.TAG,
             "ncm bulk-out recovery: re-selected data interface ${usbInterface.id} " +
+                "targetAlt=${targetAlternate ?: "unknown"} " +
                 "ok=${result?.selected} errno=${result?.errno ?: "none"}; endpoint status: ${probeOutEndpointStatus()}",
         )
         clearOutEndpointHalt()
+    }
+
+    /**
+     * The facts that decide which side owns a bulk-OUT failure: the alt setting the transfers
+     * were queued against, the endpoint geometry the phone reported, and whether the kernel
+     * exposes a netdev for the link at all.
+     *
+     * This stack drives NCM from userspace lwIP, so cdc_ncm never registers "usb0" and the
+     * usual "100 mbit/s downlink 100 mbit/s uplink" line never appears — listing the netdev
+     * states removes the guesswork about whether a link was negotiated somewhere else.
+     */
+    private fun describeLinkState(): String {
+        val kernel = KERNEL_NETDEV_NAMES.mapNotNull { name ->
+            val carrier = runCatching { File("/sys/class/net/$name/carrier").readText().trim() }.getOrNull()
+            val state = runCatching { File("/sys/class/net/$name/operstate").readText().trim() }.getOrNull()
+            if (carrier == null && state == null) null else "$name carrier=${carrier ?: "?"} state=${state ?: "?"}"
+        }
+        val data = dataInterface
+        return "data iface=${data?.id ?: "none"} alt=${data?.alternateSetting ?: -1} " +
+            "in=0x${inEndpoint.address.toString(16)}@${inEndpoint.maxPacketSize} " +
+            "out=0x${outEndpoint.address.toString(16)}@${outEndpoint.maxPacketSize} " +
+            "status=${statusEndpoint?.let { "0x${it.address.toString(16)}" } ?: "none"} " +
+            "dataIfaceClaimed=${data != null} inboundSeen=$inboundFrameSeen " +
+            "netdev=[${if (kernel.isEmpty()) "no kernel netdev (userspace lwIP)" else kernel.joinToString()}]"
+    }
+
+    /**
+     * CDC NCM GET_NTB_PARAMETERS (class request 0x80) on the control interface.
+     *
+     * This is the negotiation the kernel's cdc_ncm driver performs and a userspace stack can
+     * skip: the phone advertises the largest NTB it accepts on bulk OUT, plus the NDP alignment
+     * rules its parser enforces. A block that breaks those rules is rejected on the wire, which
+     * looks exactly like a bulk-OUT-only failure with a clean endpoint. Read-only, so it is safe
+     * to issue while diagnosing.
+     */
+    private fun probeNtbParameters(): String {
+        val control = claimedInterfaces.firstOrNull { it.interfaceClass == CDC_CONTROL_CLASS }?.id
+            ?: dataInterface?.let { it.id - 1 }
+            ?: return "unavailable (no control interface)"
+        val buffer = ByteArray(NTB_PARAMETERS_LENGTH)
+        val read = runCatching {
+            sharedConnection.controlTransfer(
+                // 0xA1: device-to-host, class, interface. UsbConstants carries no recipient bits.
+                UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or INTERFACE_RECIPIENT,
+                GET_NTB_PARAMETERS,
+                0,
+                control,
+                buffer,
+                buffer.size,
+                ENDPOINT_STATUS_TIMEOUT_MILLIS,
+            )
+        }.getOrDefault(-1)
+        if (read < NDP_OUT_OFFSET) return "unavailable (transferred=$read)"
+        val formats = readU16(buffer, 2)
+        val outMax = readU32(buffer, 14).toLong() and 0xffff_ffffL
+        return "formats=0x${formats.toString(16)} outMaxBytes=$outMax " +
+            "outDivisor=${readU16(buffer, 18)} outRemainder=${readU16(buffer, 20)} " +
+            "outAlignment=${readU16(buffer, 22)} maxDatagrams=${readU16(buffer, 24)}"
+    }
+
+    /** Linux errno values, spelled out so a log line alone identifies the fault. */
+    private fun errnoLabel(errno: Int): String = when (errno) {
+        0 -> "none"
+        2 -> "ENOENT(2)"
+        11 -> "EAGAIN(11)"
+        19 -> "ENODEV(19)"
+        32 -> "EPIPE(32)"
+        71 -> "EPROTO(71)"
+        108 -> "ESHUTDOWN(108)"
+        110 -> "ETIMEDOUT(110)"
+        else -> "raw($errno)"
     }
 
     private fun checkOpen() {
@@ -600,6 +696,16 @@ class NcmUsbBridge internal constructor(
         private const val INTERFACE_RESET_AT_FAILURE = 5
         private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
         private const val NANOS_PER_MILLISECOND = 1_000_000L
+        /** A failure that used less than 90% of its timeout never waited on the phone. */
+        private const val SLOW_FAILURE_NANOS_PER_MILLIS = 900_000L
+        /** Netdev names a kernel cdc_ncm driver would create; this stack runs lwIP instead. */
+        private val KERNEL_NETDEV_NAMES = listOf("usb0", "usb1", "usb2", "ncm0")
+        private const val CDC_CONTROL_CLASS = 0x02
+        private const val INTERFACE_RECIPIENT = 0x01
+        private const val GET_NTB_PARAMETERS = 0x80
+        private const val NTB_PARAMETERS_LENGTH = 28
+        /** Offset of dwNtbOutMaxSize: a shorter reply does not describe the OUT direction. */
+        private const val NDP_OUT_OFFSET = 18
         private const val REQUEST_DRAIN_TIMEOUT_MILLIS = 2_000L
 
         private const val ALT_SETTING_ATTEMPTS = 5
