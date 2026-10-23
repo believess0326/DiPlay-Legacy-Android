@@ -1,3 +1,13 @@
+# DiPlay 0.2.90 — 2026-10-23
+
+- Root hostapd multi-path probe (#301): probe for hostapd and dnsmasq across /system/bin, /system/xbin, /vendor/bin rather than hardcoding /system/bin, accommodating Honda Civic and customized ROMs.
+- Custom icon sample-decode & payload shrink (#263): sample-decode oversized custom brand logos before shrinking the AirPlay session info payload, avoiding OOMs and preserving sharpness.
+- USB Bluetooth dongle permission grant diagnostics (#291): log each stage of USB permission requests to diagnose silent prompt rejections on custom head units.
+- NCM link-state diagnostic safe routing (#137): route NCM alternate-setting diagnostics through API-guarded helpers for legacy Android compatibility.
+- Multi-window & reverse-camera surface yield (#300): reliably yield video surface while another window owns display to eliminate screen thrashing.
+
+See [v0.2.90 release notes](docs/RELEASE-NOTES-0.2.90.md) for details.
+
 # DiPlay 0.2.89 — 2026-10-23
 
 - Native ChaCha20-Poly1305 screen frame decryptor (#249): bundle native C decryptor with JNI bridge across ARMv7, ARM64, and x86, drastically reducing CPU load and frame drops on legacy head units.
