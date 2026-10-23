@@ -157,7 +157,7 @@ class WifiP2pGroupManager(
         try {
             val station = readStation()
             val stationFrequency = station.alignmentFrequency
-            checkPrerequisites(station)
+            val fiveGhz = checkPrerequisites(station)
             val remembered = configurationMemory.read()
             val preferred = remembered?.takeIf {
                 preferredChannel == WifiP2pChannels.AUTO && it.stationMHz == stationFrequency
@@ -167,7 +167,7 @@ class WifiP2pGroupManager(
             diagnostic(when {
                 preferredChannel != WifiP2pChannels.AUTO -> "Wi-Fi P2P remembered skipped=manual_channel"
                 preferred != null -> {
-                    val position = if (P2pStartupRecovery.plan(stationFrequency, preferred.request).first() == preferred.request)
+                    val position = if (P2pStartupRecovery.plan(stationFrequency, preferred.request, fiveGhz = fiveGhz).first() == preferred.request)
                         "first" else "deferred"
                     "Wi-Fi P2P remembered $position mode=${preferred.request.mode} frequencyMHz=${preferred.request.frequencyMHz ?: "auto"}"
                 }
@@ -228,6 +228,7 @@ class WifiP2pGroupManager(
                 stationFrequency = stationFrequency,
                 preferred = preferred?.request,
                 preferredChannel = preferredChannel,
+                fiveGhz = fiveGhz,
                 beforeRetry = {
                     ensureStartActive(attempt)
                     // Do not cancel discovery, toggle Wi-Fi, or remove a newly observed group.
@@ -248,7 +249,11 @@ class WifiP2pGroupManager(
                             val builder = WifiP2pConfig.Builder()
                                 .setNetworkName(credentials.ssid)
                                 .setPassphrase(credentials.passphrase)
-                            builder.setGroupOperatingFrequency(requireNotNull(selection.frequencyMHz))
+                            when (selection.mode) {
+                                P2pCreationMode.BAND_5_GHZ -> builder.setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                                P2pCreationMode.BAND_2_GHZ -> builder.setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_2GHZ)
+                                else -> builder.setGroupOperatingFrequency(requireNotNull(selection.frequencyMHz))
+                            }
                             builder.build()
                         }
                     }
@@ -777,7 +782,7 @@ class WifiP2pGroupManager(
         Station(info?.supplicantState, info?.frequency?.takeIf { it > 0 })
     }.getOrDefault(Station(null, null))
 
-    private fun checkPrerequisites(station: Station) {
+    private fun checkPrerequisites(station: Station): Boolean {
         val wifi = if (realSdkInt() >= Build.VERSION_CODES.M) {
             appContext.getSystemService(WifiManager::class.java)
         } else {
@@ -806,6 +811,9 @@ class WifiP2pGroupManager(
         if (wifiEnabled == false) throw IOException("Turn on Wi-Fi in the head unit's settings, then reconnect")
         // Location mode is diagnostic only: AOSP createGroup does not require it to be on.
         // Do not block firmware where Wi-Fi Direct works with Location services disabled.
+        // Upstream #582: report whether 5 GHz may be attempted at all, so the creation
+        // plan can skip it on 2.4 GHz-only silicon instead of failing those attempts first.
+        return !(wifiEnabled == true && fiveGhzSupported == false)
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
