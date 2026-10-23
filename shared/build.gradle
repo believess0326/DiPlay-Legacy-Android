@@ -63,7 +63,11 @@ def prepareLwipSources = tasks.register('prepareLwipSources', Exec) {
     commandLine (System.getProperty('os.name').toLowerCase().contains('windows') ? ['py', '-3', 'scripts/prepare-lwip.py'] : ['python3', 'scripts/prepare-lwip.py'])
 }
 tasks.configureEach { task ->
-    if (task.name.startsWith('generateJsonModel') || task.name.startsWith('externalNativeBuild')) {
+    // AGP 9 runs configureNdkBuild* before externalNativeBuild*; on a clean
+    // checkout (CI) the configure step reaches Android.mk before the pinned
+    // sources exist unless it also waits for the prepare tasks.
+    if (task.name.startsWith('generateJsonModel') || task.name.startsWith('externalNativeBuild') ||
+        task.name.startsWith('configureNdkBuild')) {
         task.dependsOn(prepareOpusSources)
         task.dependsOn(prepareLwipSources)
     }
