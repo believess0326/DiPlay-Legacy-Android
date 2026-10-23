@@ -157,6 +157,32 @@ class AudioFocusAutoYieldTest {
         assertNotNull(shadowOf(manager).lastAbandonedAudioFocusRequest)
     }
 
+    @Test fun silentPhoneCallKeepsTheFocusLease() {
+        // A call is legitimately silent between utterances; dropping the lease mid-call would
+        // re-request it on the next sample, exactly where the v2 path is weakest.
+        var now = 0L
+        val coordinator = AudioFocusCoordinator(context, true, true, nowNs = { now }).also(coordinators::add)
+        val call = track()
+        coordinator.acquire(call, AudioChannel.PHONE, attributes)
+        coordinator.onPcmRendered()
+        now = 11_000_000_000L
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(10_100))
+        assertNull(shadowOf(manager).lastAbandonedAudioFocusRequest)
+    }
+
+    @Test fun silentNavigationKeepsTheFocusLease() {
+        // Guidance prompts are minutes apart, and head units that gate output on focus clip the
+        // start of a prompt when the request arrives after its first PCM block (#214).
+        var now = 0L
+        val coordinator = AudioFocusCoordinator(context, true, true, nowNs = { now }).also(coordinators::add)
+        val guidance = track()
+        coordinator.acquire(guidance, AudioChannel.NAVIGATION, attributes)
+        coordinator.onPcmRendered()
+        now = 11_000_000_000L
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(10_100))
+        assertNull(shadowOf(manager).lastAbandonedAudioFocusRequest)
+    }
+
     @Test fun aSampleAfterTheSilentWindowTakesFocusAgain() {
         var now = 0L
         val coordinator = AudioFocusCoordinator(context, true, true, nowNs = { now }).also(coordinators::add)

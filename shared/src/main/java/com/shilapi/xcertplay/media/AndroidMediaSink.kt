@@ -206,6 +206,10 @@ internal class AudioFocusCoordinator(
             if (closed || !enabled) return
             // Focus was given back while the tracks stayed open; the phone is audible again.
             if (requestedChannel == null && active.isNotEmpty()) refreshRequest()
+            // Only a silent media stream is worth giving back: a call, a spoken assistant
+            // reply or a guidance prompt is legitimately silent between utterances, and the
+            // lease must survive that silence.
+            if (requestedChannel != AudioChannel.MEDIA) return
             if (idleTimerArmed) return
             idleTimerArmed = true
         }
@@ -217,6 +221,9 @@ internal class AudioFocusCoordinator(
         synchronized(this) {
             idleTimerArmed = false
             if (closed || requestedChannel == null) return@Runnable
+            // The primary channel may have changed while this was queued (a call started,
+            // guidance began): only a silent media stream gives the lease back.
+            if (requestedChannel != AudioChannel.MEDIA) return@Runnable
             val idleNanos = nowNs() - lastRenderNanos
             if (idleNanos < IDLE_RELEASE_NANOS) {
                 recheckMillis = (IDLE_RELEASE_NANOS - idleNanos) / 1_000_000L + IDLE_RECHECK_MILLIS
