@@ -221,7 +221,7 @@ class TelephonyMicrophoneTest {
         registerCallDownlink()
         sink.onMicrophoneStarted(telephony, config("telephony"))
         assertEquals(AudioRecord.RECORDSTATE_RECORDING, awaitCapture().recordingState)
-        assertTrue(microphoneLog(), microphoneLog().contains("microphone echo canceller enabled=false"))
+        assertTrue(microphoneLog(), microphoneLog().contains("Microphone: echo canceller active=false"))
         sink.onMicrophoneStopped(telephony)
     }
 
@@ -229,7 +229,7 @@ class TelephonyMicrophoneTest {
         sink.onMicrophoneStarted(telephony, config("telephony"))
         assertEquals(AudioRecord.RECORDSTATE_RECORDING, awaitCapture().recordingState)
         assertEquals(2, ShadowAudioEffect.getAudioEffects().size)
-        assertFalse(microphoneLog().contains("echo canceller"))
+        assertTrue(microphoneLog(), microphoneLog().contains("Microphone: echo canceller active=false referencePresent=false"))
     }
 
     @Test fun softwareCallCaptureDisablesPlatformAecBeforeProcessingAndReleasesBothOnClose() {
@@ -283,7 +283,7 @@ class TelephonyMicrophoneTest {
             assertEquals(2, ShadowAudioEffect.getAudioEffects().size)
             assertTrue(ShadowAudioEffect.getAudioEffects().all { it.enabled })
             assertTrue(microphoneLog().contains("platform AEC could not be disabled"))
-            assertTrue(microphoneLog().contains("microphone echo canceller enabled=false"))
+            assertTrue(microphoneLog().contains("Microphone: echo canceller active=false"))
         } finally { uplink.close() }
     }
 

@@ -38,6 +38,7 @@ class WifiP2pGroupManagerTest {
         shadowOf(context).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         val wifi = context.getSystemService(WifiManager::class.java)
         wifi.isWifiEnabled = true
+        shadowOf(wifi).setIs5GHzBandSupported(true)
         shadowOf(wifi.connectionInfo).setFrequency(5180)
         shadowOf(wifi.connectionInfo).setSupplicantState(SupplicantState.COMPLETED)
     }
