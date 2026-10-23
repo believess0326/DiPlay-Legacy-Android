@@ -1,5 +1,13 @@
 LOCAL_PATH := $(call my-dir)
 
+# ChaCha20-Poly1305 for the CarPlay data streams (issue #249). Dalvik cannot run the
+# Java fallback fast enough on Cortex-A7 head units, so the same RFC 8439 code runs here.
+include $(CLEAR_VARS)
+LOCAL_MODULE := xcertplay_chacha
+LOCAL_SRC_FILES := chacha20_poly1305.c chacha20_poly1305_jni.c
+LOCAL_CFLAGS := -O2 -Wall -Wextra -Werror
+include $(BUILD_SHARED_LIBRARY)
+
 include $(CLEAR_VARS)
 LOCAL_MODULE := xcertplay_i2c
 LOCAL_SRC_FILES := linux_i2c_jni.c

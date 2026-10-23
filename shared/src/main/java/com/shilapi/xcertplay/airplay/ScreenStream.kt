@@ -235,7 +235,8 @@ class ScreenStream(
             Log.i(
                 TAG,
                 "video first decrypted frame sealed=${body.size} plain=${payload.size} " +
-                "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation}",
+                "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation} " +
+                "native=${NativeChaCha.available} nativeOpens=${NativeChaCha.opens.get()}",
             )
         }
         listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), ScreenCodec.senderNanos(header), arrivalNanos)
