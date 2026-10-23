@@ -100,21 +100,21 @@ internal object KitKatUsbDescriptors {
                 setEndpointsMethod.invoke(instance, endpoints)
             }
             instance
-        } catch (_: ReflectiveOperationException) {
+        } catch (_: Exception) {
             try {
                 UsbInterface::class.java.getDeclaredConstructor(
                     primitive, primitive, String::class.java, primitive, primitive, primitive,
                     Array<android.os.Parcelable>::class.java,
                 ).apply { isAccessible = true }
                     .newInstance(info.id, info.alternate, null, info.clazz, info.subclass, info.protocol, endpoints)
-            } catch (_: ReflectiveOperationException) {
+            } catch (_: Exception) {
                 try {
                     UsbInterface::class.java.getDeclaredConstructor(
                         primitive, primitive, String::class.java, primitive, primitive, primitive,
                         Array<UsbEndpoint>::class.java,
                     ).apply { isAccessible = true }
                         .newInstance(info.id, info.alternate, null, info.clazz, info.subclass, info.protocol, endpoints)
-                } catch (_: ReflectiveOperationException) {
+                } catch (_: Exception) {
                     UsbInterface::class.java.getDeclaredConstructor(
                         primitive, primitive, primitive, primitive,
                         Array<android.os.Parcelable>::class.java,

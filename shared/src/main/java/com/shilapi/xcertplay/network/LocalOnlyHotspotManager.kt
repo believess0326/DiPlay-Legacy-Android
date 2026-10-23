@@ -6,6 +6,7 @@ import android.net.wifi.SoftApConfiguration
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.Build
+import com.shilapi.xcertplay.compat.isReflectionFailure
 import com.shilapi.xcertplay.compat.realSdkInt
 import android.os.Handler
 import android.os.Looper
@@ -213,13 +214,18 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
                 WifiManager::class.java.getMethod(method, softApClass, Executor::class.java,
                     WifiManager.LocalOnlyHotspotCallback::class.java).invoke(wifiManager, configuration, executor, callback)
                 return preferredChannel
-            } catch (failure: ReflectiveOperationException) {
-                if (failure.cause != null && failure.cause !is SecurityException && failure.cause !is UnsupportedOperationException) {
-                    throw IOException("LocalOnlyHotspot custom startup failed", failure.cause)
+            } catch (failure: Exception) {
+                // Split by hand: ReflectiveOperationException does not exist on API 17 and
+                // naming it in a catch clause fails verification of this whole class there.
+                if (failure is SecurityException) {
+                    // No privileged permission is requested to enable this optional path.
+                } else {
+                    if (!failure.isReflectionFailure()) throw failure
+                    if (failure.cause != null && failure.cause !is SecurityException && failure.cause !is UnsupportedOperationException) {
+                        throw IOException("LocalOnlyHotspot custom startup failed", failure.cause)
+                    }
+                    // Unsupported firmware retains the ordinary Android-generated AP.
                 }
-                // Unsupported firmware retains the ordinary Android-generated AP.
-            } catch (_: SecurityException) {
-                // No privileged permission is requested to enable this optional path.
             }
         }
         // Main-loop callback delivery survives cancellation to close late reservations.
@@ -501,7 +507,7 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
                 "SoftApConfiguration.getChannel",
                 allowAuto = true,
             )
-        } catch (failure: ReflectiveOperationException) {
+        } catch (failure: Exception) {
             throw IOException(
                 "Android ${Build.VERSION.RELEASE} does not expose SoftApConfiguration.getChannel",
                 failure,
@@ -513,7 +519,7 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
     private fun readWifiConfigurationChannel(configuration: WifiConfiguration): Int {
         val channel = try {
             WifiConfiguration::class.java.getField("apChannel").getInt(configuration)
-        } catch (failure: ReflectiveOperationException) {
+        } catch (failure: Exception) {
             throw IOException(
                 "Android ${Build.VERSION.RELEASE} does not expose WifiConfiguration.apChannel",
                 failure,
@@ -531,7 +537,7 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
         val band = try {
             (WifiConfiguration::class.java.getField("apBand").get(configuration) as? Number)
                 ?.toInt()
-        } catch (_: ReflectiveOperationException) {
+        } catch (_: Exception) {
             null
         }
         return when (band) {
@@ -549,7 +555,7 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
         val band = try {
             (SoftApConfiguration::class.java.getMethod("getBand").invoke(configuration) as? Number)
                 ?.toInt()
-        } catch (_: ReflectiveOperationException) {
+        } catch (_: Exception) {
             null
         }
         return band?.let(::softApBandLabel) ?: legacyBandLabel(channel)

@@ -483,12 +483,14 @@ object BydCarPlayCallTool {
         return try {
         android.system.Os.kill(processId.toInt(), 0)
         true
-    } catch (error: android.system.ErrnoException) {
+    } catch (error: Throwable) {
+        // ErrnoException is API 21; naming it in a catch clause makes Android 4.2 reject this
+        // whole class, so match the type by name and read errno reflectively instead.
+        if (error.javaClass.name != "android.system.ErrnoException") return true
+        val errno = runCatching { error.javaClass.getField("errno").getInt(error) }.getOrDefault(-1)
         // Shell may lack permission to signal the app UID. Only ESRCH establishes death;
         // EPERM and other errors must not authorize stealing even a pristine reservation.
-        error.errno != android.system.OsConstants.ESRCH
-    } catch (_: Throwable) {
-        true
+        errno != android.system.OsConstants.ESRCH
     }
     }
 
