@@ -190,21 +190,41 @@ class WifiP2pGroupManager(
             // Preferences disappear on reinstall, but the scoped namespace survives.
             val existing = requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true)
             diagnostic("Wi-Fi P2P existingGroup=${existing != null}")
+            var reuseExisting: WifiP2pGroup? = null
             if (existing != null) {
                 if (!P2pOwnership.canReclaim(existing.isGroupOwner, existing.networkName,
                         ownership.getString("owned_ssid", null), ssidPrefix)) {
                     throw P2pResetRequiredException()
                 }
-                diagnostic("Wi-Fi P2P reclaiming retained owned group")
-                removeGroupBlocking(p2pChannel, existing.networkName)
-                val removalDeadline = minOf(deadlineNanos, deadlineAfter(REMOVE_GROUP_TIMEOUT_MILLIS))
-                while (requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true) != null) {
-                    if (remainingNanos(removalDeadline) == 0L) throw IOException("Wi-Fi Direct reset did not finish")
-                    synchronized(stateLock) { waitNanos(TimeUnit.MILLISECONDS.toNanos(100)) }
+                val existingClients = existing.clientList?.size ?: 0
+                val channelMatches = preferredChannel == WifiP2pChannels.AUTO ||
+                    existing.frequency == (WifiP2pChannels.frequencyMhz(preferredChannel) ?: -1)
+                if (!legacyChannels && existingClients > 0 && existing.frequency > 0 && channelMatches) {
+                    // Issue #293: a phone is already associated with our retained
+                    // group. Removing it and recreating with fresh random
+                    // credentials leaves iOS believing it is still on the same
+                    // network, so it never re-runs DHCP — the phone sits in the
+                    // client list with no ARP entry until something (toggling
+                    // cellular data, per the report) pokes it into a fresh DHCP
+                    // cycle. Reuse the live group instead; close() still tears
+                    // it down like a created one.
+                    reuseExisting = existing
+                    requestedName = existing.networkName
+                    diagnostic("Wi-Fi P2P reusing retained group clients=$existingClients")
+                } else {
+                    diagnostic("Wi-Fi P2P reclaiming retained owned group")
+                    removeGroupBlocking(p2pChannel, existing.networkName)
+                    val removalDeadline = minOf(deadlineNanos, deadlineAfter(REMOVE_GROUP_TIMEOUT_MILLIS))
+                    while (requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true) != null) {
+                        if (remainingNanos(removalDeadline) == 0L) throw IOException("Wi-Fi Direct reset did not finish")
+                        synchronized(stateLock) { waitNanos(TimeUnit.MILLISECONDS.toNanos(100)) }
+                    }
                 }
             }
 
-            val creation = P2pStartupRecovery.create(
+            val creation = if (reuseExisting != null) {
+                P2pCreationRequest(P2pCreationMode.SYSTEM_DEFAULT, reuseExisting.frequency)
+            } else P2pStartupRecovery.create(
                 stationFrequency = stationFrequency,
                 preferred = preferred?.request,
                 preferredChannel = preferredChannel,
@@ -265,7 +285,15 @@ class WifiP2pGroupManager(
                     }
                 },
             )
-            val group = if (legacyChannels) {
+            val group = if (reuseExisting != null) {
+                awaitUsableGroup(
+                    attempt = attempt,
+                    channel = p2pChannel,
+                    credentials = null,
+                    deadlineNanos = deadlineNanos,
+                    timeoutMillis = timeoutMillis,
+                )
+            } else if (legacyChannels) {
                 awaitUsableGroupLegacy(attempt, p2pChannel, creation, deadlineNanos, timeoutMillis)
             } else {
                 awaitUsableGroup(
@@ -296,7 +324,7 @@ class WifiP2pGroupManager(
                 created = true
                 startAttempt = null
                 // Manual experiments must not replace the proven automatic configuration.
-                pendingSuccess = if (!legacyChannels && preferredChannel == WifiP2pChannels.AUTO) {
+                pendingSuccess = if (!legacyChannels && preferredChannel == WifiP2pChannels.AUTO && reuseExisting == null) {
                     {
                         configurationMemory.remember(creation, requireNotNull(group.frequencyMHz), stationFrequency)
                     }
