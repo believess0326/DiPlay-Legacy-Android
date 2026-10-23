@@ -1138,7 +1138,21 @@ object AirPlayPersistence {
 
     fun loadCustomAirPlayIconBitmap(context: Context): Bitmap? = try {
         loadCustomAirPlayIconBytes(context)?.let { bytes ->
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            // Sampled decode for the settings preview: the saved pick can be
+            // a 4096x4096 photo whose full decode (~64MB) fails on low-memory
+            // head units and made the preview fall back to the default icon.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sampleSize = 1
+            while (bounds.outWidth / (sampleSize * 2) >= 512 &&
+                bounds.outHeight / (sampleSize * 2) >= 512
+            ) {
+                sampleSize *= 2
+            }
+            BitmapFactory.decodeByteArray(
+                bytes, 0, bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sampleSize },
+            )
         }
     } catch (_: Throwable) {
         null
