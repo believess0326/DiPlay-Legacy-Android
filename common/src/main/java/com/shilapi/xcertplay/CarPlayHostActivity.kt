@@ -571,12 +571,15 @@ class CarPlayHostActivity : ComponentActivity() {
             // the display and gave it back, #250/#214) a still CarPlay screen sends no frames,
             // so ask for one or the screen stays black even though audio keeps playing.
             sink?.refreshPicture(SCREEN_TYPE_MAIN)
-            updateVideoLayout(width, height)
+            // Issue #290: a surface rebuild can land while the view is still at an
+            // intermediate size; the two-stage reapply (immediate + posted/settle)
+            // is the only pass guaranteed to run again once the size has settled.
+            reapplyVideoLayout()
             scheduleDisplaySize(width, height)
         }
 
         override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
-            updateVideoLayout(width, height)
+            reapplyVideoLayout()
             scheduleDisplaySize(width, height)
         }
 
@@ -600,13 +603,15 @@ class CarPlayHostActivity : ComponentActivity() {
             attachSurface(surface)
             // A still CarPlay screen sends no frames, so ask for one so the screen is immediately populated.
             sink?.refreshPicture(SCREEN_TYPE_MAIN)
-            videoView?.let { updateVideoLayout(it.width, it.height) }
+            // Issue #290: same two-stage reapply as the TextureView path — a rebuild
+            // with no following display-size change otherwise never refits.
+            reapplyVideoLayout()
         }
 
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             if (holder !== fallbackVideoView?.holder) return
             // Holder dimensions describe the fitted video, not the host window/CarPlay canvas.
-            videoView?.let { updateVideoLayout(it.width, it.height) }
+            reapplyVideoLayout()
         }
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
