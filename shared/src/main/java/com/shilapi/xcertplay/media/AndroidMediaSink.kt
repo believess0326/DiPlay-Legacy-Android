@@ -1648,6 +1648,16 @@ private class AudioRenderer(
                         "software Opus decoder rate=${format.sampleRate} channels=${format.channels}",
                 )
             }
+            if (softwareOpusDecoder == null) {
+                // Issue #289: this failure used to be silent in reports (logcat
+                // only), so a unit whose bundled decoder could not start showed
+                // a "ready" stream that decoded zero packets with no explanation.
+                report(
+                    "Audio: bundled software Opus decoder unavailable on this device " +
+                        "(${NativeOpusDecoder.failureReason ?: "unknown reason"}); " +
+                        "this stream will stay silent",
+                )
+            }
         }
     }
 
@@ -2528,6 +2538,6 @@ private class AudioRenderer(
         const val STATS_WINDOW_NS = 5_000_000_000L
         const val DECODED_BUFFER_LOG_INTERVAL = 50
         // Issue #170: inputs before the degenerate-decoder check may fire (~5 s of AAC-LC).
-        const val DEGENERATE_DECODER_MIN_INPUTS = 240
+        const val DEGENERATE_DECODER_MIN_INPUTS = 120
     }
 }
