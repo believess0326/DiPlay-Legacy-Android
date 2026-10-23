@@ -696,4 +696,13 @@
     <string name="settings_navigation_volume">Volumen de navegación</string>
     <string name="settings_stream_volume_description">Equilibra cada sonido dentro de DiPlay cuando la unidad principal tiene un único volumen para todo.</string>
     <string name="settings_direct_usbfs_mode_description">Para unidades cuyo listado USB del sistema nunca muestra el iPhone: enumera los dispositivos directamente y abre el nodo del dispositivo; puede requerir root. Se aplica en la próxima conexión y reinicia CarPlay.</string>
+    <string name="settings_root_hotspot_mode">Punto de acceso root (hostapd) (experimental)</string>
+    <string name="settings_root_hotspot_mode_description">Para unidades rooteadas cuyo punto de acceso no puede abrirse desde las aplicaciones. DiPlay ejecuta el hostapd del sistema como root y crea su propio punto de acceso; elige el modo de punto de acceso root en la configuración de conexión y define allí su nombre y contraseña. Se aplica en la próxima conexión.</string>
+    <string name="settings_hostapd_channel">Canal del punto de acceso</string>
+    <string name="settings_hostapd_channel_description">Solo 2,4 GHz (canales 1–13). El canal 1 es el más compatible.</string>
+    <string name="hotspot_mode_hostapd">Punto de acceso root (hostapd)</string>
+    <string name="hotspot_mode_hostapd_desc">Solo para unidades rooteadas: DiPlay inicia el hostapd del sistema como root y crea el punto de acceso. Define abajo el nombre y la contraseña; el iPhone se unirá a este punto de acceso.</string>
+    <string name="hotspot_hint_hostapd">Punto de acceso root: esta unidad debe estar rooteada. DiPlay crea el punto de acceso por sí mismo; mantén activados el Wi-Fi y el Bluetooth del iPhone.</string>
+    <string name="hostapd_channel_1_13">Canal (1–13)</string>
+    <string name="hostapd_channel_must_be_1_13">El canal debe estar entre 1 y 13</string>
 </resources>

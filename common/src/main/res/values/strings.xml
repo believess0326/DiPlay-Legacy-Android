@@ -810,4 +810,13 @@
     <string name="settings_navigation_volume">Navigation volume</string>
     <string name="settings_stream_volume_description">Balances each sound inside DiPlay when the head unit has a single volume for everything.</string>
     <string name="settings_direct_usbfs_mode_description">For head units whose system USB list never shows the iPhone: enumerates USB devices directly and opens the device node, which may require root. Applies at the next connection and restarts CarPlay.</string>
+    <string name="settings_root_hotspot_mode">Root hotspot (hostapd) (experimental)</string>
+    <string name="settings_root_hotspot_mode_description">For rooted head units whose hotspot cannot be opened by apps at all. DiPlay runs the system hostapd as root and creates its own hotspot; pick the Root hotspot mode in Connection setup and set its name and password there. Applies at the next connection.</string>
+    <string name="settings_hostapd_channel">Hotspot channel</string>
+    <string name="settings_hostapd_channel_description">2.4 GHz only (channels 1–13). Channel 1 is the most compatible.</string>
+    <string name="hotspot_mode_hostapd">Root hotspot (hostapd)</string>
+    <string name="hotspot_mode_hostapd_desc">Rooted units only: DiPlay starts the system hostapd as root and creates the hotspot itself. Set the name and password below; the iPhone joins this hotspot.</string>
+    <string name="hotspot_hint_hostapd">Root hotspot: this head unit must be rooted. DiPlay creates the hotspot itself; keep your iPhone’s Wi-Fi and Bluetooth on.</string>
+    <string name="hostapd_channel_1_13">Channel (1–13)</string>
+    <string name="hostapd_channel_must_be_1_13">Channel must be between 1 and 13</string>
 </resources>

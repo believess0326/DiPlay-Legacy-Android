@@ -773,4 +773,13 @@
     <string name="settings_navigation_volume">导航音量</string>
     <string name="settings_stream_volume_description">当车机只有一个总音量时，在 DiPlay 内部调整媒体与导航的相对音量。</string>
     <string name="settings_direct_usbfs_mode_description">适用于系统 USB 列表始终看不到 iPhone 的车机：绕过系统列表直接枚举并打开设备节点，可能需要 root。会在下次连接时生效，并重新连接 CarPlay。</string>
+    <string name="settings_root_hotspot_mode">Root 热点（hostapd）（实验性）</string>
+    <string name="settings_root_hotspot_mode_description">适用于已 root、且应用完全无法打开热点的车机。DiPlay 以 root 身份运行系统 hostapd 并自行创建热点；在连接设置中选择 Root 热点模式并设置名称与密码。下次连接时生效。</string>
+    <string name="settings_hostapd_channel">热点信道</string>
+    <string name="settings_hostapd_channel_description">仅 2.4 GHz（信道 1–13），信道 1 兼容性最好。</string>
+    <string name="hotspot_mode_hostapd">Root 热点（hostapd）</string>
+    <string name="hotspot_mode_hostapd_desc">仅适用于已 root 的车机：DiPlay 以 root 身份启动系统 hostapd 并自行创建热点。在下方设置名称与密码，iPhone 将加入这个热点。</string>
+    <string name="hotspot_hint_hostapd">Root 热点：车机需要已 root。DiPlay 会自行创建热点；请保持 iPhone 的 Wi-Fi 与蓝牙打开。</string>
+    <string name="hostapd_channel_1_13">信道（1–13）</string>
+    <string name="hostapd_channel_must_be_1_13">信道须在 1 到 13 之间</string>
 </resources>

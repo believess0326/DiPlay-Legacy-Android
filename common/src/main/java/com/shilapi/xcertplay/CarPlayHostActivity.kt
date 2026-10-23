@@ -191,6 +191,9 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotSecurity = manualHotspotSecurity,
         existingWifiSsid = existingWifiSsid,
         existingWifiPassphrase = existingWifiPassphrase,
+        hostapdSsid = hostapdSsid,
+        hostapdPassphrase = hostapdPassphrase,
+        hostapdChannel = hostapdChannel,
         locationReportingEnabled = locationReportingEnabled,
         directUsbfsMode = AirPlayPersistence.loadDirectUsbfsMode(this),
     )
@@ -344,6 +347,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var resolutionPreviewView: TextView? = null
     private var hotspotStatusView: TextView? = null
     private var manualHotspotFields: View? = null
+    private var hostapdHotspotFields: View? = null
+    private var hostapdErrorView: TextView? = null
     private var existingWifiFields: View? = null
     private var existingWifiErrorView: TextView? = null
     private var manualHotspotErrorView: TextView? = null
@@ -459,6 +464,9 @@ class CarPlayHostActivity : ComponentActivity() {
     private var manualHotspotBand = ManualHotspotBand.AUTO
     private var manualHotspotChannel = 0
     private var manualHotspotSecurity = ManualHotspotSecurity.OPEN
+    private var hostapdSsid = "DiPlay"
+    private var hostapdPassphrase = ""
+    private var hostapdChannel = 1
     private var awaitingVpnConsent = false
     private var vpnConsentLaunchElapsed = 0L
     private var vpnConsentInstantDenyCount = 0
@@ -780,6 +788,9 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotBand = AirPlayPersistence.loadManualHotspotBand(this)
         manualHotspotChannel = AirPlayPersistence.loadManualHotspotChannel(this)
         manualHotspotSecurity = AirPlayPersistence.loadManualHotspotSecurity(this)
+        hostapdSsid = AirPlayPersistence.loadHostapdSsid(this)
+        hostapdPassphrase = AirPlayPersistence.loadHostapdPassphrase(this)
+        hostapdChannel = AirPlayPersistence.loadHostapdChannel(this)
     }
 
     private fun requestStartupPrerequisites() {
@@ -2399,6 +2410,11 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveManualHotspotBand(this, manualHotspotBand)
         AirPlayPersistence.saveManualHotspotChannel(this, manualHotspotChannel)
         AirPlayPersistence.saveManualHotspotSecurity(this, manualHotspotSecurity)
+        AirPlayPersistence.saveHostapdSsid(this, hostapdSsid)
+        AirPlayPersistence.saveHostapdPassphrase(this, hostapdPassphrase)
+        if (hostapdChannel in com.shilapi.xcertplay.network.HostapdConfig.MIN_CHANNEL..com.shilapi.xcertplay.network.HostapdConfig.MAX_CHANNEL) {
+            AirPlayPersistence.saveHostapdChannel(this, hostapdChannel)
+        }
         AirPlayPersistence.saveLocationReportingEnabled(this, locationReportingEnabled)
         AirPlayPersistence.saveAutoStartOnBoot(this, autoStartOnBoot)
         AirPlayPersistence.saveAdvancedAudioChannelMapping(this, advancedAudioChannelMapping)
@@ -3338,6 +3354,9 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             add(WirelessHotspotMode.MANUAL to getString(R.string.built_in_car_hotspot))
             add(WirelessHotspotMode.EXISTING_WIFI to getString(R.string.existing_wifi_title))
+            if (AirPlayPersistence.loadRootHotspotEnabled(this@CarPlayHostActivity)) {
+                add(WirelessHotspotMode.HOSTAPD to getString(R.string.hotspot_mode_hostapd))
+            }
         }
         var selectedId = View.NO_ID
         for ((mode, label) in modes) {
@@ -3501,6 +3520,48 @@ class CarPlayHostActivity : ComponentActivity() {
         existingFields.addView(existingWifiErrorView)
         section.addView(existingFields)
         existingWifiFields = existingFields
+        val hostapdFields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(menuText(getString(R.string.hotspot_mode_hostapd_desc), 14f, MENU_SECONDARY))
+            addView(settingsInputRow(getString(R.string.hotspot_ssid), hostapdSsid) {
+                hostapdSsid = it
+                hostapdErrorView?.visibility = View.GONE
+            })
+            addView(
+                settingsInputRow(
+                    label = getString(R.string.hostapd_channel_1_13),
+                    value = hostapdChannel.toString(),
+                    numeric = true,
+                ) {
+                    hostapdChannel = it.toIntOrNull() ?: -1
+                    hostapdErrorView?.visibility = View.GONE
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(10) },
+            )
+            addView(
+                settingsInputRow(getString(R.string.hotspot_password), hostapdPassphrase, password = true) {
+                    hostapdPassphrase = it
+                    hostapdErrorView?.visibility = View.GONE
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(10) },
+            )
+        }
+        hostapdErrorView = menuText("", 14f, MENU_DANGER).apply { visibility = View.GONE }
+        hostapdFields.addView(hostapdErrorView)
+        section.addView(
+            hostapdFields,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) },
+        )
+        hostapdHotspotFields = hostapdFields
         updateManualHotspotFields()
         return section
     }
@@ -3511,6 +3572,9 @@ class CarPlayHostActivity : ComponentActivity() {
         val visible = wirelessHotspotMode == WirelessHotspotMode.MANUAL
         manualHotspotFields?.visibility = if (visible) View.VISIBLE else View.GONE
         if (!visible) manualHotspotErrorView?.visibility = View.GONE
+        val hostapdVisible = wirelessHotspotMode == WirelessHotspotMode.HOSTAPD
+        hostapdHotspotFields?.visibility = if (hostapdVisible) View.VISIBLE else View.GONE
+        if (!hostapdVisible) hostapdErrorView?.visibility = View.GONE
     }
 
     private fun validateMfiSettings(): Boolean {
@@ -3536,6 +3600,19 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun manualHotspotSettingsError(): String? {
+        if (wirelessHotspotMode == WirelessHotspotMode.HOSTAPD) {
+            return when {
+                hostapdSsid.isBlank() -> getString(R.string.hotspot_ssid_is_required)
+                hostapdSsid.encodeToByteArray().size > 32 ->
+                    getString(R.string.hotspot_ssid_must_be_at_most_32_utf_8_bytes)
+                '\u0000' in hostapdSsid -> getString(R.string.hotspot_ssid_contains_u_0000)
+                hostapdChannel !in 1..13 -> getString(R.string.hostapd_channel_must_be_1_13)
+                '\u0000' in hostapdPassphrase -> getString(R.string.hotspot_password_contains_u_0000)
+                hostapdPassphrase.length !in 8..63 ->
+                    getString(R.string.wpa2_wpa3_password_must_be_8_63_characters)
+                else -> null
+            }
+        }
         if (wirelessHotspotMode == WirelessHotspotMode.EXISTING_WIFI) {
             val error = com.shilapi.xcertplay.orchestration.ManualHotspotValidation.error(existingWifiSsid, existingWifiPassphrase)
             return error?.let { getString(it.messageResource()) }
@@ -3565,8 +3642,10 @@ class CarPlayHostActivity : ComponentActivity() {
         val error = manualHotspotSettingsError()
         existingWifiErrorView?.text = if (wirelessHotspotMode == WirelessHotspotMode.EXISTING_WIFI) error.orEmpty() else ""
         existingWifiErrorView?.visibility = if (wirelessHotspotMode == WirelessHotspotMode.EXISTING_WIFI && error != null) View.VISIBLE else View.GONE
-        manualHotspotErrorView?.text = error.orEmpty()
-        manualHotspotErrorView?.visibility = if (error == null) View.GONE else View.VISIBLE
+        hostapdErrorView?.text = if (wirelessHotspotMode == WirelessHotspotMode.HOSTAPD) error.orEmpty() else ""
+        hostapdErrorView?.visibility = if (wirelessHotspotMode == WirelessHotspotMode.HOSTAPD && error != null) View.VISIBLE else View.GONE
+        manualHotspotErrorView?.text = if (wirelessHotspotMode == WirelessHotspotMode.MANUAL) error.orEmpty() else ""
+        manualHotspotErrorView?.visibility = if (wirelessHotspotMode == WirelessHotspotMode.MANUAL && error != null) View.VISIBLE else View.GONE
         return error == null
     }
 
@@ -3575,6 +3654,7 @@ class CarPlayHostActivity : ComponentActivity() {
         WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> getString(R.string.localonlyhotspot)
         WirelessHotspotMode.MANUAL -> getString(R.string.manual_hotspot)
         WirelessHotspotMode.EXISTING_WIFI -> getString(R.string.existing_wifi_title)
+        WirelessHotspotMode.HOSTAPD -> getString(R.string.hotspot_mode_hostapd)
     }
 
     private fun menuText(

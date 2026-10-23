@@ -45,6 +45,7 @@ object ConnectionSettingsSection {
         context: Context,
         selected: WirelessHotspotMode,
         theme: SettingsTheme = SettingsTheme.OVERLAY,
+        rootHotspotEnabled: Boolean = false,
         onSelected: (WirelessHotspotMode) -> Unit,
     ): SettingsWidgets.ChoiceRowResult<WirelessHotspotMode> {
         val modes = buildList {
@@ -53,6 +54,9 @@ object ConnectionSettingsSection {
             }
             add(WirelessHotspotMode.MANUAL to context.getString(R.string.built_in_car_hotspot))
             add(WirelessHotspotMode.EXISTING_WIFI to context.getString(R.string.existing_wifi_title))
+            if (rootHotspotEnabled) {
+                add(WirelessHotspotMode.HOSTAPD to context.getString(R.string.hotspot_mode_hostapd))
+            }
         }
         return SettingsWidgets.createChoiceRow(
             context = context,

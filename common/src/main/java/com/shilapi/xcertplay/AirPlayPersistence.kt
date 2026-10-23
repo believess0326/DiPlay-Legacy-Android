@@ -65,6 +65,10 @@ object AirPlayPersistence {
     private const val KEY_MANUAL_HOTSPOT_BAND = "manual_hotspot_band"
     private const val KEY_MANUAL_HOTSPOT_CHANNEL = "manual_hotspot_channel"
     private const val KEY_MANUAL_HOTSPOT_SECURITY = "manual_hotspot_security"
+    private const val KEY_ROOT_HOTSPOT_ENABLED = "root_hotspot_enabled"
+    private const val KEY_HOSTAPD_SSID = "hostapd_ssid"
+    private const val KEY_HOSTAPD_PASSPHRASE = "hostapd_passphrase"
+    private const val KEY_HOSTAPD_CHANNEL = "hostapd_channel"
     private const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
@@ -389,7 +393,12 @@ object AirPlayPersistence {
         // controller uses a system-generated P2P group, with LocalOnlyHotspot as a fallback,
         // because the API 29 configurable group APIs are unavailable. Converting it to MANUAL made
         // the UI appear to ignore the Wi-Fi option entirely.
+        // The experimental root hostapd mode is only selectable while its
+        // Advanced opt-in is on; a stored HOSTAPD value with the opt-in off
+        // resolves to MANUAL, the same treatment as LOCAL_ONLY_HOTSPOT.
         val supported = if (mode == WirelessHotspotMode.LOCAL_ONLY_HOTSPOT) {
+            WirelessHotspotMode.MANUAL
+        } else if (mode == WirelessHotspotMode.HOSTAPD && !loadRootHotspotEnabled(context)) {
             WirelessHotspotMode.MANUAL
         } else {
             mode
@@ -655,6 +664,47 @@ object AirPlayPersistence {
 
     fun saveDirectUsbfsMode(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DIRECT_USBFS_MODE, enabled).apply()
+    }
+
+    /** Issues #294/#299: experimental root hostapd hotspot opt-in (Advanced). */
+    fun loadRootHotspotEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ROOT_HOTSPOT_ENABLED, false)
+
+    fun saveRootHotspotEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ROOT_HOTSPOT_ENABLED, enabled).apply()
+    }
+
+    fun loadHostapdSsid(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_HOSTAPD_SSID, null)?.takeIf { it.isNotBlank() } ?: "DiPlay"
+
+    fun saveHostapdSsid(context: Context, ssid: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_HOSTAPD_SSID, ssid)
+            .apply()
+    }
+
+    fun loadHostapdPassphrase(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_HOSTAPD_PASSPHRASE, null)
+            .orEmpty()
+
+    fun saveHostapdPassphrase(context: Context, passphrase: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_HOSTAPD_PASSPHRASE, passphrase)
+            .apply()
+    }
+
+    fun loadHostapdChannel(context: Context): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_HOSTAPD_CHANNEL, com.shilapi.xcertplay.network.HostapdConfig.DEFAULT_CHANNEL)
+            .takeIf { it in com.shilapi.xcertplay.network.HostapdConfig.MIN_CHANNEL..com.shilapi.xcertplay.network.HostapdConfig.MAX_CHANNEL }
+            ?: com.shilapi.xcertplay.network.HostapdConfig.DEFAULT_CHANNEL
+
+    fun saveHostapdChannel(context: Context, channel: Int) {
+        require(channel in com.shilapi.xcertplay.network.HostapdConfig.MIN_CHANNEL..com.shilapi.xcertplay.network.HostapdConfig.MAX_CHANNEL)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_HOSTAPD_CHANNEL, channel).apply()
     }
 
     fun saveMediaBufferMillis(context: Context, millis: Int) {

@@ -694,6 +694,7 @@ class DiPlayActivity : ComponentActivity() {
         val connectionHint = when (AirPlayPersistence.loadWirelessHotspotMode(this)) {
             WirelessHotspotMode.EXISTING_WIFI -> getString(R.string.existing_wifi_hint)
             WirelessHotspotMode.MANUAL -> getString(R.string.hotspot_hint_manual)
+            WirelessHotspotMode.HOSTAPD -> getString(R.string.hotspot_hint_hostapd)
             WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> getString(R.string.hotspot_hint_local)
             else -> getString(R.string.hotspot_hint_p2p)
         }
@@ -1618,6 +1619,15 @@ class DiPlayActivity : ComponentActivity() {
                 AirPlayPersistence.saveDirectUsbfsMode(this, it)
                 reconnectIfRunning()
             }
+            // Issues #294/#299: experimental root hostapd hotspot for units
+            // whose framework cannot open an AP at all. The mode itself is
+            // picked in Connection setup once this opt-in is on.
+            toggle(card, getString(R.string.settings_root_hotspot_mode),
+                getString(R.string.settings_root_hotspot_mode_description),
+                AirPlayPersistence.loadRootHotspotEnabled(this)) {
+                AirPlayPersistence.saveRootHotspotEnabled(this, it)
+                markReconnectNeeded()
+            }
         }
         filteredSection(content, SettingsSection.CAR_BUTTON,
             getString(R.string.car_button_in_carplay), R.drawable.ic_dp_car) { card -> carButtonCard = card; carButtonControls(card) }
@@ -2198,13 +2208,32 @@ class DiPlayActivity : ComponentActivity() {
 
     private fun wirelessLinkControls(parent: LinearLayout) {
         val mode = if (pendingCarHotspotSetup) WirelessHotspotMode.MANUAL else AirPlayPersistence.loadWirelessHotspotMode(this)
-        val modes = listOf(WirelessHotspotMode.MANUAL, WirelessHotspotMode.WIFI_P2P, WirelessHotspotMode.EXISTING_WIFI)
-        val titles = listOf(getString(R.string.built_in_car_hotspot), getString(R.string.wifi_direct), getString(R.string.existing_wifi_title))
-        val descriptions = listOf(
-            getString(R.string.hotspot_mode_manual_desc),
-            getString(R.string.hotspot_mode_p2p_desc),
-            getString(R.string.existing_wifi_description)
-        )
+        val modes = buildList {
+            add(WirelessHotspotMode.MANUAL)
+            add(WirelessHotspotMode.WIFI_P2P)
+            add(WirelessHotspotMode.EXISTING_WIFI)
+            if (AirPlayPersistence.loadRootHotspotEnabled(this@DiPlayActivity)) {
+                add(WirelessHotspotMode.HOSTAPD)
+            }
+        }
+        val titles = modes.map { candidate ->
+            when (candidate) {
+                WirelessHotspotMode.MANUAL -> getString(R.string.built_in_car_hotspot)
+                WirelessHotspotMode.WIFI_P2P -> getString(R.string.wifi_direct)
+                WirelessHotspotMode.EXISTING_WIFI -> getString(R.string.existing_wifi_title)
+                WirelessHotspotMode.HOSTAPD -> getString(R.string.hotspot_mode_hostapd)
+                WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> getString(R.string.localonlyhotspot)
+            }
+        }
+        val descriptions = modes.map { candidate ->
+            when (candidate) {
+                WirelessHotspotMode.MANUAL -> getString(R.string.hotspot_mode_manual_desc)
+                WirelessHotspotMode.WIFI_P2P -> getString(R.string.hotspot_mode_p2p_desc)
+                WirelessHotspotMode.EXISTING_WIFI -> getString(R.string.existing_wifi_description)
+                WirelessHotspotMode.HOSTAPD -> getString(R.string.hotspot_mode_hostapd_desc)
+                WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> getString(R.string.hotspot_mode_p2p_desc)
+            }
+        }
         val wide = resources.configuration.screenWidthDp >= 850
         val choices = if (wide) row().apply { gravity = Gravity.TOP } else column()
         parent.addView(choices)
@@ -2221,6 +2250,13 @@ class DiPlayActivity : ComponentActivity() {
                     askHotspotCredentials(existingWifi = true) { ssid, password ->
                         AirPlayPersistence.saveExistingWifiCredentials(this, ssid, password)
                         pendingCarHotspotSetup = false
+                        applyWirelessLink(candidate)
+                    }
+                } else if (candidate == WirelessHotspotMode.HOSTAPD) {
+                    pendingCarHotspotSetup = false
+                    if (AirPlayPersistence.loadHostapdPassphrase(this).isEmpty()) {
+                        askHostapdCredentials { applyWirelessLink(candidate) }
+                    } else {
                         applyWirelessLink(candidate)
                     }
                 } else {
@@ -2256,6 +2292,12 @@ class DiPlayActivity : ComponentActivity() {
                     toast(getString(R.string.saved_for_your_next_connection))
                 }
             }, matchButton(12, 60))
+        } else if (mode == WirelessHotspotMode.HOSTAPD) {
+            parent.addView(label(getString(R.string.hotspot_mode_hostapd_desc), 16, MUTED))
+            parent.addView(button("${getString(R.string.edit_saved_hotspot_prefix)}${AirPlayPersistence.loadHostapdSsid(this)}", false) {
+                askHostapdCredentials { toast(getString(R.string.saved_for_your_next_connection)) }
+            }, matchButton(12, 60))
+            hostapdChannelControl(parent)
         } else {
             parent.addView(label(getString(R.string.turn_the_car_s_wi_fi_switch_on_allow_location_nearby_devic), 16, MUTED))
             wifiDirectChannelControl(parent)
@@ -2296,6 +2338,82 @@ class DiPlayActivity : ComponentActivity() {
         parent.addView(label(getString(R.string.wifi_direct_channel_description), 15, MUTED).apply {
             setPadding(0, dp(6), 0, dp(12))
         })
+    }
+
+    private fun hostapdChannelControl(parent: LinearLayout) {
+        val summary: (Int) -> String = {
+            getString(R.string.contrib_audio_home_choice_summary, getString(R.string.settings_hostapd_channel), it.toString())
+        }
+        val control = button(summary(AirPlayPersistence.loadHostapdChannel(this)), false) {}
+        control.setOnClickListener {
+            val choices = (com.shilapi.xcertplay.network.HostapdConfig.MIN_CHANNEL..com.shilapi.xcertplay.network.HostapdConfig.MAX_CHANNEL).toList()
+            val current = AirPlayPersistence.loadHostapdChannel(this)
+            var selection = current
+            AlertDialog.Builder(this).setTitle(R.string.settings_hostapd_channel)
+                .setSingleChoiceItems(choices.map { it.toString() }.toTypedArray(),
+                    choices.indexOf(current)) { _, which -> selection = choices[which] }
+                .setPositiveButton(R.string.save) { _, _ ->
+                    if (selection != current) {
+                        AirPlayPersistence.saveHostapdChannel(this, selection)
+                        control.text = summary(selection)
+                        toast(getString(R.string.saved_for_your_next_connection))
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+        parent.addView(control, matchButton(12, 60))
+        parent.addView(label(getString(R.string.settings_hostapd_channel_description), 15, MUTED).apply {
+            setPadding(0, dp(6), 0, dp(12))
+        })
+    }
+
+    private fun askHostapdCredentials(done: () -> Unit) {
+        val fields = column().apply { setPadding(dp(24), dp(12), dp(24), dp(12)) }
+        fields.addView(label(getString(R.string.hotspot_mode_hostapd_desc), 16, MUTED))
+        val ssid = EditText(this).apply {
+            hint = getString(R.string.hotspot_name)
+            setText(AirPlayPersistence.loadHostapdSsid(this@DiPlayActivity))
+            setSingleLine()
+        }
+        val password = EditText(this).apply {
+            hint = getString(R.string.hotspot_password)
+            setText(AirPlayPersistence.loadHostapdPassphrase(this@DiPlayActivity))
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        fields.addView(ssid); fields.addView(password)
+        fields.addView(CheckBox(this).apply {
+            text = getString(R.string.show_password)
+            setOnCheckedChangeListener { _, checked ->
+                password.transformationMethod = if (checked) null else android.text.method.PasswordTransformationMethod.getInstance()
+            }
+        })
+        val error = label("", 14, WARNING)
+        fields.addView(error)
+        val dialog = AlertDialog.Builder(this).setTitle(getString(R.string.hotspot_mode_hostapd))
+            .setView(ScrollView(this).apply { addView(fields) })
+            .setPositiveButton(getString(R.string.save_details), null)
+            .setNegativeButton(getString(R.string.cancel), null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val name = ssid.text.toString().trim()
+                val secret = password.text.toString()
+                val problem = com.shilapi.xcertplay.orchestration.ManualHotspotValidation.error(name, secret)
+                    ?.let { getString(it.messageResource()) }
+                    ?: if (secret.isEmpty()) getString(R.string.wpa2_wpa3_password_must_be_8_63_characters) else null
+                if (problem != null) {
+                    error.text = problem
+                } else {
+                    AirPlayPersistence.saveHostapdSsid(this, name)
+                    AirPlayPersistence.saveHostapdPassphrase(this, secret)
+                    dialog.dismiss()
+                    done()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun mediaChannelControl(parent: LinearLayout) {

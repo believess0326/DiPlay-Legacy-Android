@@ -35,6 +35,18 @@ class HotspotModeMigrationTest {
         assertEquals(WirelessHotspotMode.WIFI_P2P, AirPlayPersistence.loadWirelessHotspotMode(context))
     }
 
+    @Test fun hostapdSelectionFallsBackToManualWhileTheOptInIsOff() {
+        prefs.edit().putString("wireless_hotspot_mode", "HOSTAPD").apply()
+        assertEquals(WirelessHotspotMode.MANUAL, AirPlayPersistence.loadWirelessHotspotMode(context))
+        assertEquals("MANUAL", prefs.getString("wireless_hotspot_mode", null))
+    }
+
+    @Test fun hostapdSelectionIsPreservedWhileTheOptInIsOn() {
+        AirPlayPersistence.saveRootHotspotEnabled(context, true)
+        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.HOSTAPD)
+        assertEquals(WirelessHotspotMode.HOSTAPD, AirPlayPersistence.loadWirelessHotspotMode(context))
+    }
+
     @Test @Config(sdk = [24, 25, 26, 27, 28]) fun olderAndroidKeepsWifiDirectSelected() {
         prefs.edit().putString("wireless_hotspot_mode", "WIFI_P2P").apply()
         assertEquals(WirelessHotspotMode.WIFI_P2P, AirPlayPersistence.loadWirelessHotspotMode(context))

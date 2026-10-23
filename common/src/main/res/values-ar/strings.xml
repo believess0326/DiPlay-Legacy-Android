@@ -696,4 +696,13 @@
     <string name="settings_navigation_volume">مستوى صوت التنقل</string>
     <string name="settings_stream_volume_description">يوازن كل صوت داخل DiPlay عندما يكون لدى وحدة التحكم مستوى صوت واحد لكل شيء.</string>
     <string name="settings_direct_usbfs_mode_description">للوحدات التي لا تُظهر قائمة USB في النظام جهاز iPhone أبدًا: يقوم بتعداد الأجهزة مباشرة وفتح عقدة الجهاز، وقد يتطلب صلاحيات الجذر. يُطبق عند الاتصال التالي ويعيد تشغيل CarPlay.</string>
+    <string name="settings_root_hotspot_mode">نقطة اتصال الجذر (hostapd) (تجريبي)</string>
+    <string name="settings_root_hotspot_mode_description">لوحدات السيارة ذات صلاحيات الجذر التي لا تستطيع التطبيقات فتح نقطة اتصالها مطلقًا. يشغّل DiPlay برنامج hostapd الخاص بالنظام بصلاحيات الجذر وينشئ نقطة اتصاله الخاصة؛ اختر وضع نقطة اتصال الجذر في إعدادات الاتصال وحدّد اسمها وكلمة مرورها هناك. يُطبق عند الاتصال التالي.</string>
+    <string name="settings_hostapd_channel">قناة نقطة الاتصال</string>
+    <string name="settings_hostapd_channel_description">2.4 غيغاهرتز فقط (القنوات 1–13). القناة 1 هي الأكثر توافقًا.</string>
+    <string name="hotspot_mode_hostapd">نقطة اتصال الجذر (hostapd)</string>
+    <string name="hotspot_mode_hostapd_desc">للوحدات ذات صلاحيات الجذر فقط: يبدأ DiPlay برنامج hostapd الخاص بالنظام بصلاحيات الجذر وينشئ نقطة الاتصال بنفسه. حدّد الاسم وكلمة المرور أدناه؛ سينضم iPhone إلى نقطة الاتصال هذه.</string>
+    <string name="hotspot_hint_hostapd">نقطة اتصال الجذر: يجب أن تكون هذه الوحدة ذات صلاحيات جذر. ينشئ DiPlay نقطة الاتصال بنفسه؛ أبقِ Wi-Fi وBluetooth في iPhone قيد التشغيل.</string>
+    <string name="hostapd_channel_1_13">القناة (1–13)</string>
+    <string name="hostapd_channel_must_be_1_13">يجب أن تكون القناة بين 1 و13</string>
 </resources>

@@ -696,4 +696,13 @@
     <string name="settings_navigation_volume">Громкость навигации</string>
     <string name="settings_stream_volume_description">Регулирует баланс звуков внутри DiPlay, когда у головного устройства одна общая громкость.</string>
     <string name="settings_direct_usbfs_mode_description">Для устройств, где системный список USB никогда не показывает iPhone: перечисляет устройства напрямую и открывает узел устройства, может потребоваться root. Применяется при следующем подключении и перезапускает CarPlay.</string>
+    <string name="settings_root_hotspot_mode">Root-точка доступа (hostapd) (экспериментально)</string>
+    <string name="settings_root_hotspot_mode_description">Для рутованных магнитол, точку доступа которых приложения открыть не могут. DiPlay запускает системный hostapd от root и создаёт собственную точку доступа; выберите режим Root-точки доступа в настройках подключения и задайте там имя и пароль. Применится при следующем подключении.</string>
+    <string name="settings_hostapd_channel">Канал точки доступа</string>
+    <string name="settings_hostapd_channel_description">Только 2,4 ГГц (каналы 1–13). Канал 1 — самый совместимый.</string>
+    <string name="hotspot_mode_hostapd">Root-точка доступа (hostapd)</string>
+    <string name="hotspot_mode_hostapd_desc">Только для рутованных устройств: DiPlay запускает системный hostapd от root и сам создаёт точку доступа. Укажите ниже имя и пароль; iPhone подключится к этой точке.</string>
+    <string name="hotspot_hint_hostapd">Root-точка доступа: магнитола должна быть рутована. DiPlay создаёт точку доступа сам; держите Wi-Fi и Bluetooth iPhone включёнными.</string>
+    <string name="hostapd_channel_1_13">Канал (1–13)</string>
+    <string name="hostapd_channel_must_be_1_13">Канал должен быть от 1 до 13</string>
 </resources>
