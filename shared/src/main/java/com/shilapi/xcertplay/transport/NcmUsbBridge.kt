@@ -603,7 +603,11 @@ class NcmUsbBridge internal constructor(
             if (carrier == null && state == null) null else "$name carrier=${carrier ?: "?"} state=${state ?: "?"}"
         }
         val data = dataInterface
-        return "data iface=${data?.id ?: "none"} alt=${data?.alternateSetting ?: -1} " +
+        // Go through the compat helper: UsbInterface.getAlternateSetting() is
+        // API 21+, and a direct call throws NoSuchMethodError on API 19 units,
+        // killing the TX thread this diagnostic runs on (issue #137).
+        return "data iface=${data?.id ?: "none"} " +
+            "alt=${data?.let { IphoneCarPlayConfiguration.alternateSetting(it) } ?: -1} " +
             "in=0x${inEndpoint.address.toString(16)}@${inEndpoint.maxPacketSize} " +
             "out=0x${outEndpoint.address.toString(16)}@${outEndpoint.maxPacketSize} " +
             "status=${statusEndpoint?.let { "0x${it.address.toString(16)}" } ?: "none"} " +
