@@ -17,8 +17,10 @@ import java.net.Socket
  * stack is deliberately quiet). They need opposite fixes, and the log had no way to tell them
  * apart. This probe closes that gap in three steps, all report-safe and passive to the phone:
  *
- * 1. Watch /proc/net/arp for an entry on the hotspot interface — proves DHCP completed and
- *    gives the phone's address.
+ * 1. Watch /proc/net/arp for an entry on the hotspot interface — an entry proves the
+ *    phone's IPv4 was resolved locally; NO entry is only a weak signal (issue #293:
+ *    a quiet phone, or one reached over IPv6 link-local, leaves the table empty), so
+ *    the probe reports it neutrally and never concludes DHCP failed from it alone.
  * 2. TCP-connect to the phone on port 5353. The connection being REFUSED still proves L3
  *    reachability in both directions (a RST is an answer); a timeout means filtered/dead.
  * 3. Send a legacy UNICAST mDNS query (`_airplay._tcp.local` PTR) from an EPHEMERAL port to
@@ -52,13 +54,18 @@ object PhoneProbe {
             if (phone == null) Thread.sleep(ARP_POLL_MILLIS)
         }
         if (phone == null) {
+            // Issue #293: an empty ARP table does not by itself prove DHCP failed —
+            // the kernel only lists the phone once it resolves the phone's IPv4 for
+            // outbound traffic or hears its ARP traffic, and a phone waiting quietly
+            // (or reached over an IPv6 link-local address) leaves no entry. Report
+            // the neutral reading instead of asserting a cause the probe cannot see.
             log(
                 "wireless phone probe arp=none in ${ARP_WATCH_MILLIS / 1000}s " +
-                    "→ 手机关联了但没拿到 IP（DHCP 未完成），后续一切静默都源于此",
+                    "→ 30s 内 ARP 表无手机条目（手机未取 IPv4 地址，或地址未被本机解析；需结合地址族与会话日志判断）",
             )
             return
         }
-        log("wireless phone probe arp=found phone=$phone（DHCP 已完成）")
+        log("wireless phone probe arp=found phone=$phone（ARP 有条目，手机 IPv4 可达）")
 
         // 2. L3 reachability. Connection refused = the phone's IP stack answered with a RST —
         //    that is a SUCCESS for this check.
