@@ -654,7 +654,7 @@
     <string name="btn_open_accessibility_setting">開啟系統無障礙設定</string>
     <string name="btn_open_overlay_setting">開啟系統的顯示在其他應用程式上層設定</string>
     <string name="btn_permissions_ready">USB、使用情況與顯示在其他應用程式上層權限已驗證 ✓</string>
-    <string name="car_button_description">CarPlay 會在應用程式列表中顯示此圖示和名稱。點選後可返回車機原有畫面。變更會在下次連線至 CarPlay 時生效。</string>
+    <string name="car_button_description">CarPlay 會在應用程式列表中顯示此圖示和名稱。點選後可返回車機原有畫面。變更會在下次連線至 CarPlay 時生效。自訂圖片會自動縮小至不超過 512×512 像素、256 KB。</string>
     <string name="car_button_icon">圖示</string>
     <string name="car_button_icon_custom">自訂圖示</string>
     <string name="car_button_in_carplay">CarPlay 中的車輛按鈕</string>

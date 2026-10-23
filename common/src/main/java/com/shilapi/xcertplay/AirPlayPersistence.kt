@@ -19,10 +19,14 @@ import com.shilapi.xcertplay.orchestration.MfiTarget
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.network.WifiP2pChannels
 import com.shilapi.xcertplay.transport.LockdownPairRecord
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** SharedPreferences persistence for the accessory identity and paired controllers. */
 object AirPlayPersistence {
@@ -1158,11 +1162,95 @@ object AirPlayPersistence {
         null
     }
 
+    /**
+     * The stored-icon size limits. The icon bytes travel inline in the
+     * session's /info payload, so an oversized custom image breaks session
+     * setup on the phone side (issue #263); the built-in brand presets are
+     * 192x192 and a few KB. Custom uploads are normalized to these limits
+     * when saved — at most [ICON_MAX_EDGE] px on the long edge and at most
+     * [ICON_MAX_BYTES] encoded — so what is stored is already compliant.
+     */
+    const val ICON_MAX_EDGE = 512
+    const val ICON_MAX_BYTES = 256_000
+
+    /** Progressive downscale targets for oversized icons, largest first. */
+    fun iconScaleLadder(): List<Int> = listOf(512, 384, 256, 192)
+
+    /** True when an encoded icon of [byteCount] bytes and [width]x[height] exceeds the limits. */
+    fun iconExceedsLimits(byteCount: Int, width: Int, height: Int): Boolean =
+        byteCount > ICON_MAX_BYTES || width > ICON_MAX_EDGE || height > ICON_MAX_EDGE
+
+    /**
+     * Shrinks an oversized icon into the stored limits; returns the input
+     * unchanged when it already complies or cannot be decoded (the load
+     * path then falls back to the default icon, as before). The decode is
+     * sampled: a full-size decode of a 4096x4096 pick needs ~64MB and
+     * fails on low-memory head units, which must not skip the shrink.
+     */
+    fun normalizeCustomAirPlayIconBytes(encoded: ByteArray): ByteArray {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(encoded, 0, encoded.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return encoded
+        if (!iconExceedsLimits(encoded.size, bounds.outWidth, bounds.outHeight)) return encoded
+        var sampleSize = 1
+        while (bounds.outWidth / (sampleSize * 2) >= 1024 &&
+            bounds.outHeight / (sampleSize * 2) >= 1024
+        ) {
+            sampleSize *= 2
+        }
+        val decoded = BitmapFactory.decodeByteArray(
+            encoded, 0, encoded.size,
+            BitmapFactory.Options().apply { inSampleSize = sampleSize },
+        ) ?: return encoded
+        var result = encoded
+        var current: Bitmap? = null
+        for (target in iconScaleLadder()) {
+            val source = current ?: decoded
+            val longEdge = max(source.width, source.height)
+            val scaled = if (longEdge > target) {
+                val ratio = target.toFloat() / longEdge
+                Bitmap.createScaledBitmap(
+                    source,
+                    (source.width * ratio).roundToInt().coerceAtLeast(1),
+                    (source.height * ratio).roundToInt().coerceAtLeast(1),
+                    true,
+                )
+            } else {
+                source
+            }
+            val output = ByteArrayOutputStream()
+            val encodedOk = scaled.compress(Bitmap.CompressFormat.PNG, 100, output)
+            if (scaled !== source) {
+                if (current != null && source === current) current.recycle()
+                current = scaled
+            }
+            if (!encodedOk) break
+            result = output.toByteArray()
+            if (result.size <= ICON_MAX_BYTES &&
+                max(scaled.width, scaled.height) <= ICON_MAX_EDGE
+            ) {
+                break
+            }
+        }
+        if (current != null && current !== decoded) current.recycle()
+        decoded.recycle()
+        Log.i(
+            "AirPlayPersistence",
+            "Custom AirPlay icon payload ${encoded.size} -> ${result.size} bytes " +
+                "(limits ${ICON_MAX_EDGE}px / $ICON_MAX_BYTES bytes)",
+        )
+        return result
+    }
+
     fun saveCustomAirPlayIcon(context: Context, encodedImage: ByteArray) {
         require(encodedImage.isNotEmpty()) { "AirPlay icon data must not be empty" }
+        // Enforce the stored-icon size limits at save time, so every entry
+        // point (brand presets, the crop flow, a restored baseline) stores
+        // a compliant icon instead of relying on the load path to fix it up.
+        val normalized = normalizeCustomAirPlayIconBytes(encodedImage)
         val file = File(context.filesDir, CUSTOM_ICON_FILE)
         FileOutputStream(file).use { output ->
-            output.write(encodedImage)
+            output.write(normalized)
             output.flush()
             output.fd.sync()
         }
