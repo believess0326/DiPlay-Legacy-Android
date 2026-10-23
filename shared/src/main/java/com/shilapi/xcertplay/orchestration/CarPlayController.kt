@@ -54,6 +54,7 @@ import com.shilapi.xcertplay.network.CarPlayVpnService
 import com.shilapi.xcertplay.network.LocalOnlyHotspotManager
 import com.shilapi.xcertplay.network.LegacyWifiP2pGroupManager
 import com.shilapi.xcertplay.network.ManualHotspotManager
+import com.shilapi.xcertplay.network.HostapdHotspotManager
 import com.shilapi.xcertplay.network.ExistingWifiManager
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
 import com.shilapi.xcertplay.network.MdnsSniffer
@@ -3204,6 +3205,15 @@ class CarPlayController(
                 onDiagnostic = { debugLog("generation=$generation $it") },
                 isCancelled = { isStaleWirelessRun(generation) },
             )
+            WirelessHotspotMode.HOSTAPD -> HostapdHotspotManager(
+                context = appContext,
+                ssid = config.hostapdSsid
+                    ?: throw WirelessStartupException(WirelessStartupFailure.HOTSPOT_CONFIGURATION, "Hostapd hotspot SSID is not configured"),
+                passphrase = config.hostapdPassphrase.orEmpty(),
+                channel = config.hostapdChannel,
+                onDiagnostic = { debugLog("generation=$generation $it") },
+                isCancelled = { isStaleWirelessRun(generation) },
+            )
         }
         synchronized(wirelessResourceLock) {
             if (isStaleWirelessRun(generation)) {
@@ -3214,6 +3224,12 @@ class CarPlayController(
         }
         val timeoutMillis = if (hotspotMode == WirelessHotspotMode.WIFI_P2P) {
             WIFI_P2P_START_TIMEOUT_MILLIS
+        } else if (hotspotMode == WirelessHotspotMode.HOSTAPD) {
+            // The root backend sequences several root shell steps (stale
+            // process cleanup, radio bring-up, hostapd + dnsmasq start, and a
+            // Bluetooth stack reset); give it more room than the framework
+            // backends before the outer retry policy takes over.
+            HOSTAPD_START_TIMEOUT_MILLIS
         } else if (hotspotMode == WirelessHotspotMode.MANUAL) {
             // Issue #284: the observation budget used to be whatever remained of the
             // shared 15 s after the auto-enable step ate its share. On slow head
@@ -3992,6 +4008,7 @@ class CarPlayController(
         private val diagnosticAttempts = AtomicInteger()
         private const val IAP2_IPHONE_UUID = "00000000-deca-fade-deca-deafdecacafe"
         private const val HOTSPOT_START_TIMEOUT_MILLIS = 60_000L
+        private const val HOSTAPD_START_TIMEOUT_MILLIS = 90_000L
         private const val WIFI_P2P_START_TIMEOUT_MILLIS = 20_000L
         private const val LEGACY_WIFI_P2P_START_TIMEOUT_MILLIS = 25_000L
         private const val PAIR_TIMEOUT_MILLIS = 5 * 60_000L

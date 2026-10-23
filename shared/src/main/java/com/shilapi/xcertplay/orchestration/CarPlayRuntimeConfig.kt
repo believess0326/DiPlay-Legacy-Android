@@ -23,6 +23,7 @@ enum class WirelessHotspotMode {
     LOCAL_ONLY_HOTSPOT,
     MANUAL,
     EXISTING_WIFI,
+    HOSTAPD,
 }
 
 enum class ManualHotspotBand {
@@ -68,6 +69,10 @@ class CarPlayRuntimeConfig(
     val wifiP2pPreferredChannel: Int = WifiP2pChannels.AUTO,
     val existingWifiSsid: String = "",
     val existingWifiPassphrase: String = "",
+    /** Experimental root hostapd backend (issues #294/#299); only used in HOSTAPD mode. */
+    val hostapdSsid: String? = null,
+    val hostapdPassphrase: String? = null,
+    val hostapdChannel: Int = 1,
     val userspaceNetworkEnabled: Boolean = true,
     /** Issue #266: direct usbfs discovery/open for ROMs whose UsbManager list stays empty. */
     val directUsbfsMode: Boolean = false,
@@ -110,6 +115,30 @@ class CarPlayRuntimeConfig(
         if (transport == CarPlayTransport.WIRELESS && wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P) {
             require(WifiP2pChannels.isValid(wifiP2pPreferredChannel)) {
                 "Unsupported Wi-Fi Direct channel: $wifiP2pPreferredChannel"
+            }
+        }
+        if (transport == CarPlayTransport.WIRELESS && wirelessHotspotMode == WirelessHotspotMode.HOSTAPD) {
+            // HostapdConfig lives in the network package; keep the runtime
+            // validation self-contained here with the same bounds.
+            val ssid = hostapdSsid
+            require(!ssid.isNullOrBlank()) {
+                "hostapdSsid is required in hostapd hotspot mode"
+            }
+            require('\u0000' !in ssid) {
+                "hostapdSsid must not contain U+0000"
+            }
+            require(ssid.encodeToByteArray().size <= 32) {
+                "hostapdSsid must be at most 32 UTF-8 bytes"
+            }
+            val passphrase = hostapdPassphrase.orEmpty()
+            require('\u0000' !in passphrase) {
+                "hostapdPassphrase must not contain U+0000"
+            }
+            require(passphrase.length in 8..63) {
+                "hostapdPassphrase must be between 8 and 63 characters"
+            }
+            require(hostapdChannel in 1..13) {
+                "hostapdChannel must be in 1..13 (2.4 GHz)"
             }
         }
         if (transport == CarPlayTransport.WIRELESS && wirelessHotspotMode == WirelessHotspotMode.MANUAL) {
