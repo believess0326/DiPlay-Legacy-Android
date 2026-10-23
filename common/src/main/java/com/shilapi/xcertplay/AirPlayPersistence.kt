@@ -141,11 +141,14 @@ object AirPlayPersistence {
             .coerceIn(CarPlayDisplayScale.MIN_PERCENT, CarPlayDisplayScale.MAX_PERCENT)
 
     fun saveDisplayScalePercent(context: Context, percent: Int) {
+        // Committed rather than applied: saving the settings menu reconnects CarPlay at once,
+        // and on the legacy ROMs that tear the process down during that reconnect an
+        // asynchronous apply() was lost, so the driver's resolution was gone on next start.
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(
                 "display_scale_percent",
                 percent.coerceIn(CarPlayDisplayScale.MIN_PERCENT, CarPlayDisplayScale.MAX_PERCENT),
-            ).apply()
+            ).commit()
     }
     /** Applied by the CarPlay host so overlay position/size updates without reconnecting. */
     @Volatile var overlaySettingsListener: (() -> Unit)? = null
