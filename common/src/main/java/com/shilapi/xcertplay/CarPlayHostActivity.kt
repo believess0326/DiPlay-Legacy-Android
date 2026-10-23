@@ -4795,8 +4795,47 @@ class CarPlayHostActivity : ComponentActivity() {
         val view = videoView ?: return
         updateVideoLayout(view.width, view.height)
         view.post {
-            if (!isDestroyed && videoView === view) updateVideoLayout(view.width, view.height)
+            if (isDestroyed || videoView !== view) return@post
+            updateVideoLayout(view.width, view.height)
+            // Issue #290: the recompute left no trace in a report, so a retest
+            // could not prove whether it ran. Log the settled view size and the
+            // fitted content size it produced.
+            val content = contentRect(view.width, view.height)
+            appendLog(
+                "Display: video layout reapplied view=${view.width}x${view.height} " +
+                    "content=${content.width.toInt()}x${content.height.toInt()}",
+            )
+            armSettledVideoReapply(view)
         }
+    }
+
+    /**
+     * Issue #290: some ROMs settle the video view's size over several layout
+     * passes after a camera cycle, so even the posted recompute can run against
+     * a mid-transition size and nothing re-triggers it afterwards. Recompute
+     * once more when the view's size actually changes shortly after, then
+     * disarm; the delayed disarm keeps a later unrelated resize from being
+     * mistaken for this cycle's settle.
+     */
+    private fun armSettledVideoReapply(view: View) {
+        val listener = object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                changedView: View, left: Int, top: Int, right: Int, bottom: Int,
+                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int,
+            ) {
+                if ((right - left) == (oldRight - oldLeft) && (bottom - top) == (oldBottom - oldTop)) return
+                changedView.removeOnLayoutChangeListener(this)
+                if (isDestroyed || videoView !== changedView) return
+                updateVideoLayout(changedView.width, changedView.height)
+                val content = contentRect(changedView.width, changedView.height)
+                appendLog(
+                    "Display: video layout reapplied after settle view=${changedView.width}x${changedView.height} " +
+                        "content=${content.width.toInt()}x${content.height.toInt()}",
+                )
+            }
+        }
+        view.addOnLayoutChangeListener(listener)
+        view.postDelayed({ runCatching { view.removeOnLayoutChangeListener(listener) } }, 3_000L)
     }
 
     private fun revealDockTemporarily(view: View) {
