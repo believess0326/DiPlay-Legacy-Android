@@ -92,10 +92,7 @@ class HostapdHotspotManager(
         if (!wifiWasOn) {
             onDiagnostic("hostapd: framework Wi-Fi is off; enabling the radio as root")
             RootShell.run("svc wifi enable", 10_000)
-            awaitInterface(deadlineMillis(deadline, 15_000)) {
-                RootShell.run("ls /sys/class/net/${HostapdConfig.INTERFACE_NAME} 2>/dev/null | wc -l", 3_000)
-                    .output.contains("1")
-            }
+            awaitInterface(deadlineMillis(deadline, 15_000)) { interfaceExists() }
             if (closed || isCancelled()) throw InterruptedIOException("Hostapd hotspot startup cancelled")
             if (!interfaceExists()) {
                 val netdevs = RootShell.run("ls /sys/class/net 2>/dev/null", 3_000)
@@ -133,27 +130,28 @@ class HostapdHotspotManager(
         // (the proven on-device recipe does the same).
         RootShell.run("ifconfig ${HostapdConfig.INTERFACE_NAME} down 2>/dev/null", 5_000)
         val launched = RootShell.run(
-            "$hostapdPath -B ${HostapdConfig.CONF_PATH} >${HostapdConfig.HOSTAPD_LOG_PATH} 2>&1 & sleep 1; " +
-                "ps | grep hostapd | grep -v grep | wc -l",
+            "$hostapdPath -B ${HostapdConfig.CONF_PATH} >${HostapdConfig.HOSTAPD_LOG_PATH} 2>&1 & sleep 1",
             15_000,
         )
-        if (!launched.success || launched.output.trim().lines().lastOrNull()?.trim() != "1") {
-            val log = RootShell.run("cat ${HostapdConfig.HOSTAPD_LOG_PATH} 2>/dev/null | tail -5", 5_000)
+        if (!launched.success || hostapdProcessCount() < 1) {
+            // `tail` does not exist on minimal ROMs (issue #308): read the
+            // whole log (it is truncated fresh at every launch) and keep its
+            // end, where hostapd puts the failure.
+            val log = RootShell.run("cat ${HostapdConfig.HOSTAPD_LOG_PATH} 2>/dev/null", 5_000)
             throw IOException(
-                "hostapd: hostapd did not stay up; hapd.log=${log.output.trim().replace('\n', ' ').take(300)}",
+                "hostapd: hostapd did not stay up; hapd.log=${log.output.trim().replace('\n', ' ').takeLast(300)}",
             )
         }
         onDiagnostic("hostapd: hostapd is up on ${HostapdConfig.INTERFACE_NAME}")
 
         var addressed = false
         repeat(3) {
-            val result = RootShell.run(
+            RootShell.run(
                 "ifconfig ${HostapdConfig.INTERFACE_NAME} ${HostapdConfig.HOST_ADDRESS} " +
-                    "netmask ${HostapdConfig.NETMASK} up; " +
-                    "ifconfig ${HostapdConfig.INTERFACE_NAME} | grep 'inet addr:${HostapdConfig.HOST_ADDRESS}' | wc -l",
+                    "netmask ${HostapdConfig.NETMASK} up",
                 10_000,
             )
-            if (result.output.trim().lines().lastOrNull()?.trim() == "1") {
+            if (interfaceHasHostAddress()) {
                 addressed = true
                 return@repeat
             }
@@ -195,13 +193,7 @@ class HostapdHotspotManager(
         if (!started || closed) {
             throw WirelessStartupException(WirelessStartupFailure.HOTSPOT_NOT_READY, "Hotspot network is not ready")
         }
-        val probe = RootShell.run(
-            "ps | grep hostapd | grep -v grep | wc -l; " +
-                "ifconfig ${HostapdConfig.INTERFACE_NAME} 2>/dev/null | grep 'inet addr:${HostapdConfig.HOST_ADDRESS}' | wc -l",
-            5_000,
-        )
-        val counts = probe.output.trim().lines().map { it.trim() }
-        if (counts.getOrNull(0) != "1" || counts.getOrNull(1) != "1") {
+        if (hostapdProcessCount() < 1 || !interfaceHasHostAddress()) {
             throw WirelessStartupException(
                 WirelessStartupFailure.HOTSPOT_NOT_READY,
                 "hostapd or the ${HostapdConfig.INTERFACE_NAME} address went away before publication",
@@ -243,8 +235,26 @@ class HostapdHotspotManager(
         minOf(capMillis, ((deadline - System.nanoTime()) / 1_000_000).coerceAtLeast(1))
 
     private fun interfaceExists(): Boolean =
-        RootShell.run("ls /sys/class/net/${HostapdConfig.INTERFACE_NAME} 2>/dev/null | wc -l", 3_000)
-            .output.contains("1")
+        RootShell.run("ls -d /sys/class/net/${HostapdConfig.INTERFACE_NAME} 2>/dev/null", 3_000)
+            .output.contains(HostapdConfig.INTERFACE_NAME)
+
+    /**
+     * Live hostapd processes. Counted here instead of with `wc -l` in the
+     * shell: minimal ROMs ship neither `wc` nor `tail`, and the pipeline
+     * version silently reported "not up" for a running hostapd (issue #308).
+     */
+    private fun hostapdProcessCount(): Int {
+        val result = RootShell.run("ps | grep hostapd | grep -v grep", 5_000)
+        return result.output.lineSequence().count { it.isNotBlank() }
+    }
+
+    /** True when the AP address is on the interface; parsed here, not with a shell pipeline. */
+    private fun interfaceHasHostAddress(): Boolean {
+        val result = RootShell.run(
+            "ifconfig ${HostapdConfig.INTERFACE_NAME} 2>/dev/null", 5_000,
+        )
+        return result.output.contains("inet addr:${HostapdConfig.HOST_ADDRESS}")
+    }
 
     private fun awaitInterface(timeoutMillis: Long, probe: () -> Boolean) {
         val end = System.nanoTime() + timeoutMillis * 1_000_000L
