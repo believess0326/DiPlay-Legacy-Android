@@ -114,4 +114,29 @@ class VideoDecodeQueueTest {
         assertEquals(3, attempts)
         assertEquals(-1, VideoInputPump.acquire(running = { false }, drain = { fail() }, dequeue = { fail(); 0 }))
     }
+
+    @Test fun degeneratePipelineDetectionCoversHighFpsAndLowFpsStreams() {
+        var now = 1_000_000_000L
+        val stats = VideoStats(nanoTime = { now })
+
+        assertFalse(stats.shouldRecoverDegeneratePipeline())
+
+        // 2 seconds elapsed with 30 frames but 0 rendered -> recovers
+        now += 2_000_000_000L
+        repeat(30) { stats.onReceived(100) }
+        assertTrue(stats.shouldRecoverDegeneratePipeline())
+
+        // If rendered was incremented, no recovery
+        stats.onRendered()
+        assertFalse(stats.shouldRecoverDegeneratePipeline())
+
+        // Low-fps stream (e.g. 5 frames across 3 seconds after reverse camera)
+        var lowNow = 1_000_000_000L
+        val lowStats = VideoStats(nanoTime = { lowNow })
+        lowNow += 3_000_000_000L
+        repeat(4) { lowStats.onReceived(100) }
+        assertFalse(lowStats.shouldRecoverDegeneratePipeline())
+        lowStats.onReceived(100)
+        assertTrue(lowStats.shouldRecoverDegeneratePipeline())
+    }
 }

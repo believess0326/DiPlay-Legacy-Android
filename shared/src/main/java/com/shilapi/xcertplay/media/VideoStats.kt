@@ -57,8 +57,11 @@ internal class VideoStats(
     @Synchronized fun shouldRecoverDegeneratePipeline(): Boolean {
         val now = nanoTime()
         val elapsedNs = now - windowStartNs
-        // If within the last 2+ seconds we received at least 30 frames but rendered 0, the pipeline is stalled
-        return elapsedNs >= 2_000_000_000L && received >= 30 && rendered == 0
+        // If within the last 2+ seconds we received at least 30 frames but rendered 0, or within 3+ seconds
+        // we received at least 5 frames but rendered 0 (static/low-fps stream after reverse camera),
+        // the pipeline is stalled.
+        return (elapsedNs >= 2_000_000_000L && received >= 30 && rendered == 0) ||
+            (elapsedNs >= 3_000_000_000L && received >= 5 && rendered == 0)
     }
 
     private fun decodeSummary(): String {

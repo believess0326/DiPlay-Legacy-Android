@@ -1013,6 +1013,7 @@ private class VideoDecoder(
                         // Once per new surface, so it skips the rate limit an earlier request may still hold.
                         is VideoJob.RefreshPicture -> {
                             lastKeyFrameRequestNs = System.nanoTime()
+                            referenceChain.reset()
                             requestKeyFrame()
                         }
                         is VideoJob.Resync -> recover("video queue overflow")
@@ -1265,13 +1266,18 @@ private class VideoDecoder(
             try {
                 codec.setOutputSurface(surface)
                 Log.i(TAG, "video decoder output surface updated")
+                referenceChain.reset()
+                requestKeyFrameIfDue(force = true)
                 return
             } catch (error: Exception) {
                 Log.w(TAG, "video decoder output surface update failed; reconfiguring", error)
             }
         }
         releaseDecoder()
-        lastConfig?.let(::configureDecoder)
+        lastConfig?.let {
+            configureDecoder(it)
+            requestKeyFrameIfDue(force = true)
+        }
     }
 
     private fun feed(nalus: ByteArray, presentNs: Long = 0L) {

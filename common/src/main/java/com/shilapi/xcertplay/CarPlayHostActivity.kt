@@ -2,8 +2,10 @@ package com.shilapi.xcertplay
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.content.res.ColorStateList
@@ -310,6 +312,47 @@ class CarPlayHostActivity : ComponentActivity() {
                 appendLog("Custom AirPlay icon updated")
             }
         }
+
+    // Issues #300/#302/#307: listen for reverse camera exit broadcasts sent by head unit ROMs
+    // (Yecon, Mstar, TS, SYU, etc.) to immediately refresh video and reapply layout.
+    private val reverseCameraReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            when (action) {
+                "com.yecon.action.BACKCAR_STOP",
+                "android.intent.action.BACK_CAR_STOP",
+                "com.mstar.backcar.stop",
+                "android.intent.action.BACKCAR_OFF" -> {
+                    handleReverseCameraExit(action)
+                }
+                "com.syu.canbus.action.BACKCAR",
+                "com.android.internal.car.ACTION_CAMERA_STATUS",
+                "com.ts.car.backcar" -> {
+                    val state = intent.getIntExtra("state", -1).takeIf { it != -1 }
+                        ?: intent.getIntExtra("status", -1).takeIf { it != -1 }
+                        ?: intent.getIntExtra("camerastatus", -1)
+                    if (state == 0) {
+                        handleReverseCameraExit("$action(state=$state)")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleReverseCameraExit(source: String) {
+        appendLog("Display: reverse camera stopped by broadcast source=$source")
+        if (activeAirPlaySession == null || isDestroyed || isFinishing) return
+        mainHandler.post {
+            sink?.refreshPicture(SCREEN_TYPE_MAIN)
+            reapplyVideoLayout()
+            fallbackVideoView?.invalidate()
+        }
+        mainHandler.postDelayed({
+            if (activeAirPlaySession != null && !isDestroyed && !isFinishing) {
+                sink?.refreshPicture(SCREEN_TYPE_MAIN)
+            }
+        }, 300)
+    }
 
     // The full-window viewport stays independent of the letterboxed SurfaceView dimensions.
     private var videoView: View? = null
@@ -678,6 +721,16 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         initializeSessionLog()
         installCrashDiagnostics()
+        val reverseFilter = IntentFilter().apply {
+            addAction("com.yecon.action.BACKCAR_STOP")
+            addAction("android.intent.action.BACK_CAR_STOP")
+            addAction("com.mstar.backcar.stop")
+            addAction("android.intent.action.BACKCAR_OFF")
+            addAction("com.syu.canbus.action.BACKCAR")
+            addAction("com.android.internal.car.ACTION_CAMERA_STATUS")
+            addAction("com.ts.car.backcar")
+        }
+        runCatching { registerReceiver(reverseCameraReceiver, reverseFilter) }
         lastConfiguration = Configuration(resources.configuration)
         darkMode = savedInstanceState?.getBoolean("carplay_night_active")
             ?: nightModeOrNull(resources.configuration.uiMode) ?: false
@@ -1426,6 +1479,11 @@ class CarPlayHostActivity : ComponentActivity() {
             if (activeAirPlaySession != null) {
                 sink?.refreshPicture(SCREEN_TYPE_MAIN)
                 reapplyVideoLayout()
+                mainHandler.postDelayed({
+                    if (activeAirPlaySession != null && !isDestroyed && !isFinishing) {
+                        sink?.refreshPicture(SCREEN_TYPE_MAIN)
+                    }
+                }, 300)
             }
         } else {
             mainHandler.removeCallbacks(hideDockRunnable)
@@ -1543,6 +1601,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(reverseCameraReceiver) }
         resetSidePanel()
         nightModeController.pause()
         pictureBinding?.close()
