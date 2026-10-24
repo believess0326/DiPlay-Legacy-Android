@@ -1,3 +1,11 @@
+# DiPlay 0.2.92 — 2026-10-24
+
+- Concurrent Bonjour & Bluetooth bootstrap (#293): start Bonjour advertisement concurrently with Bluetooth handshake instead of serializing, drastically cutting wireless connection times.
+- CarPlayStartSession retry on silent iPhone (#293): re-send initial session request while the phone stays silent, preventing handshake timeouts.
+- Hostapd liveness check without shell pipelines (#308): eliminate wc/tail shell pipelines in hostapd watchdog, accommodating minimal busybox/toybox environments.
+
+See [v0.2.92 release notes](docs/RELEASE-NOTES-0.2.92.md) for details.
+
 # DiPlay 0.2.91 — 2026-10-24
 
 - Root hostapd staged config deployment (#301 / #306): deploy hostapd configuration via staged file copy instead of root shell heredocs, resolving empty config files on customized/busybox shells (Honda Civic).
