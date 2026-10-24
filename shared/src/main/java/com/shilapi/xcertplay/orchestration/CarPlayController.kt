@@ -1609,11 +1609,25 @@ class CarPlayController(
                 if (isStaleWirelessRun(generation)) return
                 bonjour = bonjourClient
                 startedHotspot?.validateReady()
-                bonjourClient.start()
             }
             startedBonjour = bonjourClient
             diagnostics.start()
-            wirelessChain(7, "Bonjour/mDNS advertisement started")
+            // Issue #293: the NSD registration confirmation inside start()
+            // can block for seconds (a consistent ~3 s on a field unit), and
+            // the Bluetooth bootstrap does not depend on it — the phone only
+            // needs the advertisement once it joins the hotspot Wi-Fi, which
+            // the bootstrap itself triggers and which takes seconds on the
+            // phone side. Start it concurrently so the wait overlaps the
+            // bootstrap instead of preceding it. A start failure surfaces in
+            // the log; the first-TCP wait still bounds the run.
+            Thread({
+                try {
+                    bonjourClient.start()
+                    wirelessChain(7, "Bonjour/mDNS advertisement started")
+                } catch (error: Throwable) {
+                    debugLog("wireless bonjour start failed: ${error.message}")
+                }
+            }, "wireless-bonjour-start").apply { isDaemon = true }.start()
             debugLog("wireless Bonjour services started mode=interface iface=${hotspotInfo.interfaceName ?: "unknown"}")
             // 被动观察手机侧 mDNS 流量：回答"手机的查询/广播到底有没有到达我们"。
             // 与 Bonjour 客户端并行，只收不发；失败只记一行日志，不影响建连。
