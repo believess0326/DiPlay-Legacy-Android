@@ -1,3 +1,12 @@
+# DiPlay 0.2.95 — 2026-10-25
+
+- Video decoder smooth backlog recovery (#310 / #314): decouple transient frame queue backlog from decoder failure; drop stale buffered frames and request IDR keyframes instead of destroying MediaCodec, eliminating 0.2fps freezing on navigation apps (AutoNavi/Amap).
+- Reverse-camera return blanking & low-framerate stall self-healing: fix blank screen regression when switching back from reverse gear; auto-heal frozen video pipelines on low/empty frame rates.
+- Allwinner T3 USB system prompt elimination & kernel spinlock fix (#311): remove static USB_DEVICE_ATTACHED intent-filter to eliminate intrusive system popup dialogs; add 150ms settling delay on API <= 19 to prevent usbfs spinlock lockups and watchdog reboots.
+- Concurrent media and navigation audio focus preservation (#310): track navigation streams during media playback; never abandon audio focus lease while guidance is active, preventing car hardware amplifier mutes.
+
+See [v0.2.95 release notes](docs/RELEASE-NOTES-0.2.95.md) for details.
+
 # DiPlay 0.2.94 — 2026-10-24
 
 - Redesigned three-finger quick settings panel: adopt a modern two-column card layout (category navigation + setting cards) tailored for car displays, and fix instant brand logo updates in-session.
