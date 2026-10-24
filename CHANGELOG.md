@@ -1,3 +1,10 @@
+# DiPlay 0.2.93 — 2026-10-24
+
+- Continuous wireless invitation re-transmissions (#293): keep re-inviting the iPhone after transport notification until TCP connects, eliminating handshake stalls during Wi-Fi transitions.
+- Hostapd ifconfig dual-format compatibility & error surfacing (#308): parse both "inet addr:" and "inet " formats in ifconfig output, and surface IP assignment failures explicitly instead of silent timeouts.
+
+See [v0.2.93 release notes](docs/RELEASE-NOTES-0.2.93.md) for details.
+
 # DiPlay 0.2.92 — 2026-10-24
 
 - Concurrent Bonjour & Bluetooth bootstrap (#293): start Bonjour advertisement concurrently with Bluetooth handshake instead of serializing, drastically cutting wireless connection times.
