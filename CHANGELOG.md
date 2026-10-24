@@ -1,3 +1,11 @@
+# DiPlay 0.2.94 — 2026-10-24
+
+- Redesigned three-finger quick settings panel: adopt a modern two-column card layout (category navigation + setting cards) tailored for car displays, and fix instant brand logo updates in-session.
+- Video decoder backpressure & surface retention: smart queue backoff to prevent CPU thrashing on legacy chips (T3, MTK); retain video surface across window focus changes to eliminate blanking during volume adjustments.
+- Wired replug watchdog & USB Bluetooth stale stream cleanup: clean USB endpoints upon bulk-out watchdog timeout; prevent stale RFCOMM stream reuse during Bluetooth pairing.
+
+See [v0.2.94 release notes](docs/RELEASE-NOTES-0.2.94.md) for details.
+
 # DiPlay 0.2.93 — 2026-10-24
 
 - Continuous wireless invitation re-transmissions (#293): keep re-inviting the iPhone after transport notification until TCP connects, eliminating handshake stalls during Wi-Fi transitions.
