@@ -70,6 +70,8 @@ class Iap2WirelessControlClient(
         var forwardedFrames = 0
         var wifiConfigurationsSent = 0
         var carPlayStartSessionsSent = 0
+        var startSessionResendsSent = 0
+        var lastStartSessionSentAtMillis = 0L
         var preTransportWiFiConfigurationsSent = 0
         var postTransportWiFiConfigurationsSent = 0
         var transportNotificationSeen = false
@@ -136,6 +138,28 @@ class Iap2WirelessControlClient(
                             wirelessCarPlayAvailableSeen,
                         )
                     }
+                    // Issue #293: the phone is silent and has not connected
+                    // yet — re-invite it (see the resend constants). The
+                    // watchdog keeps measuring from the FIRST send, so
+                    // resends deliberately skip the onStartSessionSent hook.
+                    if (carPlayStartSessionsSent > 0 && !transportNotificationSeen &&
+                        startSessionResendsSent < MAX_START_SESSION_RESENDS
+                    ) {
+                        val nowMillis = System.currentTimeMillis()
+                        if (nowMillis - lastStartSessionSentAtMillis >=
+                            START_SESSION_RESEND_INTERVAL_MILLIS
+                        ) {
+                            beforeStartSession()
+                            sendStartSession(endpoint, ::sendControl) { }
+                            carPlayStartSessionsSent++
+                            startSessionResendsSent++
+                            lastStartSessionSentAtMillis = nowMillis
+                            onProgress(
+                                "iap2 tx=0x4301 carplay-start-session " +
+                                    "(resend $startSessionResendsSent)",
+                            )
+                        }
+                    }
                     continue
                 }
 
@@ -184,6 +208,7 @@ class Iap2WirelessControlClient(
                         sendStartSession(endpoint, ::sendControl, onStartSessionSent)
                         stage = later(stage, Iap2WirelessControlStage.CARPLAY_START_SENT)
                         carPlayStartSessionsSent++
+                        lastStartSessionSentAtMillis = System.currentTimeMillis()
                         onProgress("iap2 tx=0x4301 carplay-start-session")
                     }
 
@@ -258,6 +283,16 @@ class Iap2WirelessControlClient(
         private const val MAX_TIMEOUT_MILLIS = 24 * 60 * 60 * 1_000L
         private const val MAX_PRE_TRANSPORT_WIFI_CONFIGURATION_SENDS = 5
         private const val MAX_POST_TRANSPORT_WIFI_CONFIGURATION_SENDS = 2
+        /**
+         * Issue #293: the first CarPlayStartSession can reach the phone before
+         * it has finished joining the hotspot Wi-Fi and discovering the
+         * receiver; the phone then never acts on it and the bootstrap idles
+         * until the first-TCP deadline tears the whole stack down. Re-send
+         * while the phone stays silent, so a fresh invite lands within a few
+         * seconds of the phone becoming ready.
+         */
+        private const val START_SESSION_RESEND_INTERVAL_MILLIS = 4_000L
+        private const val MAX_START_SESSION_RESENDS = 6
 
         /** Malformed optional availability metadata must not change existing control behavior. */
         internal fun carPlayAvailabilityDiagnostic(frame: Iap2Frame): String = try {
