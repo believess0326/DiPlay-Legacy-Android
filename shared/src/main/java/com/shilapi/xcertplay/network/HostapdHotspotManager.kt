@@ -145,12 +145,14 @@ class HostapdHotspotManager(
         onDiagnostic("hostapd: hostapd is up on ${HostapdConfig.INTERFACE_NAME}")
 
         var addressed = false
+        var lastSetOutput = ""
         repeat(3) {
-            RootShell.run(
+            val setResult = RootShell.run(
                 "ifconfig ${HostapdConfig.INTERFACE_NAME} ${HostapdConfig.HOST_ADDRESS} " +
                     "netmask ${HostapdConfig.NETMASK} up",
                 10_000,
             )
+            lastSetOutput = setResult.output.trim().replace('\n', ' ').take(200)
             if (interfaceHasHostAddress()) {
                 addressed = true
                 return@repeat
@@ -159,7 +161,16 @@ class HostapdHotspotManager(
             checkActive()
         }
         if (!addressed) {
-            throw IOException("hostapd: ${HostapdConfig.HOST_ADDRESS} is not assignable on ${HostapdConfig.INTERFACE_NAME}")
+            // Keep the set command's own words in the error (issue #308):
+            // without them the failure is indistinguishable from a probe
+            // misread on the next firmware whose `ifconfig` dialect differs.
+            val probe = RootShell.run(
+                "ifconfig ${HostapdConfig.INTERFACE_NAME} 2>/dev/null", 5_000,
+            ).output.trim().replace('\n', ' ').take(200)
+            throw IOException(
+                "hostapd: ${HostapdConfig.HOST_ADDRESS} is not assignable on " +
+                    "${HostapdConfig.INTERFACE_NAME}; ifconfig set said: $lastSetOutput; probe: $probe",
+            )
         }
 
         RootShell.run(HostapdConfig.dnsmasqCommand(dnsmasqPath), 10_000)
@@ -250,10 +261,16 @@ class HostapdHotspotManager(
 
     /** True when the AP address is on the interface; parsed here, not with a shell pipeline. */
     private fun interfaceHasHostAddress(): Boolean {
-        val result = RootShell.run(
+        val ifconfig = RootShell.run(
             "ifconfig ${HostapdConfig.INTERFACE_NAME} 2>/dev/null", 5_000,
         )
-        return result.output.contains("inet addr:${HostapdConfig.HOST_ADDRESS}")
+        if (HostapdConfig.outputShowsHostAddress(ifconfig.output)) return true
+        // Some firmware lacks a usable `ifconfig` listing; `ip addr` prints
+        // the same inet line in the modern dialect the matcher accepts.
+        val ipAddr = RootShell.run(
+            "ip addr show ${HostapdConfig.INTERFACE_NAME} 2>/dev/null", 5_000,
+        )
+        return HostapdConfig.outputShowsHostAddress(ipAddr.output)
     }
 
     private fun awaitInterface(timeoutMillis: Long, probe: () -> Boolean) {

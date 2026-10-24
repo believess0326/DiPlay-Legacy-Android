@@ -86,6 +86,18 @@ object HostapdConfig {
             }
         }.toMap()
 
+    /**
+     * True when `ifconfig` or `ip addr` output shows [HOST_ADDRESS] on an
+     * inet line. Both output dialects occur in the field: classic busybox
+     * prints `inet addr:192.168.42.1`, toybox/Android prints
+     * `inet 192.168.42.1` — matching only one form misreads a healthy
+     * interface as address-less (issue #308).
+     */
+    fun outputShowsHostAddress(output: String): Boolean =
+        output.lineSequence().any { line ->
+            line.contains("inet") && line.contains(HOST_ADDRESS)
+        }
+
     /** dnsmasq invocation: DHCP only (DNS port disabled), gateway/DNS = the AP address. */
     fun dnsmasqCommand(dnsmasqPath: String = "/system/bin/dnsmasq"): String =
         "$dnsmasqPath --pid-file=$DNSMASQ_PID_PATH --no-resolv --no-hosts --no-poll " +

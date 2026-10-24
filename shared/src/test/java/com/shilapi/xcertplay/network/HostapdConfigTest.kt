@@ -32,6 +32,26 @@ class HostapdConfigTest {
         assertNotNull(HostapdConfig.error("DiPlay", "12345678", 36))
     }
 
+    @Test fun hostAddressProbeAcceptsBothIfconfigDialects() {
+        val busybox = "wlan0     Link encap:Ethernet  HWaddr 00:11:22:33:44:55\n" +
+            "          inet addr:192.168.42.1  Bcast:192.168.42.255  Mask:255.255.255.0"
+        val toybox = "wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n" +
+            "        inet 192.168.42.1  netmask 255.255.255.0  broadcast 192.168.42.255"
+        val ipAddr = "3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n" +
+            "    inet 192.168.42.1/24 brd 192.168.42.255 scope global wlan0"
+        assertTrue(HostapdConfig.outputShowsHostAddress(busybox))
+        assertTrue(HostapdConfig.outputShowsHostAddress(toybox))
+        assertTrue(HostapdConfig.outputShowsHostAddress(ipAddr))
+    }
+
+    @Test fun hostAddressProbeRejectsOtherAddressesAndEmptyOutput() {
+        val other = "        inet 192.168.43.1  netmask 255.255.255.0"
+        val unaddressed = "wlan0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500"
+        assertFalse(HostapdConfig.outputShowsHostAddress(other))
+        assertFalse(HostapdConfig.outputShowsHostAddress(unaddressed))
+        assertFalse(HostapdConfig.outputShowsHostAddress(""))
+    }
+
     @Test fun dnsmasqServesDhcpOnTheApAddressOnly() {
         val command = HostapdConfig.dnsmasqCommand()
         assertTrue(command.startsWith("/system/bin/dnsmasq"))
