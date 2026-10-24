@@ -44,19 +44,18 @@ object UsbBtPairingUiRouter {
      * timeout, or when no Activity is available).
      */
     fun route(bdAddr: String, sixDigitNumber: Int, confirm: (Boolean) -> Unit) {
+        // Auto-confirm immediately to HCI controller so the iPhone does not time out
+        // or fail with "Cannot Use CarPlay" while waiting for the driver to tap the car screen.
+        confirm(true)
+
         val activity = activityRef?.get()
         if (activity == null || activity.isFinishing) {
-            Log.w(TAG, "no foreground activity; auto-confirming pairing for $bdAddr (Just Works fallback)")
-            confirm(true)
+            Log.w(TAG, "no foreground activity to show pairing code for $bdAddr")
             return
         }
         activity.runOnUiThread {
-            if (activity.isFinishing) {
-                Log.w(TAG, "activity finishing; auto-confirming pairing for $bdAddr")
-                confirm(true)
-                return@runOnUiThread
-            }
-            UsbBtPairingDialog.show(activity, bdAddr, sixDigitNumber, confirm)
+            if (activity.isFinishing) return@runOnUiThread
+            UsbBtPairingDialog.show(activity, bdAddr, sixDigitNumber, null)
         }
     }
     /**
@@ -99,13 +98,13 @@ object UsbBtPairingDialog {
         activity: Activity,
         bdAddr: String,
         sixDigitNumber: Int,
-        confirm: (Boolean) -> Unit,
+        confirm: ((Boolean) -> Unit)? = null,
     ) {
         var decided = false
         fun decide(ok: Boolean) {
             if (!decided) {
                 decided = true
-                runCatching { confirm(ok) }
+                runCatching { confirm?.invoke(ok) }
                     .onFailure { Log.w(TAG, "pairing confirm callback failed", it) }
             }
         }
@@ -151,7 +150,7 @@ object UsbBtPairingDialog {
                 timer.cancel()
                 decide(true)
             }
-            .setNegativeButton(android.R.string.cancel) { _, _ ->
+            .setNegativeButton(R.string.cancel) { _, _ ->
                 timer.cancel()
                 decide(false)
             }

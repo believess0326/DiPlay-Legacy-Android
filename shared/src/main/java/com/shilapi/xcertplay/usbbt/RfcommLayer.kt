@@ -72,6 +72,7 @@ class RfcommLayer(
 
     /** Callback invoked when an inbound DLC is opened by peer. */
     var onDlcOpened: ((Dlc) -> Unit)? = null
+    var onDlcClosed: ((Int) -> Unit)? = null
 
     @Volatile private var sessionOpen = false
     @Volatile private var closed = false
@@ -424,6 +425,7 @@ class RfcommLayer(
                     activeDlcs.remove(serverChannel)
                     dataHandlers.remove(dlci)
                     dlcFlows.remove(dlci)
+                    onDlcClosed?.invoke(serverChannel)
                 }
             }
             RFCOMM_SABM -> {

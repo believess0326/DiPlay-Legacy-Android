@@ -2692,6 +2692,18 @@ class CarPlayController(
         wiredNcm?.markAborted()
         mux?.markAborted()
         vpnService?.markWiredAborted()
+
+        val watchdog = Runnable {
+            if (wiredTeardownPending.compareAndSet(true, false)) {
+                debugLog("wired teardown barrier timed out after 2500ms; forcing reset")
+                if (!closed) {
+                    phase = Phase.IPHONE
+                    checkIphoneAvailability()
+                }
+            }
+        }
+        mainHandler.postDelayed(watchdog, 2500L)
+
         // The single control executor is running the long-lived iAP2 loop.
         // Enqueuing teardown there waits behind the loop it must stop.
         Thread({
@@ -2699,6 +2711,7 @@ class CarPlayController(
             try {
                 // Barrier: the old runStack must exit before a new USB open.
                 executor.execute {
+                    mainHandler.removeCallbacks(watchdog)
                     mainHandler.post {
                         wiredTeardownPending.set(false)
                         if (!closed) {
@@ -2708,6 +2721,7 @@ class CarPlayController(
                     }
                 }
             } catch (_: java.util.concurrent.RejectedExecutionException) {
+                mainHandler.removeCallbacks(watchdog)
                 wiredTeardownPending.set(false)
             }
         }, "wired-detach-teardown").apply { isDaemon = true }.start()

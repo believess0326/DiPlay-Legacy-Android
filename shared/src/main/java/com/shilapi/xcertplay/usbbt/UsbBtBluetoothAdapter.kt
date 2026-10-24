@@ -409,6 +409,7 @@ class UsbBtBluetoothAdapter(
             // Check if peer already opened an inbound iAP2 stream on this ACL handle
             liveCachedStream(handle, deviceAddress)?.let { existing ->
                 UsbBtLog.log(appContext, TAG, "openRfcommStream: reusing existing inbound stream for $deviceAddress")
+                activeStreams.remove(handle, existing)
                 return existing
             }
 
@@ -418,6 +419,7 @@ class UsbBtBluetoothAdapter(
                 while (System.currentTimeMillis() < waitDeadline && isEnabled()) {
                     liveCachedStream(handle, deviceAddress)?.let { existing ->
                         UsbBtLog.log(appContext, TAG, "openRfcommStream: peer opened inbound iAP2 stream for $deviceAddress; reusing")
+                        activeStreams.remove(handle, existing)
                         return existing
                     }
                     try { Thread.sleep(100L) } catch (_: InterruptedException) { break }
@@ -606,6 +608,11 @@ class UsbBtBluetoothAdapter(
                                 onClose = { teardown(handle) },
                             )
                             activeStreams[handle] = stream
+                        }
+                    }
+                    rfcomm.onDlcClosed = { channel ->
+                        if (channel == UsbBtIdentity.IAP2_RFCOMM_CHANNEL) {
+                            activeStreams.remove(handle)?.let { runCatching { it.close() } }
                         }
                     }
                     { payload -> rfcomm.onRfcommFrame(payload) }

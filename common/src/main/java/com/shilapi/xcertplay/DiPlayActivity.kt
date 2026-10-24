@@ -4211,12 +4211,14 @@ class DiPlayActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT); return
         }
+        val hybrid = CarPlayBluetoothManager.get(this)
         val adapter = BluetoothCompat.getAdapter(this)
-        if (adapter == null) {
+        val hasUsbDongle = hybrid.usbDongle?.isSupported() == true
+        if (adapter == null && !hasUsbDongle) {
             promptManualBluetoothInput()
             return
         }
-        if (!adapter.isEnabled) {
+        if (adapter != null && !adapter.isEnabled) {
             runCatching { adapter.enable() }
         }
 
@@ -4234,9 +4236,10 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     @android.annotation.SuppressLint("MissingPermission")
-    private fun fetchSystemBluetoothDevices(adapter: BluetoothAdapter): List<DiscoveredBluetoothDevice> {
+    private fun fetchSystemBluetoothDevices(adapter: BluetoothAdapter?): List<DiscoveredBluetoothDevice> {
         val result = LinkedHashMap<String, DiscoveredBluetoothDevice>()
 
+        if (adapter != null) {
         // 1. Bonded devices from adapter
         val bonded = runCatching { adapter.bondedDevices.orEmpty() }.getOrDefault(emptySet())
         for (device in bonded) {
@@ -4270,6 +4273,7 @@ class DiPlayActivity : ComponentActivity() {
                     ?: getString(R.string.paired_device)
                 result[addr] = DiscoveredBluetoothDevice(addr, name, isConnected = true)
             }
+        }
         }
 
         // 4. Query USB Bluetooth dongle paired & connected devices
