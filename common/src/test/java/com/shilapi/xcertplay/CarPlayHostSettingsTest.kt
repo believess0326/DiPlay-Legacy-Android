@@ -443,6 +443,34 @@ class CarPlayHostSettingsTest {
         assertEquals(edited, AirPlayPersistence.loadSafeAreaRect(activity, 1920, 942))
     }
 
+    @Test fun carBrandSelectionSyncsOemLabelAndSurvivesSaveAndReconnect() {
+        invoke("openSettingsMenu")
+        val preset = CarBrandPresets.ALL.first { it.id == "toyota" }
+        val bytes = preset.loadBytes(activity)!!
+        AirPlayPersistence.saveCustomAirPlayIcon(activity, bytes)
+        AirPlayPersistence.saveOemLabel(activity, preset.defaultOemName)
+        setField("oemLabel", preset.defaultOemName)
+        invoke("saveSettingsAndReconnect")
+
+        assertEquals(preset.defaultOemName, field("oemLabel"))
+        assertEquals(preset.defaultOemName, AirPlayPersistence.loadOemLabel(activity))
+        assertNotNull(AirPlayPersistence.loadCustomAirPlayIconBytes(activity))
+    }
+
+    @Test fun settingsMenuRendersDualColumnLayoutWithNavigationRail() {
+        invoke("openSettingsMenu")
+        val menu = menu()
+        assertEquals(View.VISIBLE, menu.visibility)
+        assertNotNull(fullSettingsButton())
+        val saveButton = views(menu).filterIsInstance<Button>()
+            .firstOrNull { it.text == activity.getString(R.string.save_and_reconnect) }
+        assertNotNull(saveButton)
+        val connectionRailBtn = views(menu).filterIsInstance<Button>()
+            .firstOrNull { it.text == activity.getString(R.string.connection) }
+        assertNotNull(connectionRailBtn)
+        invoke("cancelSettingsEdits")
+    }
+
     private fun resizeWindow(width: Int, height: Int) {
         val sizeClass = Class.forName("com.shilapi.xcertplay.CarPlayHostActivity\$DisplaySize")
         val size = sizeClass.getDeclaredConstructor(Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)

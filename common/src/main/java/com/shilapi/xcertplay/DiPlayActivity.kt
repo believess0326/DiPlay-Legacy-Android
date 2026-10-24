@@ -4108,7 +4108,10 @@ class DiPlayActivity : ComponentActivity() {
                     AirPlayPersistence.saveOemLabel(this, preset.defaultOemName)
                     refreshCarButton()
                     carButtonSaved()
-                    toast(getString(R.string.car_brand_icon_applied, preset.displayName(this)))
+                    toast(
+                        getString(R.string.car_brand_icon_applied, preset.displayName(this)) +
+                            " (" + getString(R.string.car_button_saved_next_connection) + ")",
+                    )
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
