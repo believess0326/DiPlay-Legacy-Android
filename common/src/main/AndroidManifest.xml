@@ -94,9 +94,9 @@
             android:screenOrientation="fullSensor"
             android:theme="@style/Theme.Xcertplay"
             android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
-            </intent-filter>
+            <!-- Issue #311: keep meta-data for UsbDeviceFilter inspections but avoid static intent-filter
+                 which triggers Android framework's intrusive 'Open with DiPlay?' system dialog and
+                 causes usbfs D-state race conditions on older kernels (e.g. Allwinner T3). -->
             <meta-data
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />

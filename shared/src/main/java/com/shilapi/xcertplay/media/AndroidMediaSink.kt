@@ -116,12 +116,16 @@ internal class AudioFocusCoordinator(
     @Synchronized
     fun acquire(track: AudioTrack, channel: AudioChannel, attributes: Any?) {
         if (closed || !enabled || manager == null) return
+        active[track] = Entry(channel, attributes)
         // Issue #214: navigation alone gets no sound on some head units because the audio
         // output stays muted without focus. Let a lone navigation track take focus to open
-        // the path; when media/phone is already active, navigation still overlays silently.
+        // the path; when media/phone is already active, keep track in active set so media idle
+        // does not abandon focus and mute guidance.
         if (channel == AudioChannel.NAVIGATION &&
-            active.values.any { it.channel != AudioChannel.NAVIGATION }) return
-        active[track] = Entry(channel, attributes)
+            active.values.any { it.channel != AudioChannel.NAVIGATION }) {
+            applyMediaVolume(track, active.getValue(track))
+            return
+        }
         refreshRequest()
         applyMediaVolume(track, active.getValue(track))
     }
@@ -224,6 +228,8 @@ internal class AudioFocusCoordinator(
             // The primary channel may have changed while this was queued (a call started,
             // guidance began): only a silent media stream gives the lease back.
             if (requestedChannel != AudioChannel.MEDIA) return@Runnable
+            // If navigation or telephony is active, keep focus lease alive so guidance is not muted.
+            if (active.values.any { it.channel != AudioChannel.MEDIA }) return@Runnable
             val idleNanos = nowNs() - lastRenderNanos
             if (idleNanos < IDLE_RELEASE_NANOS) {
                 recheckMillis = (IDLE_RELEASE_NANOS - idleNanos) / 1_000_000L + IDLE_RECHECK_MILLIS
@@ -1005,7 +1011,7 @@ private class VideoDecoder(
                         is VideoJob.Frame -> {
                             if (System.nanoTime() - job.receivedNs > MAX_FRAME_AGE_NS) {
                                 queue.discardFrames()
-                                recover("video backlog exceeded 250 ms")
+                                recover("video backlog exceeded 800 ms", allowRebuild = false)
                             } else feed(job.nalus, localTimeOf(job))
                         }
                         is VideoJob.SurfaceChanged -> changeSurface(job.surface)
@@ -1375,7 +1381,7 @@ private class VideoDecoder(
         }
     }
 
-    private fun recover(reason: String) {
+    private fun recover(reason: String, allowRebuild: Boolean = true) {
         Log.w(TAG, "Video recovery: $reason; waiting for keyframe")
         // Issue #251: while a keyframe wait is already running, rebuilding the
         // decoder races the keyframe's arrival — the rebuild discards the
@@ -1386,7 +1392,8 @@ private class VideoDecoder(
         // later ones just reset the (already broken) chain and re-ask. A
         // genuinely wedged codec still gets rebuilt once per keyframe cycle:
         // accepting an IDR clears the wait, so the next recovery rebuilds.
-        val rebuild = !referenceChain.needsKeyFrame
+        // Queue backlog / frame drops keep the healthy decoder instance and only wait for IDR.
+        val rebuild = allowRebuild && !referenceChain.needsKeyFrame
         consecutiveInputWithoutOutput = 0
         consecutiveDroppedWithoutKeyFrame = 0
         keyframeWaitStartedNs = 0L
@@ -1509,7 +1516,7 @@ private class VideoDecoder(
         const val TAG = "xcertplay-usb"
         const val MAX_INPUT_SIZE = 8 * 1024 * 1024
         const val INPUT_TIMEOUT_US = 10_000L
-        const val MAX_FRAME_AGE_NS = 250_000_000L
+        const val MAX_FRAME_AGE_NS = 800_000_000L
         // A paced frame more than this ahead is treated as a bad mapping and shown at once.
         const val MAX_PACING_AHEAD_NS = 1_000_000_000L
         // Longer input gaps are a still screen, not decoding work.

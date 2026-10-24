@@ -200,6 +200,21 @@ class AudioFocusAutoYieldTest {
         assertNotSame(firstRequest, renewed)
     }
 
+    @Test fun concurrentMediaAndNavigationKeepsFocusWhenMediaGoesSilent() {
+        var now = 0L
+        val coordinator = AudioFocusCoordinator(context, true, true, nowNs = { now }).also(coordinators::add)
+        val media = track()
+        val guidance = track()
+        coordinator.acquire(media, AudioChannel.MEDIA, attributes)
+        coordinator.acquire(guidance, AudioChannel.NAVIGATION, attributes)
+        coordinator.onPcmRendered()
+        // Media goes silent for 11 seconds (e.g. music paused during turn-by-turn guidance prompt)
+        now = 11_000_000_000L
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(10_100))
+        // Focus lease MUST remain active so car amplifier doesn't mute navigation!
+        assertNull(shadowOf(manager).lastAbandonedAudioFocusRequest)
+    }
+
     private fun coordinator(enabled: Boolean = true, autoYield: Boolean = true) =
         AudioFocusCoordinator(context, enabled, autoYield).also(coordinators::add)
     private fun track(): AudioTrack = AudioTrack.Builder().setAudioAttributes(attributes)
