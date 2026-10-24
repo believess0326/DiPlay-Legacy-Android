@@ -138,11 +138,15 @@ class Iap2WirelessControlClient(
                             wirelessCarPlayAvailableSeen,
                         )
                     }
-                    // Issue #293: the phone is silent and has not connected
-                    // yet — re-invite it (see the resend constants). The
-                    // watchdog keeps measuring from the FIRST send, so
-                    // resends deliberately skip the onStartSessionSent hook.
-                    if (carPlayStartSessionsSent > 0 && !transportNotificationSeen &&
+                    // Issue #293: the phone has not connected yet —
+                    // re-invite it (see the resend constants). The budget is
+                    // per phase: the first transport notification renews it
+                    // once (see that branch), because some phones answer
+                    // 0x4e0e immediately yet still never open the AirPlay TCP
+                    // connection. The watchdog keeps measuring from the
+                    // FIRST send, so resends deliberately skip the
+                    // onStartSessionSent hook.
+                    if (carPlayStartSessionsSent > 0 &&
                         startSessionResendsSent < MAX_START_SESSION_RESENDS
                     ) {
                         val nowMillis = System.currentTimeMillis()
@@ -156,7 +160,8 @@ class Iap2WirelessControlClient(
                             lastStartSessionSentAtMillis = nowMillis
                             onProgress(
                                 "iap2 tx=0x4301 carplay-start-session " +
-                                    "(resend $startSessionResendsSent)",
+                                    "(resend $startSessionResendsSent " +
+                                    "transportSeen=$transportNotificationSeen)",
                             )
                         }
                     }
@@ -219,6 +224,15 @@ class Iap2WirelessControlClient(
                     }
 
                     DEVICE_TRANSPORT_IDENTIFIER_NOTIFICATION -> {
+                        if (!transportNotificationSeen) {
+                            // Issue #293: renew the StartSession resend
+                            // budget once for the post-transport phase. On
+                            // phones that send 0x4e0e right away the old
+                            // gate closed the resend window immediately,
+                            // even though no TCP connection had followed.
+                            startSessionResendsSent = 0
+                            lastStartSessionSentAtMillis = System.currentTimeMillis()
+                        }
                         transportNotificationSeen = true
                         val identifiers = Iap2WirelessMessages.deviceTransportIdentifier(incoming)
                         stage = later(stage, Iap2WirelessControlStage.TRANSPORT_NOTIFIED)
