@@ -270,7 +270,7 @@ class ScreenStream(
         /** Bounded decrypt backlog (#249): at 30 fps this is ~0.3 s of video. */
         const val DECRYPT_QUEUE_CAPACITY = 10
         /** How long the receive loop waits for a decrypt slot before dropping a frame. */
-        const val DECRYPT_QUEUE_OFFER_WAIT_MILLIS = 120L
+        const val DECRYPT_QUEUE_OFFER_WAIT_MILLIS = 30L
     }
 }
 

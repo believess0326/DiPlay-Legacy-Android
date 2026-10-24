@@ -98,13 +98,32 @@ internal object VideoInputPump {
         dequeue: () -> Int,
         nanoTime: () -> Long = System::nanoTime,
         timeoutNs: Long = TimeUnit.MILLISECONDS.toNanos(500),
+    ): Int = acquire(running, drain, dequeue, nanoTime, timeoutNs) { attempt ->
+        if (attempt > 0) {
+            try {
+                Thread.sleep(1)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+    }
+
+    fun acquire(
+        running: () -> Boolean,
+        drain: () -> Unit,
+        dequeue: () -> Int,
+        nanoTime: () -> Long,
+        timeoutNs: Long,
+        backoff: (attempt: Int) -> Unit,
     ): Int {
         val start = nanoTime()
+        var attempt = 0
         while (running()) {
             drain()
             val index = dequeue()
             if (index >= 0) return index
             if (nanoTime() - start >= timeoutNs) break
+            backoff(attempt++)
         }
         return -1
     }
