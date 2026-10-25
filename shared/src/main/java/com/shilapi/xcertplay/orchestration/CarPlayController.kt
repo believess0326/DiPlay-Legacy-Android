@@ -2546,15 +2546,16 @@ class CarPlayController(
                                 mainHandler.postDelayed({ attempt() }, CARPLAY_MODE_DESCRIPTOR_PROBE_INTERVAL_MILLIS)
                             } else {
                                 connectionDiagnostic("No pre-existing CarPlay configuration found after probe; requesting vendor re-enumeration")
-                                // On legacy Android 4.x / API <= 19 (e.g. Allwinner T3, issue #311),
-                                // allow the kernel usbfs driver a brief settle delay after closing the previous connection
+                                // On legacy Android 4.x / API <= 19 (e.g. Allwinner T3, issues #311, #318),
+                                // allow the kernel usbfs driver a settle delay after closing the previous connection
                                 // before issuing vendor control transfer to avoid sw_usb spinlock lockups.
-                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT) {
+                                // Note: MUST use realSdkInt() instead of Build.VERSION.SDK_INT because T3 ROMs fake SDK_INT.
+                                if (realSdkInt() <= Build.VERSION_CODES.KITKAT) {
                                     mainHandler.postDelayed({
                                         if (!closed && generation == availabilityPollGeneration.get() && phase == Phase.REENUMERATION) {
                                             requestVendorReenumeration(device, generation)
                                         }
-                                    }, 150)
+                                    }, 250)
                                 } else {
                                     requestVendorReenumeration(device, generation)
                                 }

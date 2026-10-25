@@ -1040,7 +1040,7 @@ private class VideoDecoder(
                     decoder?.let(::drainOutput)
                     stats.logIfDue()?.let(report)
                     if (outputSurface != null && stats.shouldRecoverDegeneratePipeline()) {
-                        recover("pipeline receiving frames but 0 rendered")
+                        recover("pipeline receiving frames but 0 rendered", allowRebuild = false)
                     } else if (referenceChain.needsKeyFrame && lastConfig != null && outputSurface != null) {
                         requestKeyFrameIfDue()
                     }
@@ -1270,6 +1270,8 @@ private class VideoDecoder(
     private fun changeSurface(surface: Surface?) {
         if (outputSurface === surface) return
         outputSurface = surface
+        stats.reset()
+        queue.discardFrames()
         if (surface == null) {
             releaseDecoder()
             Log.i(TAG, "video decoder detached from surface")

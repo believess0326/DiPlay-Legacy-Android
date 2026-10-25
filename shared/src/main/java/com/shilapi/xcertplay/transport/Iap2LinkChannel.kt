@@ -150,11 +150,17 @@ class Iap2LinkChannel private constructor(
             engine.start(wiredInitiator = initiateNegotiation, nowMillis = nowMillis())
             while (!isClosing()) {
                 drainCommands(engine)
-                if (!initiateNegotiation && receivedBytes == 0L &&
-                    nowMillis() - startedAtMillis >= WIRELESS_SYNC_FALLBACK_MILLIS) {
-                    if (engine.initiateSynchronizationIfDetecting(nowMillis()) && !recoveryReported) {
-                        recoveryReported = true
-                        reportHandshakeProgress("wireless iAP2 accessory sync fallback triggered")
+                if (!initiateNegotiation && receivedBytes == 0L) {
+                    val silentMs = nowMillis() - startedAtMillis
+                    if (silentMs >= WIRELESS_SYNC_FALLBACK_MILLIS && !recoveryReported) {
+                        if (engine.initiateSynchronizationIfDetecting(nowMillis())) {
+                            recoveryReported = true
+                            reportHandshakeProgress("wireless iAP2 accessory sync fallback triggered")
+                        }
+                    }
+                    if (silentMs >= WIRELESS_SILENT_PEER_TIMEOUT_MILLIS && !isLinkReady()) {
+                        finish(IOException("Bluetooth iAP2 silent peer timeout after ${WIRELESS_SILENT_PEER_TIMEOUT_MILLIS}ms"))
+                        return
                     }
                 }
                 if (!initiateNegotiation && !isLinkReady() &&
@@ -414,6 +420,7 @@ class Iap2LinkChannel private constructor(
 
     companion object {
         private const val WIRELESS_SYNC_FALLBACK_MILLIS = 800L
+        private const val WIRELESS_SILENT_PEER_TIMEOUT_MILLIS = 12_000L
         private const val HANDSHAKE_PROGRESS_MILLIS = 10_000L
         private const val RECEIVE_CHUNK_BYTES = 8_192
         private const val RECEIVE_POLL_MILLIS = 100L

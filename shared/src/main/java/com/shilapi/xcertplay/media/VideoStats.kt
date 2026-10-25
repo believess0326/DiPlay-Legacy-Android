@@ -21,6 +21,22 @@ internal class VideoStats(
     private var decodeSamples = 0
     private var late = 0
     private var pacingDelayNanos = 0L
+    private var lastDegenerateRecoveryNs = 0L
+
+    @Synchronized fun reset() {
+        windowStartNs = nanoTime()
+        lastArrivalNs = 0L
+        received = 0
+        rendered = 0
+        recoveries = 0
+        bytes = 0L
+        touchSamples = 0
+        touchLatencySumNs = 0L
+        maxTouchLatencyNs = 0L
+        decodeSamples = 0
+        late = 0
+        lastDegenerateRecoveryNs = 0L
+    }
 
     @Synchronized fun onReceived(size: Int) {
         val now = nanoTime()
@@ -56,12 +72,21 @@ internal class VideoStats(
     /** True if the pipeline is receiving a steady stream of frames but none are being rendered. */
     @Synchronized fun shouldRecoverDegeneratePipeline(): Boolean {
         val now = nanoTime()
+        // Debounce: do not trigger consecutive degenerate recoveries within 3 seconds
+        if (lastDegenerateRecoveryNs != 0L && now - lastDegenerateRecoveryNs < 3_000_000_000L) return false
         val elapsedNs = now - windowStartNs
         // If within the last 2+ seconds we received at least 30 frames but rendered 0, or within 3+ seconds
         // we received at least 5 frames but rendered 0 (static/low-fps stream after reverse camera),
         // the pipeline is stalled.
-        return (elapsedNs >= 2_000_000_000L && received >= 30 && rendered == 0) ||
+        val degenerate = (elapsedNs >= 2_000_000_000L && received >= 30 && rendered == 0) ||
             (elapsedNs >= 3_000_000_000L && received >= 5 && rendered == 0)
+        if (degenerate) {
+            lastDegenerateRecoveryNs = now
+            windowStartNs = now
+            received = 0
+            rendered = 0
+        }
+        return degenerate
     }
 
     private fun decodeSummary(): String {

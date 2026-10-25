@@ -58,9 +58,16 @@ internal object DiagnosticExportStore {
      */
     private fun secondaryExternalFilesDirs(context: Context): List<File> {
         if (realSdkInt() < Build.VERSION_CODES.KITKAT) return emptyList()
-        return runCatching {
-            context.getExternalFilesDirs(null)?.drop(1)?.filterNotNull()
-        }.getOrNull().orEmpty()
+        return try {
+            val method = runCatching {
+                Context::class.java.getMethod("getExternalFilesDirs", String::class.java)
+            }.getOrNull() ?: return emptyList()
+            @Suppress("UNCHECKED_CAST")
+            val array = method.invoke(context, null as String?) as? Array<File?>
+            array?.drop(1)?.filterNotNull().orEmpty()
+        } catch (_: Throwable) {
+            emptyList()
+        }
     }
 
     /** Exposes writable USB-like volumes to the in-app KitKat destination picker. */

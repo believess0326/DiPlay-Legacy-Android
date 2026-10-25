@@ -322,7 +322,11 @@ class CarPlayHostActivity : ComponentActivity() {
                 "com.yecon.action.BACKCAR_STOP",
                 "android.intent.action.BACK_CAR_STOP",
                 "com.mstar.backcar.stop",
-                "android.intent.action.BACKCAR_OFF" -> {
+                "android.intent.action.BACKCAR_OFF",
+                "com.autochips.backcar.stop",
+                "xy.android.intent.action.BACKCAR_OFF",
+                "com.xy.backcar.stop",
+                "action.backcar.stop" -> {
                     handleReverseCameraExit(action)
                 }
                 "com.syu.canbus.action.BACKCAR",
@@ -726,6 +730,10 @@ class CarPlayHostActivity : ComponentActivity() {
             addAction("android.intent.action.BACK_CAR_STOP")
             addAction("com.mstar.backcar.stop")
             addAction("android.intent.action.BACKCAR_OFF")
+            addAction("com.autochips.backcar.stop")
+            addAction("xy.android.intent.action.BACKCAR_OFF")
+            addAction("com.xy.backcar.stop")
+            addAction("action.backcar.stop")
             addAction("com.syu.canbus.action.BACKCAR")
             addAction("com.android.internal.car.ACTION_CAMERA_STATUS")
             addAction("com.ts.car.backcar")
