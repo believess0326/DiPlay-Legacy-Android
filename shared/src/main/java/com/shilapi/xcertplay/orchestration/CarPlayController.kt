@@ -491,12 +491,44 @@ class CarPlayController(
 
     fun currentAppStates(): List<Map<String, Any?>> = activeSession?.currentAppStates() ?: emptyList()
 
-    fun changeModes(appStates: List<Map<String, Any?>>): Boolean {
+    fun changeModes(
+        appStates: List<Map<String, Any?>> = emptyList(),
+        resources: List<Map<String, Any?>> = emptyList(),
+    ): Boolean {
         val session = activeSession ?: return false
+        val params = linkedMapOf<String, Any?>()
+        if (appStates.isNotEmpty()) params["appStates"] = appStates
+        if (resources.isNotEmpty()) params["resources"] = resources
         return session.sendCommand(linkedMapOf(
             "type" to "changeModes",
-            "params" to linkedMapOf("appStates" to appStates),
+            "params" to params,
         ))
+    }
+
+    /**
+     * Reclaims MainAudio and Screen ownership via CarPlay changeModes (transferType=Take).
+     * Used when returning from native head unit media/radio or on audio focus recovery.
+     */
+    fun takeMainAudioAndScreen(): Boolean {
+        val session = activeSession ?: return false
+        val resources = listOf(
+            linkedMapOf("resourceID" to 1, "transferType" to 1),
+            linkedMapOf("resourceID" to 2, "transferType" to 1),
+        )
+        debugLog("requesting CarPlay MainAudio and Screen via changeModes")
+        return changeModes(resources = resources)
+    }
+
+    /**
+     * Reclaims MainAudio ownership via CarPlay changeModes (transferType=Take).
+     */
+    fun takeMainAudio(): Boolean {
+        val session = activeSession ?: return false
+        val resources = listOf(
+            linkedMapOf("resourceID" to 2, "transferType" to 1),
+        )
+        debugLog("requesting CarPlay MainAudio via changeModes")
+        return changeModes(resources = resources)
     }
 
     fun attachUi(
@@ -1640,33 +1672,31 @@ class CarPlayController(
                 var lateStream: BlockingDuplexByteStream? = null
                 var lateChannel: Iap2Session? = null
                 var lateBootstrapDone = false
-                var lastOutgoingAttemptMillis = 0L
-                val outgoingRetryIntervalMillis = 3500L
+                var lastLateAttemptMillis = 0L
+                var lateRetryBackoffMillis = 3500L
                 while (activeSession == null && !wirelessActiveReported.get() && System.currentTimeMillis() < deadline && !isStaleWirelessRun(generation)) {
-                    if (!lateBootstrapDone && hybridAdapter.isEnabled()) {
+                    val now = System.currentTimeMillis()
+                    if (!lateBootstrapDone && hybridAdapter.isEnabled() && (now - lastLateAttemptMillis >= lateRetryBackoffMillis)) {
                         val connectedDev = runCatching { hybridAdapter.getConnectedDevice() }.getOrNull()
                         val targetDev = connectedDev ?: run {
                             // Issue #247: If no device is connected yet or connection dropped while iPhone was asleep,
                             // periodically retry connecting to target device (or a paired iPhone) to send Bluetooth paging
                             // packets that wake up iOS power-management Bluetooth background sleep state without requiring
                             // the user to manually toggle Bluetooth off and on on the phone.
-                            val now = System.currentTimeMillis()
-                            if (now - lastOutgoingAttemptMillis >= outgoingRetryIntervalMillis) {
-                                lastOutgoingAttemptMillis = now
-                                if (device != null) {
-                                    com.shilapi.xcertplay.bluetooth.CarPlayBluetoothDevice(
-                                        name = runCatching { device.name }.getOrNull() ?: "iPhone (${device.address})",
-                                        address = device.address,
-                                        isConnected = false,
-                                    )
-                                } else {
-                                    val paired = runCatching { hybridAdapter.getPairedDevices() }.getOrDefault(emptyList())
-                                    paired.firstOrNull { it.name.contains("iPhone", ignoreCase = true) }
-                                        ?: (if (paired.size == 1) paired.first() else null)
-                                }
-                            } else null
+                            if (device != null) {
+                                com.shilapi.xcertplay.bluetooth.CarPlayBluetoothDevice(
+                                    name = runCatching { device.name }.getOrNull() ?: "iPhone (${device.address})",
+                                    address = device.address,
+                                    isConnected = false,
+                                )
+                            } else {
+                                val paired = runCatching { hybridAdapter.getPairedDevices() }.getOrDefault(emptyList())
+                                paired.firstOrNull { it.name.contains("iPhone", ignoreCase = true) }
+                                    ?: (if (paired.size == 1) paired.first() else null)
+                            }
                         }
                         if (targetDev != null && BluetoothAdapter.checkBluetoothAddress(targetDev.address)) {
+                            lastLateAttemptMillis = now
                             debugLog("wireless incoming/paired Bluetooth device detected: ${targetDev.name} (${targetDev.address}); bootstrapping iAP2 over RFCOMM")
                             try {
                                 onStatus(CarPlayStatus.ConnectingBluetooth)
@@ -1707,9 +1737,12 @@ class CarPlayController(
                                     },
                                 )
                                 lateBootstrapDone = true
+                                lateRetryBackoffMillis = 3500L
                                 debugLog("late Bluetooth bootstrap completed successfully for ${targetDev.address}")
                             } catch (e: Throwable) {
-                                debugLog("late Bluetooth bootstrap attempt failed: ${e.message}")
+                                val isBusy = e.message?.contains("busy", ignoreCase = true) == true
+                                lateRetryBackoffMillis = if (isBusy) 5000L else 3500L
+                                debugLog("late Bluetooth bootstrap attempt failed: ${e.message} (backoff=${lateRetryBackoffMillis}ms)")
                                 runCatching { lateChannel?.close() }
                                 lateChannel = null
                                 runCatching { lateStream?.close() }
@@ -1823,8 +1856,10 @@ class CarPlayController(
                             break
                         }
                         if (attempt < maxAttempts) {
+                            val isBusy = lastBootstrapError?.message?.contains("busy", ignoreCase = true) == true
+                            val delay = if (isBusy) 3000L else 1500L
                             try {
-                                Thread.sleep(1500L)
+                                Thread.sleep(delay)
                             } catch (_: InterruptedException) {
                                 break
                             }
@@ -2025,6 +2060,9 @@ class CarPlayController(
 
             override fun onSessionEnded(session: AirPlaySession) {
                 if (isStaleWirelessRun(generation)) return
+                if (activeSession == null) {
+                    watchdog.onTcpClosedBeforeEstablished()
+                }
                 wirelessConnectionProof.end(generation, session)
                 sessionListener.onSessionEnded(session)
             }

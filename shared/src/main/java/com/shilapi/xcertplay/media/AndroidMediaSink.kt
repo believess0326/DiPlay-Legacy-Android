@@ -66,6 +66,7 @@ internal class AudioFocusCoordinator(
     @Volatile private var lastRenderNanos = 0L
     @Volatile private var idleTimerArmed = false
     private val idleHandler by lazy { Handler(Looper.getMainLooper()) }
+    @Volatile var onAudioFocusGain: (() -> Unit)? = null
     internal val listener: AudioManager.OnAudioFocusChangeListener get() = currentListener
     /** Diagnostic only: an AudioTrack playing PCM does not prove the vendor audio source is selected. */
     @Suppress("DEPRECATION")
@@ -84,6 +85,9 @@ internal class AudioFocusCoordinator(
 
     private fun listenerFor(generation: Long) = AudioManager.OnAudioFocusChangeListener { change ->
         synchronized(this) {
+            if (change == AudioManager.AUDIOFOCUS_GAIN) {
+                try { onAudioFocusGain?.invoke() } catch (_: Exception) {}
+            }
             // Android may have queued callbacks before a request was abandoned or replaced.
             if (generation != focusGeneration || requestedChannel == null || active.isEmpty()) {
                 // Dropping this silently hides the one window that matters: between a telephony
@@ -335,6 +339,10 @@ class AndroidMediaSink(
     /** The media-key session may own Android's current focus request for this same sink. */
     fun onMediaAudioFocusChanged(change: Int) {
         audioFocusCoordinator.onExternalFocusChange(change)
+    }
+
+    fun setOnAudioFocusGainListener(listener: (() -> Unit)?) {
+        audioFocusCoordinator.onAudioFocusGain = listener
     }
 
     private val screenStateLock = Any()

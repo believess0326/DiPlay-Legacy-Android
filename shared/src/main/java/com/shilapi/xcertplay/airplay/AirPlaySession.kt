@@ -800,7 +800,7 @@ class AirPlaySession(
             listener.onVideoPlaybackUiRequested(this)
         } else if (type == "requestUI") {
             listener.onHostUiRequested(this)
-        } else if (type == "changeModes") {
+        } else if (type == "changeModes" || type == "modesChanged") {
             val appStates = (params["appStates"] as? List<*>)?.mapNotNull { asMap(it) } ?: emptyList()
             val resources = (params["resources"] as? List<*>)?.mapNotNull { asMap(it) } ?: emptyList()
             for (state in appStates) {

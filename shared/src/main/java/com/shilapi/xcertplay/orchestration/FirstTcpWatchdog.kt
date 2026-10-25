@@ -53,6 +53,14 @@ internal class FirstTcpWatchdog(
         return true
     }
 
+    @Synchronized fun onTcpClosedBeforeEstablished(graceMillis: Long = 5000L) {
+        if (terminated || success) return
+        log("TCP closed before session established; rearming watchdog with graceMillis=$graceMillis")
+        firstAcceptNanos = null
+        cancel()
+        cancelTimer = schedule(graceMillis, ::expire)
+    }
+
     private fun expire() {
         synchronized(this) {
             if (terminated || success || firstAcceptNanos != null || firstStartNanos == null) return

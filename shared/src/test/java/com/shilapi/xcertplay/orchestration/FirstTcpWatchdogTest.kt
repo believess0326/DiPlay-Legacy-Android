@@ -108,6 +108,31 @@ class FirstTcpWatchdogTest {
         assertEquals(0, failures)
     }
 
+    @Test fun tcpClosedBeforeEstablishedRearmsTimeout() {
+        val watch = watchdog()
+        watch.startSessionSent(0)
+        assertTrue(watch.accepted(event()))
+        // Initially cancel() was called on accept
+        assertNull(deadline)
+        // TCP closes abruptly before session established (e.g. ECONNRESET)
+        watch.onTcpClosedBeforeEstablished(graceMillis = 5_000)
+        assertEquals(now + 5_000L, deadline)
+        now += 5_000L
+        timer!!()
+        assertEquals(1, failures)
+        assertTrue(watch.terminated)
+    }
+
+    @Test fun establishedSessionIgnoresTcpClosedBeforeEstablished() {
+        val watch = watchdog()
+        watch.startSessionSent(0)
+        assertTrue(watch.accepted(event()))
+        assertTrue(watch.sessionEstablished())
+        watch.onTcpClosedBeforeEstablished(graceMillis = 5_000)
+        assertNull(deadline)
+        assertEquals(0, failures)
+    }
+
     @Test fun concurrentAcceptAndTimeoutHaveExactlyOneOutcome() {
         repeat(50) {
             lateinit var expire: () -> Unit

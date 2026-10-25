@@ -1048,6 +1048,9 @@ class CarPlayHostActivity : ComponentActivity() {
                 attachSurface(fallbackSurface)
             }
             sink?.refreshPicture(SCREEN_TYPE_MAIN)
+            if (!AirPlayPersistence.loadCarBluetoothAudio(this)) {
+                controller?.takeMainAudioAndScreen()
+            }
         }
         if (!menuOpen) {
             displayScalePercent = AirPlayPersistence.loadDisplayScalePercent(this)
@@ -4601,6 +4604,13 @@ class CarPlayHostActivity : ComponentActivity() {
         controller = snapshot.controller
         updateClusterMapShown()
         sink = snapshot.sink
+        snapshot.sink.setOnAudioFocusGainListener {
+            runOnUiThread {
+                if (activeAirPlaySession != null && !AirPlayPersistence.loadCarBluetoothAudio(this)) {
+                    controller?.takeMainAudio()
+                }
+            }
+        }
         sessionDisplay = snapshot.display
         resetSidePanel()
         if (snapshot.display.viewAreas?.let { it.kindOf(it.current) == CarPlayViewAreas.Kind.SIDE_PANEL } == true) {
@@ -4722,6 +4732,13 @@ class CarPlayHostActivity : ComponentActivity() {
             controllerGeneration = controllerGeneration,
         )
         sink = renderer
+        renderer.setOnAudioFocusGainListener {
+            runOnUiThread {
+                if (activeAirPlaySession != null && !AirPlayPersistence.loadCarBluetoothAudio(this)) {
+                    controller?.takeMainAudio()
+                }
+            }
+        }
         currentSurface?.let(::attachSurface)
         clusterSurface?.let { renderer.setSurface(SCREEN_TYPE_ALT, it) }
         MapMirrors.reapply()
@@ -5565,6 +5582,17 @@ class CarPlayHostActivity : ComponentActivity() {
         }
     }
 
+    private var lastAudioReclaimAttemptMillis = 0L
+
+    private fun maybeReclaimMainAudioOnTouch() {
+        if (activeAirPlaySession == null || AirPlayPersistence.loadCarBluetoothAudio(this)) return
+        val now = System.currentTimeMillis()
+        if (now - lastAudioReclaimAttemptMillis >= 4000L) {
+            lastAudioReclaimAttemptMillis = now
+            controller?.takeMainAudio()
+        }
+    }
+
     private fun onHostTouch(view: View, event: MotionEvent): Boolean {
         if (menuOpen) return true
 
@@ -5698,6 +5726,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val content = contentRect(view.width, view.height)
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             touchOutsideContent = !content.contains(event.x, event.y)
+            maybeReclaimMainAudioOnTouch()
         }
         if (touchOutsideContent) {
             // Ignore the entire touch sequence when it starts in a letterbox bar.
