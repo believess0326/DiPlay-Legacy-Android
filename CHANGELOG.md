@@ -1,3 +1,13 @@
+# DiPlay 0.2.96 — 2026-10-26
+
+- Reverse-camera return freeze & dynamic video crash elimination (#320 / #315): fix degenerate pipeline detection storm (187 recover calls/sec) when returning from reverse gear with active navigation streams; debounce pipeline checks, drop stale frames on surface reconnect, request IDR keyframes instead of destroying MediaCodec, and register missing vendor reverse exit intents.
+- Legacy head unit API 17 diagnostic export crash & touch response fix (#319): safely invoke Context.getExternalFilesDirs via reflection with Throwable catch-all on API 17 (Android 4.2 masquerading as 4.4.4); eliminate initial connect decoder thrashing to restore smooth touch and display response.
+- Allwinner T3 fake SDK version bypass & usbfs spinlock lockup fix (#318): use realSdkInt() to penetrate faked Android 8.1 Build properties on Allwinner T3 ROMs; widen USB re-enumeration settle delay to 250ms to prevent Linux 3.4 sw_usb spinlock lockups, watchdog hard resets, and RTC date resets.
+- External USB Bluetooth adapter (UGREEN CM390) wireless stall optimization (#316): add 12s silent peer timeout on Bluetooth iAP2 channel to quickly drop unresponsive RFCOMM fallback and allow ready Wi-Fi control channels to take over.
+- Car Bluetooth audio resume & early handshake fix (#312): fix audio route restoration and prevent handshake deadlocks when connecting to original car Bluetooth before CarPlay.
+
+See [v0.2.96 release notes](docs/RELEASE-NOTES-0.2.96.md) for details.
+
 # DiPlay 0.2.95 — 2026-10-25
 
 - Video decoder smooth backlog recovery (#310 / #314): decouple transient frame queue backlog from decoder failure; drop stale buffered frames and request IDR keyframes instead of destroying MediaCodec, eliminating 0.2fps freezing on navigation apps (AutoNavi/Amap).
