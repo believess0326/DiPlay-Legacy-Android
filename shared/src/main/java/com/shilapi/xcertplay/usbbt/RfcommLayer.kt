@@ -346,6 +346,14 @@ class RfcommLayer(
     }
 
     fun close() {
+        if (!closed) {
+            runCatching {
+                activeDlcs.keys.toList().forEach { dlci ->
+                    sendFrame(dlci, RFCOMM_DISC, command = true, pf = true)
+                }
+                sendFrame(RFCOMM_DLCI_CONTROL, RFCOMM_DISC, command = true, pf = true)
+            }
+        }
         closed = true
         pendingUa.values.forEach { it.countDown() }
         pendingPn.values.forEach { it.countDown() }

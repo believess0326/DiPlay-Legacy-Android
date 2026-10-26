@@ -2040,7 +2040,41 @@ class CarPlayController(
 
             override fun onTcpAccepted(event: AirPlayTcpAccepted) {
                 if (isStaleWirelessRun(generation)) return
-                if (watchdog.accepted(event)) wirelessDiagnostics?.connectionAccepted()
+                if (watchdog.accepted(event)) {
+                    wirelessDiagnostics?.connectionAccepted()
+                    // Issue #316: With external USB-BT dongles or certain iOS versions,
+                    // iPhone connects Wi-Fi TCP and then halts RTSP waiting for the accessory
+                    // to release/disconnect the Bluetooth bootstrap RFCOMM channel.
+                    // If no RTSP session activates within 2.5s of TCP acceptance, proactively release
+                    // the Bluetooth bootstrap transport so iOS immediately proceeds with AirPlay RTSP.
+                    mainHandler.postDelayed({
+                        if (!closed && phase == Phase.WIRELESS && generation == wirelessGeneration.get() &&
+                            activeSession == null && !wirelessActiveReported.get()
+                        ) {
+                            debugLog("TCP accepted but AirPlay RTSP silent after 2500ms; releasing Bluetooth bootstrap for wireless handoff")
+                            Thread({
+                                synchronized(wirelessResourceLock) {
+                                    if (!closed && phase == Phase.WIRELESS && generation == wirelessGeneration.get() &&
+                                        activeSession == null && !wirelessActiveReported.get()
+                                    ) {
+                                        closeBluetoothBootstrapTransport()
+                                    }
+                                }
+                            }, "diplay-early-bt-release").apply {
+                                isDaemon = true
+                                start()
+                            }
+                        }
+                    }, 2500L)
+                    mainHandler.postDelayed({
+                        if (!closed && phase == Phase.WIRELESS && generation == wirelessGeneration.get() &&
+                            activeSession == null && !wirelessActiveReported.get()
+                        ) {
+                            debugLog("AirPlay session establishment timed out after TCP accept; resetting wireless stack")
+                            fail(IOException("Wireless CarPlay session timed out waiting for RTSP after TCP accept"), generation)
+                        }
+                    }, 15_000L)
+                }
             }
 
             override fun onTransportError(message: String) {

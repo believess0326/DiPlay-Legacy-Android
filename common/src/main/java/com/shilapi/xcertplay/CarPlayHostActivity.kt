@@ -1031,6 +1031,7 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         UsbBtPairingUiRouter.register(this)
+        DiPlayBootstrap.restoreUsbBluetooth(this)
         oemLabel = AirPlayPersistence.loadOemLabel(this)
         val savedNightMode = AirPlayPersistence.loadCarPlayNightMode(this)
         val savedThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)

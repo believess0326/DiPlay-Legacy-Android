@@ -944,6 +944,7 @@ private class VideoDecoder(
     /** Issue #216: when the current wait for an acceptable keyframe began. */
     private var keyframeWaitStartedNs = 0L
     private var lastOutputRenderedNs = 0L
+    private var surfaceAttachedAtNs = 0L
     // The main screen keeps the historical log format; other screens are labelled.
     private val stats = VideoStats(statsLabel ?: if (streamType == MAIN_SCREEN_TYPE) "" else " stream=$streamType")
     private val thread = Thread(::run, "carplay-video").apply { isDaemon = true }
@@ -961,6 +962,9 @@ private class VideoDecoder(
     }
 
     fun setSurface(surface: Surface?) {
+        if (surface != null) {
+            queue.discardFrames()
+        }
         queue.offer(VideoJob.SurfaceChanged(surface))
     }
 
@@ -1272,6 +1276,12 @@ private class VideoDecoder(
         outputSurface = surface
         stats.reset()
         queue.discardFrames()
+        consecutiveInputWithoutOutput = 0
+        consecutiveDroppedWithoutKeyFrame = 0
+        keyframeWaitStartedNs = 0L
+        val now = System.nanoTime()
+        lastOutputRenderedNs = now
+        surfaceAttachedAtNs = now
         if (surface == null) {
             releaseDecoder()
             Log.i(TAG, "video decoder detached from surface")
@@ -1384,8 +1394,10 @@ private class VideoDecoder(
         if (consecutiveInputWithoutOutput >= MAX_CONSECUTIVE_INPUT_WITHOUT_OUTPUT) {
             val now = System.nanoTime()
             val elapsedSinceOutputNs = now - lastOutputRenderedNs
-            if (lastOutputRenderedNs == 0L || elapsedSinceOutputNs >= MIN_OUTPUT_STALL_NS) {
-                recover("video decoder output stalled: $consecutiveInputWithoutOutput frames queued without output")
+            val elapsedSinceSurfaceAttachNs = now - surfaceAttachedAtNs
+            // Allow 3.5s warm-up grace period after surface attach to prevent false positives on busy map streams (Issue #315, #320)
+            if (elapsedSinceSurfaceAttachNs >= 3_500_000_000L && (lastOutputRenderedNs == 0L || elapsedSinceOutputNs >= MIN_OUTPUT_STALL_NS)) {
+                recover("video decoder output stalled: $consecutiveInputWithoutOutput frames queued without output", allowRebuild = false)
                 return
             }
         }

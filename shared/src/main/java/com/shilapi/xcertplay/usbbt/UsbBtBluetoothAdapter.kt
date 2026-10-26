@@ -646,10 +646,8 @@ class UsbBtBluetoothAdapter(
             activeStreams.remove(handle)?.let { runCatching { it.close() } }
             l2capLayers.remove(handle)?.let { runCatching { it.close() } }
             val wasInbound = inboundHandles.remove(handle)
-            if (!wasInbound) {
-                val h = synchronized(lock) { hci } ?: return
-                runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
-            }
+            val h = synchronized(lock) { hci } ?: return
+            runCatching { h.sendCommand(OP_DISCONNECT, encodeDisconnect(handle)) }
             Log.i(TAG, "ACL down: handle=0x${handle.toString(16)} wasInbound=$wasInbound")
         }
     }

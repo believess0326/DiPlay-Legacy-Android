@@ -426,6 +426,7 @@ class DiPlayActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         UsbBtPairingUiRouter.register(this)
+        DiPlayBootstrap.restoreUsbBluetooth(this)
         // Returning from another activity can bring the head unit's own density back.
         if (enforceInterfaceSize()) render()
         if (Build.VERSION.SDK_INT < 33 && AppLocale.preference(this) != languagePreferenceAtCreate) {
