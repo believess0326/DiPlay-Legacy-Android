@@ -181,6 +181,11 @@ class AdaptiveSettingsUiTest {
         assertFalse(control.isChecked)
         control.performClick()
         assertTrue(com.shilapi.xcertplay.network.CarHotspotSettings.enabled(context))
+        val boot = descendants(screen.window.decorView).filterIsInstance<Switch>().single {
+            it.contentDescription == screen.getString(R.string.open_after_the_car_starts)
+        }
+        boot.performClick()
+        assertTrue(AirPlayPersistence.loadAutoStartOnBoot(context))
         assertTrue(HotspotSearchProbe.workers.isEmpty())
         // Leave the saved opt-in clean for other UI tests.
         control.performClick()
