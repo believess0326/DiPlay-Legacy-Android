@@ -1927,10 +1927,19 @@ class DiPlayActivity : ComponentActivity() {
 
     private fun bydAdbSettings(parent: LinearLayout) {
         if (AirPlayPersistence.loadWirelessHotspotMode(this) != WirelessHotspotMode.MANUAL) return
-        if (CarHotspotSetup.isLegacyEcarxHeadUnit(this)) {
-            filteredSection(parent, SettingsSection.BYD_ADB, getString(R.string.settings_ecarx_hotspot_title), R.drawable.ic_dp_permissions) { card ->
-                toggle(card, getString(R.string.auto_car_hotspot_title),
-                    getString(R.string.settings_ecarx_hotspot_description), CarHotspotSettings.enabled(this)) {
+        if (CarHotspotSetup.isDirectHotspotSupported(this)) {
+            val title = if (CarHotspotSetup.isLegacyEcarxHeadUnit(this)) {
+                getString(R.string.settings_ecarx_hotspot_title)
+            } else {
+                getString(R.string.settings_legacy_hotspot_title)
+            }
+            val desc = if (CarHotspotSetup.isLegacyEcarxHeadUnit(this)) {
+                getString(R.string.settings_ecarx_hotspot_description)
+            } else {
+                getString(R.string.settings_legacy_hotspot_description)
+            }
+            filteredSection(parent, SettingsSection.BYD_ADB, title, R.drawable.ic_dp_permissions) { card ->
+                toggle(card, getString(R.string.auto_car_hotspot_title), desc, CarHotspotSettings.enabled(this)) {
                     CarHotspotSettings.setEnabled(this, it)
                     if (!it) startupHotspotCancelled = true
                     markReconnectNeeded()

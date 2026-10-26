@@ -1281,17 +1281,23 @@ private class VideoDecoder(
             when (outcome) {
                 DetachOutcome.NOT_RENDERING -> Unit
                 DetachOutcome.PARKED -> {
-                    val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
-                    try {
-                        if (realSdkInt() < 23) throw IllegalStateException("Surface parking requires Android 6")
-                        checkNotNull(decoder).setOutputSurface(consumer.surface)
-                        outputSurface = consumer.surface
-                        Log.i(TAG, "video decoder parked off screen")
-                    } catch (error: Exception) {
-                        Log.w(TAG, "video decoder could not park; releasing it", error)
+                    if (realSdkInt() < 23) {
                         outcome = DetachOutcome.RELEASED
                         outputSurface = null
                         releaseDecoder()
+                        Log.i(TAG, "video decoder detached (surface parking unsupported on API < 23)")
+                    } else {
+                        try {
+                            val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
+                            checkNotNull(decoder).setOutputSurface(consumer.surface)
+                            outputSurface = consumer.surface
+                            Log.i(TAG, "video decoder parked off screen")
+                        } catch (error: Exception) {
+                            Log.w(TAG, "video decoder could not park; releasing it", error)
+                            outcome = DetachOutcome.RELEASED
+                            outputSurface = null
+                            releaseDecoder()
+                        }
                     }
                 }
                 DetachOutcome.RELEASED -> {
@@ -2664,7 +2670,7 @@ private class AudioRenderer(
         // AudioManager.STREAM_ACCESSIBILITY was added in API 26 (value 10). Keep compatibility for API < 26.
         const val STREAM_ACCESSIBILITY_COMPAT = 10
         const val AAC_OBJECT_TYPE_LC = 2
-        const val MIN_OPUS_PACKET_BYTES = 4
+        const val MIN_OPUS_PACKET_BYTES = 1
         const val OPUS_CODEC_DELAY_NANOS = 6_500_000L
         const val OPUS_SEEK_PRE_ROLL_NANOS = 80_000_000L
         const val INPUT_TIMEOUT_US = 10_000L

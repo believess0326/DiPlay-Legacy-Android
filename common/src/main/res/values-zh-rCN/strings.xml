@@ -784,4 +784,6 @@
     <string name="hostapd_channel_must_be_1_13">信道须在 1 到 13 之间</string>
     <string name="settings_ecarx_hotspot_title">ECARX 原厂热点</string>
     <string name="settings_ecarx_hotspot_description">下次连接或打开 DiPlay 时，关闭普通 Wi-Fi 并开启已保存的原厂热点，保留名称和密码。如需开机自动运行，请同时开启“车机启动后打开”。此 Android 5.1 车机无需 ADB 授权。</string>
+    <string name="settings_legacy_hotspot_title">车机热点自动开启</string>
+    <string name="settings_legacy_hotspot_description">在下次连接或打开 DiPlay 时，自动关闭 Wi-Fi 并开启已保存的车机热点。保持热点名称与密码不变。如需开机自动启动，请同时开启“车机启动后打开”。在此车机上无需 ADB 授权。</string>
 </resources>

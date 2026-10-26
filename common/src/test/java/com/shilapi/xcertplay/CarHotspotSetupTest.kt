@@ -150,6 +150,16 @@ class CarHotspotSetupTest {
         assertTrue(CarHotspotSetup.bootLaunchNeedsAdb(context))
     }
 
+    @Test @Config(sdk = [29])
+    fun legacyAndroidCanConfigureHotspotAndBootWithoutAdb() {
+        ShadowBuild.setVersionRelease("4.4.2")
+        assertFalse(CarHotspotSetup.isBydHeadUnit(context))
+        assertTrue(CarHotspotSetup.isDirectHotspotSupported(context))
+        configureHotspot()
+        CarHotspotSettings.setEnabled(context, true)
+        assertFalse(CarHotspotSetup.bootLaunchNeedsAdb(context))
+    }
+
     private fun eligible() = CarHotspotSetup.shouldStartOnLaunch(context, hasSession = false)
 
     private fun installPackage(name: String, system: Boolean) {

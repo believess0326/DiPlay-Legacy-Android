@@ -821,4 +821,6 @@
     <string name="hostapd_channel_must_be_1_13">Channel must be between 1 and 13</string>
     <string name="settings_ecarx_hotspot_title">ECARX car hotspot</string>
     <string name="settings_ecarx_hotspot_description">On the next connection or when DiPlay opens, turn off regular Wi-Fi and start the saved car hotspot. Keep its name and password. For boot startup, also enable “Open after the car starts”. No ADB authorization is needed on this Android 5.1 unit.</string>
+    <string name="settings_legacy_hotspot_title">Car hotspot autostart</string>
+    <string name="settings_legacy_hotspot_description">On the next connection or when DiPlay opens, turn off regular Wi-Fi and start the saved car hotspot. Keep its name and password. For boot startup, also enable “Open after the car starts”. No ADB authorization is needed on this unit.</string>
 </resources>

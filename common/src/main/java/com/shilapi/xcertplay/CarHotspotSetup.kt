@@ -26,9 +26,13 @@ internal object CarHotspotSetup {
             context.packageManager.getApplicationInfo("ecarx.settings", 0).flags and ApplicationInfo.FLAG_SYSTEM != 0
         }.getOrDefault(false)
 
+    // Expose direct hotspot startup without ADB on legacy Android (API <= 22) or verified ECARX units.
+    fun isDirectHotspotSupported(context: Context): Boolean =
+        (realSdkInt() <= 22 && !isBydHeadUnit(context)) || isLegacyEcarxHeadUnit(context)
+
     fun bootLaunchNeedsAdb(context: Context): Boolean =
         CarHotspotSettings.shouldEnable(context, true, AirPlayPersistence.loadWirelessHotspotMode(context)) &&
-            !isLegacyEcarxHeadUnit(context)
+            !isDirectHotspotSupported(context)
 
     enum class Permission(val appOp: String) {
         HOTSPOT("WRITE_SETTINGS"), BOOT_LAUNCH("SYSTEM_ALERT_WINDOW");

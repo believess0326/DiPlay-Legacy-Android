@@ -4907,6 +4907,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 "Display updated while handshake is reset: " +
                     "${previous.width}x${previous.height} -> ${size.width}x${size.height}",
             )
+            reapplyVideoLayout()
         } else if (controller == null && display == null) {
             appendLog(
                 "Display updated before CarPlay startup: " +
@@ -5043,11 +5044,17 @@ class CarPlayHostActivity : ComponentActivity() {
         if (fallback != null) {
             val bounds = CarPlaySurfaceBounds.from(content)
             if (fallbackVideoBounds != bounds) {
+                val previousBounds = fallbackVideoBounds
                 fallbackVideoBounds = bounds
                 fallback.layoutParams = FrameLayout.LayoutParams(bounds.width, bounds.height,
                     Gravity.TOP or Gravity.LEFT).apply {
                     leftMargin = bounds.left
                     topMargin = bounds.top
+                }
+                fallback.requestLayout()
+                fallback.invalidate()
+                if (previousBounds != null && (bounds.width > previousBounds.width || bounds.height > previousBounds.height)) {
+                    sink?.refreshPicture(SCREEN_TYPE_MAIN)
                 }
             }
         } else {
@@ -5107,6 +5114,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     "Display: video layout reapplied after settle view=${changedView.width}x${changedView.height} " +
                         "content=${content.width.toInt()}x${content.height.toInt()}",
                 )
+                sink?.refreshPicture(SCREEN_TYPE_MAIN)
             }
         }
         view.addOnLayoutChangeListener(listener)

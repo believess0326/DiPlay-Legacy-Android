@@ -707,4 +707,6 @@
     <string name="hostapd_channel_must_be_1_13">Канал должен быть от 1 до 13</string>
     <string name="settings_ecarx_hotspot_title">Точка доступа ECARX</string>
     <string name="settings_ecarx_hotspot_description">При следующем подключении или открытии DiPlay отключает обычный Wi-Fi и включает сохранённую точку доступа автомобиля, сохраняя имя и пароль. Для запуска после загрузки включите также «Открывать после запуска автомобиля». На этой системе Android 5.1 разрешение ADB не требуется.</string>
+    <string name="settings_legacy_hotspot_title">Автозапуск точки доступа автомобиля</string>
+    <string name="settings_legacy_hotspot_description">При следующем подключении или при открытии DiPlay отключает обычный Wi-Fi и запускает сохранённую точку доступа. На этом устройстве авторизация ADB не требуется.</string>
 </resources>
