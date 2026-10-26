@@ -3,6 +3,7 @@ package com.shilapi.xcertplay
 import android.content.Context
 import com.shilapi.xcertplay.compat.realSdkInt
 import android.content.pm.ApplicationInfo
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import com.shilapi.xcertplay.adb.AdbKeys
@@ -17,6 +18,17 @@ internal object CarHotspotSetup {
     fun isBydHeadUnit(context: Context): Boolean = BydOutputSettings.navigationAvailable(context) || runCatching {
         context.packageManager.getApplicationInfo("com.byd.carsettings", 0).flags and ApplicationInfo.FLAG_SYSTEM != 0
     }.getOrDefault(false)
+
+    // Only expose the direct path on the firmware family verified in #322. Do not
+    // classify ECARX as BYD: that would also expose unrelated vehicle controls.
+    fun isLegacyEcarxHeadUnit(context: Context): Boolean =
+        realSdkInt() == 22 && Build.DEVICE.equals("xea406m", ignoreCase = true) && runCatching {
+            context.packageManager.getApplicationInfo("ecarx.settings", 0).flags and ApplicationInfo.FLAG_SYSTEM != 0
+        }.getOrDefault(false)
+
+    fun bootLaunchNeedsAdb(context: Context): Boolean =
+        CarHotspotSettings.shouldEnable(context, true, AirPlayPersistence.loadWirelessHotspotMode(context)) &&
+            !isLegacyEcarxHeadUnit(context)
 
     enum class Permission(val appOp: String) {
         HOTSPOT("WRITE_SETTINGS"), BOOT_LAUNCH("SYSTEM_ALERT_WINDOW");

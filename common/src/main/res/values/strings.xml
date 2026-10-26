@@ -819,4 +819,6 @@
     <string name="hotspot_hint_hostapd">Root hotspot: this head unit must be rooted. DiPlay creates the hotspot itself; keep your iPhone’s Wi-Fi and Bluetooth on.</string>
     <string name="hostapd_channel_1_13">Channel (1–13)</string>
     <string name="hostapd_channel_must_be_1_13">Channel must be between 1 and 13</string>
+    <string name="settings_ecarx_hotspot_title">ECARX car hotspot</string>
+    <string name="settings_ecarx_hotspot_description">On the next connection or when DiPlay opens, turn off regular Wi-Fi and start the saved car hotspot. Keep its name and password. For boot startup, also enable “Open after the car starts”. No ADB authorization is needed on this Android 5.1 unit.</string>
 </resources>

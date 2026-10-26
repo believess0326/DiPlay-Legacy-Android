@@ -717,4 +717,6 @@
     <string name="hotspot_hint_hostapd">Root-точка доступу: пристрій має бути рутований. DiPlay створює точку доступу сам; тримайте Wi-Fi та Bluetooth iPhone увімкненими.</string>
     <string name="hostapd_channel_1_13">Канал (1–13)</string>
     <string name="hostapd_channel_must_be_1_13">Канал має бути від 1 до 13</string>
+    <string name="settings_ecarx_hotspot_title">Точка доступу ECARX</string>
+    <string name="settings_ecarx_hotspot_description">Під час наступного підключення або відкриття DiPlay вимикає звичайний Wi-Fi та вмикає збережену точку доступу автомобіля, зберігаючи назву й пароль. Для запуску після завантаження також увімкніть «Відкривати після запуску автомобіля». На цій системі Android 5.1 дозвіл ADB не потрібен.</string>
 </resources>

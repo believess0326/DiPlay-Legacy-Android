@@ -152,6 +152,45 @@ class AdaptiveSettingsUiTest {
         assertTrue(HotspotSearchProbe.workers.isEmpty())
     }
 
+    @Test
+    @Config(sdk = [22], shadows = [HotspotSearchProbe::class])
+    fun ecarxHotspotIsSearchableInConnectionWithoutAnAdbProbe() {
+        val permissions = context.packageManager.getPackageInfo(context.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty()
+        assertTrue(permissions.contains(android.Manifest.permission.CHANGE_NETWORK_STATE))
+        org.robolectric.shadows.ShadowBuild.setDevice("xea406m")
+        shadowOf(context.packageManager).installPackage(PackageInfo().apply {
+            packageName = "ecarx.settings"
+            applicationInfo = ApplicationInfo().apply {
+                packageName = "ecarx.settings"
+                flags = ApplicationInfo.FLAG_SYSTEM
+            }
+        })
+        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.MANUAL)
+        HotspotSearchProbe.workers.clear()
+        val screen = openSettings()
+        val index = ReflectionHelpers.callInstanceMethod<List<DiPlayActivity.SettingsSearchResult>>(
+            screen, "buildSettingsSearchIndex")
+        val result = index.single { it.title == screen.getString(R.string.auto_car_hotspot_title) }
+        assertEquals(SettingsCategory.CONNECTION, result.category)
+        ReflectionHelpers.callInstanceMethod<Unit>(screen, "openSearchResult",
+            ReflectionHelpers.ClassParameter(result.javaClass, result))
+        val control = descendants(screen.window.decorView).filterIsInstance<Switch>().single {
+            it.contentDescription == screen.getString(R.string.auto_car_hotspot_title)
+        }
+        assertFalse(control.isChecked)
+        control.performClick()
+        assertTrue(com.shilapi.xcertplay.network.CarHotspotSettings.enabled(context))
+        val boot = descendants(screen.window.decorView).filterIsInstance<Switch>().single {
+            it.contentDescription == screen.getString(R.string.open_after_the_car_starts)
+        }
+        boot.performClick()
+        assertTrue(AirPlayPersistence.loadAutoStartOnBoot(context))
+        assertTrue(HotspotSearchProbe.workers.isEmpty())
+        // Leave the saved opt-in clean for other UI tests.
+        control.performClick()
+    }
+
     @Test fun cardControlsShareOneHeightAndGap() {
         val screen = openSettings()
         descendants(screen.window.decorView)
