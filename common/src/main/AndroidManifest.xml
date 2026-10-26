@@ -102,6 +102,23 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
+        <!-- Issue #321: Dedicated trampoline activity for external USB Bluetooth dongles (e.g. UGREEN CM591).
+             Provides the static intent-filter with usb_bt_device_filter.xml required for Android to persist
+             the "Use by default for this USB device" permission checkbox across reboots, isolated from Apple iPhones. -->
+        <activity
+            android:name="com.shilapi.xcertplay.usbbt.UsbBtDeviceAttachedActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_bt_device_filter" />
+        </activity>
+
         <activity
             android:name="com.shilapi.xcertplay.AdbClusterActivity"
             android:label="@string/adb_cluster_activity_label"

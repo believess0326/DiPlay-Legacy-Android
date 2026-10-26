@@ -332,9 +332,14 @@ object AirPlayPersistence {
      * card's start/stop used to be runtime-only, so after every process restart the
      * dongle looked "switched off" even though the user had turned it on.
      */
+    /**
+     * Issue #281 & #321: whether the user has started the USB Bluetooth dongle.
+     * Defaults to true so an attached dongle is automatically loaded on app launch
+     * without forcing manual navigation to settings.
+     */
     fun loadUsbBtAutoStart(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_USB_BT_AUTO_START, false)
+            .getBoolean(KEY_USB_BT_AUTO_START, true)
 
     fun saveUsbBtAutoStart(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

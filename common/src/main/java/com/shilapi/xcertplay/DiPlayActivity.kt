@@ -4492,6 +4492,7 @@ class DiPlayActivity : ComponentActivity() {
                 }
                 actionLayout.addView(permNotice)
                 val reqBtn = button(getString(R.string.settings_usb_bluetooth_request_permission), false) {
+                    AirPlayPersistence.saveUsbBtAutoStart(applicationContext, true)
                     val mgr = getSystemService(Context.USB_SERVICE) as? UsbManager
                     if (mgr != null) {
                         UsbBtDongleDetector(applicationContext).ensurePermission(

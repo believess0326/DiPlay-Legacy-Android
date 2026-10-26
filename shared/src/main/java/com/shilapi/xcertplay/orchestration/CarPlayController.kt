@@ -506,28 +506,31 @@ class CarPlayController(
     }
 
     /**
-     * Reclaims MainAudio and Screen ownership via CarPlay changeModes (transferType=Take).
+     * Yields MainAudio ownership back to iPhone (transferType=Untake) and reclaims Screen ownership
+     * via CarPlay changeModes (transferType=Take).
      * Used when returning from native head unit media/radio or on audio focus recovery.
      */
     fun takeMainAudioAndScreen(): Boolean {
         val session = activeSession ?: return false
         val resources = listOf(
-            linkedMapOf("resourceID" to 1, "transferType" to 1),
-            linkedMapOf("resourceID" to 2, "transferType" to 1),
+            linkedMapOf("resourceID" to 1, "transferType" to 1), // Take Screen (Accessory displays screen)
+            linkedMapOf("resourceID" to 2, "transferType" to 2), // Untake MainAudio (iPhone outputs audio)
         )
-        debugLog("requesting CarPlay MainAudio and Screen via changeModes")
+        debugLog("requesting CarPlay MainAudio (Untake) and Screen (Take) via changeModes")
         return changeModes(resources = resources)
     }
 
     /**
-     * Reclaims MainAudio ownership via CarPlay changeModes (transferType=Take).
+     * Yields MainAudio ownership back to iPhone via CarPlay changeModes (transferType=Untake).
+     * In CarPlay protocol, transferType=1 (Take) means the accessory seizes the resource; sending
+     * transferType=2 (Untake) instructs iOS to resume streaming audio over CarPlay.
      */
     fun takeMainAudio(): Boolean {
         val session = activeSession ?: return false
         val resources = listOf(
-            linkedMapOf("resourceID" to 2, "transferType" to 1),
+            linkedMapOf("resourceID" to 2, "transferType" to 2), // Untake MainAudio (iPhone outputs audio)
         )
-        debugLog("requesting CarPlay MainAudio via changeModes")
+        debugLog("requesting CarPlay MainAudio via changeModes (transferType=Untake)")
         return changeModes(resources = resources)
     }
 

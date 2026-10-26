@@ -13,14 +13,16 @@ import java.security.MessageDigest
 internal object DiPlayBootstrap {
     @Volatile private var ready = false
     @Volatile private var usbBtRestoreTried = false
+    @Volatile private var lastRestoreAttemptMillis = 0L
 
     /**
-     * Issue #281: restore the USB Bluetooth dongle the user started earlier. Once per
-     * process, off the main thread; wireless bring-up enables the dongle as well, this
-     * covers simply opening the app (no connection started yet).
+     * Issue #281 & #321: restore the USB Bluetooth dongle on app launch or resume.
+     * Retries if previous attempt occurred before the USB bus finished enumeration.
      */
-    @Synchronized fun restoreUsbBluetooth(context: Context) {
-        if (usbBtRestoreTried) return
+    @Synchronized fun restoreUsbBluetooth(context: Context, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && usbBtRestoreTried && (now - lastRestoreAttemptMillis < 3000L)) return
+        lastRestoreAttemptMillis = now
         usbBtRestoreTried = true
         if (!AirPlayPersistence.loadUsbBtAutoStart(context)) return
         val appContext = context.applicationContext
@@ -29,7 +31,7 @@ internal object DiPlayBootstrap {
                 val dongle = com.shilapi.xcertplay.bluetooth.CarPlayBluetoothManager.get(appContext).usbDongle
                     ?: return@runCatching
                 val status = dongle.getStatus()
-                if (status.isSupported && status.hasPermission && !status.isEnabled) {
+                if (status.isSupported && !status.isEnabled) {
                     dongle.enable()
                 }
             }

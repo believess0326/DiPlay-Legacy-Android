@@ -308,9 +308,12 @@ class HostapdHotspotManager(
             onDiagnostic("hostapd: bluetooth reset skipped (adapter off)")
             return
         }
-        val disabled = RootShell.run("svc bluetooth disable", 10_000)
-        if (!disabled.success) {
-            onDiagnostic("hostapd: bluetooth reset unavailable (svc bluetooth disable failed)")
+        var disabled = RootShell.run("svc bluetooth disable", 10_000).success
+        if (!disabled) {
+            disabled = runCatching { adapter.disable() }.getOrDefault(false)
+        }
+        if (!disabled) {
+            onDiagnostic("hostapd: bluetooth reset unavailable (neither root nor adapter.disable succeeded)")
             return
         }
         val offDeadline = System.nanoTime() + 5_000_000_000L
@@ -322,7 +325,10 @@ class HostapdHotspotManager(
             onDiagnostic("hostapd: bluetooth reset skipped (adapter did not turn off)")
             return
         }
-        RootShell.run("svc bluetooth enable", 10_000)
+        val enabled = RootShell.run("svc bluetooth enable", 10_000).success
+        if (!enabled) {
+            runCatching { adapter.enable() }
+        }
         val onDeadline = System.nanoTime() + 10_000_000_000L
         while (!adapter.isEnabled && System.nanoTime() < onDeadline) {
             if (closed || isCancelled()) return

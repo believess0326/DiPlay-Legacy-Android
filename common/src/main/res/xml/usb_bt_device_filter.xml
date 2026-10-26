@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bluetooth USB Controllers: Class 224 (0xE0: Wireless Controller), Subclass 1 (RF), Protocol 1 (Bluetooth) -->
+    <usb-device class="224" subclass="1" protocol="1" />
+    <!-- Common Bluetooth Dongles: UGREEN/Actions (0x10d7=4311, 0x2b89=11145), Realtek (0x0bda=3034), CSR (0x0a12=2578) -->
+    <!-- UGREEN CM591: Actions ATS2851 (0x10d7:0xb012), Haylou/UGREEN (0x2b89:0x3599) -->
+    <usb-device vendor-id="4311" />
+    <usb-device vendor-id="11145" />
+    <usb-device vendor-id="3034" />
+    <usb-device vendor-id="2578" />
+</resources>

@@ -113,11 +113,16 @@ class UsbBtBluetoothAdapter(
     private var eventPumpThread: Thread? = null
     private var aclPumpThread: Thread? = null
 
+    init {
+        ensureUsbReceivers()
+    }
+
     /** USB permission / detach receivers; registered on first enable() attempt. */
     private var usbReceivers: Closeable? = null
 
     /** Set when enable() is waiting for the user to grant USB permission. */
     private val awaitingPermission = AtomicBoolean(false)
+    @Volatile private var lastPermissionRequestMillis = 0L
 
     /** BD_ADDR (uppercase) -> ACL handle for established connections. */
     private val aclHandleByAddr = ConcurrentHashMap<String, Int>()
@@ -212,7 +217,10 @@ class UsbBtBluetoothAdapter(
         // If none of the permitted devices could be initialized, request permission for the best ungranted candidate.
         if (ungranted.isNotEmpty()) {
             val target = ungranted.first()
-            if (awaitingPermission.compareAndSet(false, true)) {
+            val now = System.currentTimeMillis()
+            if (awaitingPermission.compareAndSet(false, true) || (now - lastPermissionRequestMillis > 10_000L)) {
+                lastPermissionRequestMillis = now
+                awaitingPermission.set(true)
                 val reqMsg = "enable: requesting USB permission for candidate: ${target.vendorLabel}"
                 UsbBtLog.log(appContext, TAG, reqMsg)
                 detector.ensurePermission(mgr, target)

@@ -88,6 +88,7 @@ class AndroidBluetoothAdapter(
         // 2. Fallback to insecure RFCOMM on legacy or custom vehicle ROMs where MITM pairing is absent
         if (socket == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.GINGERBREAD_MR1) {
             try {
+                try { Thread.sleep(100L) } catch (_: InterruptedException) {}
                 socket = connectSocket(device, a) { it.createInsecureRfcommSocketToServiceRecord(serviceUuid) }
             } catch (t: Throwable) {
                 lastError = t
@@ -125,7 +126,13 @@ class AndroidBluetoothAdapter(
         val latch = CountDownLatch(1)
         Thread({
             try {
-                runCatching { adapter.cancelDiscovery() }
+                if (adapter.isDiscovering) {
+                    runCatching { adapter.cancelDiscovery() }
+                    var cancelWait = 0
+                    while (adapter.isDiscovering && cancelWait++ < 10) {
+                        try { Thread.sleep(50L) } catch (_: InterruptedException) { break }
+                    }
+                }
                 socket.connect()
             } catch (t: Throwable) {
                 result.set(t)
