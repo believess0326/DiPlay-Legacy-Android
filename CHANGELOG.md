@@ -1,3 +1,13 @@
+# DiPlay 0.2.98 — 2026-10-26
+
+- Huawei HiSilicon hardware AVC decoder crash workaround (#324): work around fatal Stagefright ACodec SIGABRT assertion `CHECK(def.nBufferSize >= size)` on Huawei Ascend P6/P7 (hi6620oem / Android 4.4.2); automatically prioritize stable software AVC decoder (OMX.google.h264.decoder) when OMX.k3.video.decoder.avc is detected.
+- ECARX Android 5.1 stock hotspot auto-start & permission declaration (#322 / PR #323): declare CHANGE_NETWORK_STATE to satisfy legacy ConnectivityManager.enforceTetherChangePermission; add direct opt-in stock hotspot toggle for xea406m / ecarx.settings head units without local ADB requirement.
+- In-call audio silence & short Opus frame drop elimination (#271, #272): resolve one-way/two-way inaudible CarPlay telephony calls; refine Opus audio packet decoding and stream routing.
+- Reverse camera exit viewport border padding elimination (#290): fix black border padding and viewport offset regression after returning from reverse camera; recalculate aspect bounds and flush view layout immediately upon reverse exit.
+- Legacy head unit stock hotspot & USB Bluetooth cold boot sequence enhancement (#321): optimize cold boot device enumeration and permission gates for automated wireless connection.
+
+See [v0.2.98 release notes](docs/RELEASE-NOTES-0.2.98.md) for details.
+
 # DiPlay 0.2.97 — 2026-10-26
 
 - Car Bluetooth audio resume & Untake protocol fix (#312): fix silent audio when switching back from car Bluetooth to CarPlay; correct audio reclaim transferType from Take to Untake so iOS resumes streaming media audio over Wi-Fi.
