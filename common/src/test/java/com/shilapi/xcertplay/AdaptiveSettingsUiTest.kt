@@ -153,9 +153,8 @@ class AdaptiveSettingsUiTest {
     }
 
     @Test
-    @Config(sdk = [29], shadows = [HotspotSearchProbe::class])
+    @Config(sdk = [22], shadows = [HotspotSearchProbe::class])
     fun ecarxHotspotIsSearchableInConnectionWithoutAnAdbProbe() {
-        org.robolectric.shadows.ShadowBuild.setVersionRelease("5.1")
         val permissions = context.packageManager.getPackageInfo(context.packageName,
             android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty()
         assertTrue(permissions.contains(android.Manifest.permission.CHANGE_NETWORK_STATE))
