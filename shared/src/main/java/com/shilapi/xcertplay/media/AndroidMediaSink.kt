@@ -1113,10 +1113,23 @@ private class VideoDecoder(
         } else null
         // Some vendor decoders (e.g. MediaTek c2.mtk.avc.decoder) reject the tuned
         // parameters with BAD_VALUE. Fall back to a minimal format, then to software.
-        val attempts = listOf(
-            DecoderAttempt(codecName = null, tuned = true),
-            DecoderAttempt(codecName = null, tuned = false),
-        ) + softwareDecoderName(mime)?.let { listOf(DecoderAttempt(it, tuned = false)) }.orEmpty()
+        // Issue #324: some legacy chipsets (e.g. Huawei Ascend P7 / hi6620oem with OMX.k3.video.decoder.avc)
+        // crash with fatal SIGABRT in ACodec: CHECK(def.nBufferSize >= size) when initialising hardware AVC.
+        // On these known broken hardware decoders, prioritize the software decoder fallback directly.
+        val defaultBroken = isKnownBrokenHardwareDecoder(mime)
+        val software = softwareDecoderName(mime)
+        val attempts = if (defaultBroken && software != null) {
+            Log.w(TAG, "default hardware decoder for $mime is known broken on this device; prioritizing software decoder: $software")
+            listOf(DecoderAttempt(software, tuned = false)) + listOf(
+                DecoderAttempt(codecName = null, tuned = true),
+                DecoderAttempt(codecName = null, tuned = false),
+            )
+        } else {
+            listOf(
+                DecoderAttempt(codecName = null, tuned = true),
+                DecoderAttempt(codecName = null, tuned = false),
+            ) + software?.let { listOf(DecoderAttempt(it, tuned = false)) }.orEmpty()
+        }
         var next: MediaCodec? = null
         for (attempt in attempts) {
             next = tryConfigure(mime, csd, surface, attempt)
@@ -1186,6 +1199,32 @@ private class VideoDecoder(
             )
             null
         }
+    }
+
+    private fun isKnownBrokenHardwareDecoder(mime: String): Boolean {
+        if (mime != MediaFormat.MIMETYPE_VIDEO_AVC) return false
+        val defaultDecoder = defaultDecoderName(mime) ?: return false
+        // OMX.k3.video.decoder.avc on HiSilicon/K3v2 (Huawei Ascend P6/P7 etc.) aborts
+        // with CHECK(def.nBufferSize >= size) in ACodec.cpp when initialising metadata/buffers.
+        return defaultDecoder.startsWith("OMX.k3.video.decoder", ignoreCase = true)
+    }
+
+    private fun defaultDecoderName(mime: String): String? {
+        if (realSdkInt() >= Build.VERSION_CODES.Q) {
+            return MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
+                !it.isEncoder && mime in it.supportedTypes
+            }?.name
+        }
+        if (realSdkInt() >= 16) {
+            @Suppress("DEPRECATION")
+            return (0 until MediaCodecList.getCodecCount()).mapNotNull { i ->
+                @Suppress("DEPRECATION")
+                MediaCodecList.getCodecInfoAt(i)
+            }.firstOrNull {
+                !it.isEncoder && mime in it.supportedTypes
+            }?.name
+        }
+        return null
     }
 
     private fun softwareDecoderName(mime: String): String? {
