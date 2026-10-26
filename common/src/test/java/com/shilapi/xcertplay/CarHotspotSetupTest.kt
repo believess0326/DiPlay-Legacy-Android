@@ -114,8 +114,9 @@ class CarHotspotSetupTest {
         assertEquals(WirelessHotspotMode.MANUAL, AirPlayPersistence.loadWirelessHotspotMode(context))
     }
 
-    @Test @Config(sdk = [22])
+    @Test @Config(sdk = [29])
     fun verifiedEcarxCanConfigureHotspotAndBootWithoutAdb() {
+        ShadowBuild.setVersionRelease("5.1")
         ShadowBuild.setDevice("xea406m")
         installPackage("ecarx.settings", system = true)
         assertTrue(CarHotspotSetup.isLegacyEcarxHeadUnit(context))
@@ -129,8 +130,9 @@ class CarHotspotSetupTest {
         assertTrue(CarHotspotSetup.Permission.BOOT_LAUNCH.granted(context))
     }
 
-    @Test @Config(sdk = [22])
+    @Test @Config(sdk = [29])
     fun ecarxDirectPathRequiresTheVerifiedDeviceAndASystemSettingsPackage() {
+        ShadowBuild.setVersionRelease("5.1")
         ShadowBuild.setDevice("xea406m")
         installPackage("ecarx.settings", system = false)
         assertFalse(CarHotspotSetup.isLegacyEcarxHeadUnit(context))
