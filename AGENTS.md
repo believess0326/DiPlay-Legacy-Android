@@ -20,6 +20,14 @@ Before publishing any Release:
 1. Re-run `./gradlew :mobile:extractReleaseVersionControlInfo --rerun-tasks :mobile:assembleRelease` to guarantee that the generated APK's embedded `META-INF/version-control-info.textproto` points to the target release commit.
 2. Run `node scripts/verify_release_apk.js` to ensure the Release APK matches the current source code and SHA-256 with 0 diffs before pushing tags or creating GitHub releases.
 3. Keep SHA-256 checksum files organized under `checksums/` (e.g. `checksums/DiPlay-vX.Y.Z-legacy-release.apk.sha256`) instead of polluting the repository root.
+4. **GitHub Release 发布规范**：
+   - **标题命名规范**：Release 标题必须严格遵循完整版本规范 `DiPlay vX.Y.Z — [中文亮点概述]`（直接采用对应的 `docs/RELEASE-NOTES-X.Y.Z.md` 顶部的第一行大标题），严禁仅写简单的 `DiPlay vX.Y.Z`。
+   - **附件完整性规范**：除了上传生成的 Release APK 以外，必须同时将计算好的 SHA-256 校验文件一并上传至该 Release 的 assets 附件中（如 `checksums/DiPlay-vX.Y.Z-legacy-release.apk.sha256`）。
+   - 示例命令：
+     ```sh
+     gh release create vX.Y.Z DiPlay-vX.Y.Z-legacy-release.apk checksums/DiPlay-vX.Y.Z-legacy-release.apk.sha256 \
+       -t "DiPlay vX.Y.Z — [中文亮点概述]" -F docs/RELEASE-NOTES-X.Y.Z.md
+     ```
 
 ## Adding or moving a setting
 
