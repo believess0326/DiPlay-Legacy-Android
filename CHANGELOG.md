@@ -1,3 +1,13 @@
+# DiPlay 0.2.97 — 2026-10-26
+
+- Car Bluetooth audio resume & Untake protocol fix (#312): fix silent audio when switching back from car Bluetooth to CarPlay; correct audio reclaim transferType from Take to Untake so iOS resumes streaming media audio over Wi-Fi.
+- External USB Bluetooth dongle boot auto-start & default grant persistence (#321): add dedicated UsbBtDeviceAttachedActivity with static usb_bt_device_filter.xml matching Bluetooth controllers (Class 0xE0/1/1 and ATS2851/Haylou/Realtek/CSR) to persist default permission across reboots without popups; remove permission gate during cold boot to allow silent root grants.
+- Wireless CarPlay control channel stall & USB Bluetooth handoff deadlock elimination (#316): eliminate deadlock where the phone waits for Bluetooth release and the car waits for RTSP; send standard RFCOMM_DISC frames on close, issue HCI OP_DISCONNECT when ACL refcount reaches zero, proactively release Bluetooth bootstrap 2.5s after TCP accept, and add 15s session timeout recovery.
+- Reverse-camera return navigation black-screen lockup elimination (#320 / #315): fix 100% black-screen freeze when returning from reverse gear on dynamic map streams (AutoNavi/Amap); reset consecutive unrendered frame counters and output timestamps on surface recreate, grant a 3.5s pipeline warm-up grace period, flush stale queued frames, and forbid destructive MediaCodec releases on output stall.
+- Non-root Bluetooth stack reset fallback & RFCOMM contention avoidance (#312): wait asynchronously for discovery cancellation and add 100ms settling delay to prevent "Device or resource busy" on Bluedroid; support BluetoothAdapter.disable()/enable() fallback for non-root recovery.
+
+See [v0.2.97 release notes](docs/RELEASE-NOTES-0.2.97.md) for details.
+
 # DiPlay 0.2.96 — 2026-10-26
 
 - Reverse-camera return freeze & dynamic video crash elimination (#320 / #315): fix degenerate pipeline detection storm (187 recover calls/sec) when returning from reverse gear with active navigation streams; debounce pipeline checks, drop stale frames on surface reconnect, request IDR keyframes instead of destroying MediaCodec, and register missing vendor reverse exit intents.
