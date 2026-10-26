@@ -771,4 +771,6 @@
     <string name="hotspot_hint_hostapd">Root 熱點：車機需要已 root。DiPlay 會自行建立熱點；請保持 iPhone 的 Wi-Fi 與藍牙打開。</string>
     <string name="hostapd_channel_1_13">頻道（1–13）</string>
     <string name="hostapd_channel_must_be_1_13">頻道須在 1 到 13 之間</string>
+    <string name="settings_ecarx_hotspot_title">ECARX 原廠熱點</string>
+    <string name="settings_ecarx_hotspot_description">下次連線或開啟 DiPlay 時，關閉一般 Wi-Fi 並開啟已儲存的原廠熱點，保留名稱和密碼。如需開機自動執行，請同時啟用「車機啟動後開啟」。此 Android 5.1 車機不需 ADB 授權。</string>
 </resources>

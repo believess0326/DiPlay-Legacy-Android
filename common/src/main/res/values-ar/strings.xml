@@ -705,4 +705,6 @@
     <string name="hotspot_hint_hostapd">نقطة اتصال الجذر: يجب أن تكون هذه الوحدة ذات صلاحيات جذر. ينشئ DiPlay نقطة الاتصال بنفسه؛ أبقِ Wi-Fi وBluetooth في iPhone قيد التشغيل.</string>
     <string name="hostapd_channel_1_13">القناة (1–13)</string>
     <string name="hostapd_channel_must_be_1_13">يجب أن تكون القناة بين 1 و13</string>
+    <string name="settings_ecarx_hotspot_title">نقطة اتصال سيارة ECARX</string>
+    <string name="settings_ecarx_hotspot_description">عند الاتصال التالي أو فتح DiPlay، يتم إيقاف Wi-Fi العادي وتشغيل نقطة اتصال السيارة المحفوظة مع الاحتفاظ بالاسم وكلمة المرور. للتشغيل عند الإقلاع، فعّل أيضًا «الفتح بعد تشغيل السيارة». لا تحتاج هذه الوحدة بنظام Android 5.1 إلى تفويض ADB.</string>
 </resources>

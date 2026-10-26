@@ -705,4 +705,6 @@
     <string name="hotspot_hint_hostapd">Root-точка доступа: магнитола должна быть рутована. DiPlay создаёт точку доступа сам; держите Wi-Fi и Bluetooth iPhone включёнными.</string>
     <string name="hostapd_channel_1_13">Канал (1–13)</string>
     <string name="hostapd_channel_must_be_1_13">Канал должен быть от 1 до 13</string>
+    <string name="settings_ecarx_hotspot_title">Точка доступа ECARX</string>
+    <string name="settings_ecarx_hotspot_description">При следующем подключении или открытии DiPlay отключает обычный Wi-Fi и включает сохранённую точку доступа автомобиля, сохраняя имя и пароль. Для запуска после загрузки включите также «Открывать после запуска автомобиля». На этой системе Android 5.1 разрешение ADB не требуется.</string>
 </resources>

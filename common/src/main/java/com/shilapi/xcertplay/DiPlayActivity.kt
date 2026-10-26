@@ -1379,8 +1379,7 @@ class DiPlayActivity : ComponentActivity() {
             adbToggle(card, R.string.open_after_the_car_starts,
                 R.string.availability_depends_on_your_head_unit_s_startup_settings,
                 read = { AirPlayPersistence.loadAutoStartOnBoot(this) },
-                needsAdb = { CarHotspotSettings.enabled(this) &&
-                    AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.MANUAL },
+                needsAdb = { CarHotspotSetup.bootLaunchNeedsAdb(this) },
                 permissions = { listOf(CarHotspotSetup.Permission.BOOT_LAUNCH) }) {
                 AirPlayPersistence.saveAutoStartOnBoot(this, it)
             }
@@ -1928,6 +1927,17 @@ class DiPlayActivity : ComponentActivity() {
 
     private fun bydAdbSettings(parent: LinearLayout) {
         if (AirPlayPersistence.loadWirelessHotspotMode(this) != WirelessHotspotMode.MANUAL) return
+        if (CarHotspotSetup.isLegacyEcarxHeadUnit(this)) {
+            filteredSection(parent, SettingsSection.BYD_ADB, getString(R.string.settings_ecarx_hotspot_title), R.drawable.ic_dp_permissions) { card ->
+                toggle(card, getString(R.string.auto_car_hotspot_title),
+                    getString(R.string.settings_ecarx_hotspot_description), CarHotspotSettings.enabled(this)) {
+                    CarHotspotSettings.setEnabled(this, it)
+                    if (!it) startupHotspotCancelled = true
+                    markReconnectNeeded()
+                }
+            }
+            return
+        }
         if (!CarHotspotSetup.isBydHeadUnit(this)) {
             Log.i("DiPlay-Hotspot", "settings hidden: BYD head unit not detected")
             return

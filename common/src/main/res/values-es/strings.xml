@@ -705,4 +705,6 @@
     <string name="hotspot_hint_hostapd">Punto de acceso root: esta unidad debe estar rooteada. DiPlay crea el punto de acceso por sí mismo; mantén activados el Wi-Fi y el Bluetooth del iPhone.</string>
     <string name="hostapd_channel_1_13">Canal (1–13)</string>
     <string name="hostapd_channel_must_be_1_13">El canal debe estar entre 1 y 13</string>
+    <string name="settings_ecarx_hotspot_title">Punto de acceso del coche ECARX</string>
+    <string name="settings_ecarx_hotspot_description">En la próxima conexión o al abrir DiPlay, desactiva el Wi-Fi normal e inicia el punto de acceso guardado del coche. Conserva su nombre y contraseña. Para iniciar al arrancar, activa también «Abrir al arrancar el coche». Esta unidad Android 5.1 no necesita autorización ADB.</string>
 </resources>
