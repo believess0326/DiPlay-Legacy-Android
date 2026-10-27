@@ -41,10 +41,16 @@ object UsbDefaultGrant {
                 Log.i(TAG, "Successfully granted persistent USB permission for vid=0x${vid.toString(16)} pid=0x${pid.toString(16)}")
             } else {
                 Log.w(TAG, "Root grant returned: $output")
+                // Issue #285: the diagnostic report only ever showed
+                // "root grant attempted: success=false" — record WHY it
+                // failed (no su vs. grant rejected) so the next report
+                // can tell a missing-root unit from a swallowed dialog.
+                UsbBtLog.log(context, TAG, "Root grant failed: output=${output.trim().take(200)}")
             }
             success
         }.getOrElse {
             Log.d(TAG, "Root execution not available: ${it.message}")
+            UsbBtLog.log(context, TAG, "Root execution not available: ${it.message?.take(200)}")
             false
         }
     }
