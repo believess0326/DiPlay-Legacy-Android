@@ -152,6 +152,17 @@ object HostapdConfig {
     /** Removes only the shell-readable staging copy of the configuration. */
     fun removeStagedConfScript(): String = "rm -f $TMP_CONF_PATH"
 
+    /**
+     * Counts active hostapd processes in `ps` output without depending on `grep`, `wc`, or `tail`.
+     * Minimal ROMs (e.g. Android 4.2 toolbox, issues #308, #337) lack these shell utilities.
+     */
+    fun countHostapdProcesses(psOutput: String): Int =
+        psOutput.lineSequence().count { line ->
+            val words = line.trim().split(Regex("\\s+"))
+            words.any { it == "hostapd" || it.endsWith("/hostapd") } &&
+                !words.any { it.contains("grep") }
+        }
+
     /** One dnsmasq lease line: `<expiry epoch> <mac> <ip> <hostname> <client id>`. */
     data class Lease(val expiryEpochSeconds: Long, val macAddress: String, val ipAddress: String)
 

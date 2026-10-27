@@ -537,10 +537,6 @@ class CarPlayController(
      */
     fun takeMainAudio(): Boolean {
         val session = activeSession ?: return false
-        if (config.transport == CarPlayTransport.WIRELESS) {
-            debugLog("suppressed MainAudio Untake for wireless session; preserve AirPlay screen and iAP2 tunnel")
-            return false
-        }
         val resources = listOf(
             linkedMapOf("resourceID" to 2, "transferType" to 2), // Untake MainAudio (iPhone outputs audio)
         )

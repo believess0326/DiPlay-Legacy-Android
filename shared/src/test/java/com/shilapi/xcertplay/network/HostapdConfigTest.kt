@@ -182,4 +182,19 @@ class HostapdConfigTest {
         assertEquals(listOf("kill -9 101", "kill -9 102", "kill -9 108"), kills)
         assertTrue(output.contains("rm -f ${HostapdConfig.LEASES_PATH} ${HostapdConfig.DNSMASQ_PID_PATH}"))
     }
+
+    @Test fun countHostapdProcessesCountsOnlyExactProcessesAndOmitsGrep() {
+        val ps = """
+            USER     PID   PPID  VSIZE  RSS     WCHAN    PC         NAME
+            root     101   1     1234   567     c0123456 b6f12345   /system/bin/hostapd
+            wifi     102   1     1234   567     c0123456 b6f12345   hostapd
+            wifi     103   1     1234   567     c0123456 b6f12345   /vendor/bin/hostapd -B /data/misc/wifi/hostapd.conf
+            u0_a55   104   1     1234   567     c0123456 b6f12345   com.example.hostapd
+            shell    105   1     1234   567     c0123456 b6f12345   hostapd_helper
+            root     106   1     1234   567     c0123456 b6f12345   /data/misc/wifi/hostapd.conf
+            root     107   1     1234   567     c0123456 b6f12345   grep hostapd
+        """.trimIndent()
+        assertEquals(3, HostapdConfig.countHostapdProcesses(ps))
+        assertEquals(0, HostapdConfig.countHostapdProcesses(""))
+    }
 }

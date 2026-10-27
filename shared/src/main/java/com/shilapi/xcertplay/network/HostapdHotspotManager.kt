@@ -169,7 +169,16 @@ class HostapdHotspotManager(
             "$hostapdPath -B ${HostapdConfig.CONF_PATH} >${HostapdConfig.HOSTAPD_LOG_PATH} 2>&1 & sleep 1",
             15_000,
         )
-        if (!launched.success || hostapdProcessCount() < 1) {
+        var running = false
+        val checkDeadline = System.nanoTime() + 3_000_000_000L
+        while (System.nanoTime() < checkDeadline) {
+            if (hostapdProcessCount() >= 1) {
+                running = true
+                break
+            }
+            Thread.sleep(300)
+        }
+        if (!launched.success || !running) {
             // `tail` does not exist on minimal ROMs (issue #308): read the
             // whole log (it is truncated fresh at every launch) and keep its
             // end, where hostapd puts the failure.
@@ -319,13 +328,13 @@ class HostapdHotspotManager(
             .output.contains(HostapdConfig.INTERFACE_NAME)
 
     /**
-     * Live hostapd processes. Counted here instead of with `wc -l` in the
-     * shell: minimal ROMs ship neither `wc` nor `tail`, and the pipeline
-     * version silently reported "not up" for a running hostapd (issue #308).
+     * Live hostapd processes. Counted here instead of with `wc -l` or `grep` in the
+     * shell: minimal ROMs (e.g. Android 4.2 toolbox) ship neither `wc`, `tail` nor `grep`,
+     * and a shell pipeline silently fails on those units (issues #308, #337).
      */
     private fun hostapdProcessCount(): Int {
-        val result = RootShell.run("ps | grep hostapd | grep -v grep", 5_000)
-        return result.output.lineSequence().count { it.isNotBlank() }
+        val result = RootShell.run("ps", 5_000)
+        return HostapdConfig.countHostapdProcesses(result.output)
     }
 
     /** True when the AP address is on the interface; parsed here, not with a shell pipeline. */
