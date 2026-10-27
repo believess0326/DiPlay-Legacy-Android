@@ -44,6 +44,12 @@ class HostapdHotspotManager(
     private var started = false
     private var wifiWasOn = true
     private var confirmedClientCount: Int? = null
+    // Issue #313: the hotspot-ready Bluetooth reset can fail (neither root
+    // nor adapter.disable works) while the phone only joins later. Remember
+    // that so the first observed lease can retry it once. Units whose
+    // initial reset worked never see this path.
+    private var btResetFailed = false
+    private var btResetRetried = false
 
     /**
      * Set once [start] has changed anything on the head unit (killed stale
@@ -211,7 +217,10 @@ class HostapdHotspotManager(
         BluetoothStackReset.reset(
             tag = "hostapd",
             isCancelled = { closed || isCancelled() },
-            onDiagnostic = onDiagnostic,
+            onDiagnostic = { msg ->
+                if (msg.contains("bluetooth reset unavailable")) btResetFailed = true
+                onDiagnostic(msg)
+            },
         )
 
         val hostAddress = InetAddress.getByName(HostapdConfig.HOST_ADDRESS)
@@ -248,10 +257,24 @@ class HostapdHotspotManager(
 
     override fun joinedClientCount(): Int? {
         if (!started || closed) return confirmedClientCount
+        val previous = confirmedClientCount
         val leases = RootShell.run("cat ${HostapdConfig.LEASES_PATH} 2>/dev/null", 5_000)
         if (!leases.success && leases.output.isBlank()) return confirmedClientCount
         val count = HostapdConfig.activeLeases(leases.output, System.currentTimeMillis() / 1_000).size
         confirmedClientCount = count
+        // Issue #313: the phone joining (leases 0/null -> positive) is the
+        // first moment a retry can help — the initial reset failed before
+        // the phone was even on the network. One shot only, so a healthy
+        // unit never gets a second Bluetooth flap mid-connect.
+        if (!btResetRetried && btResetFailed && (previous == null || previous == 0) && count > 0) {
+            btResetRetried = true
+            onDiagnostic("hostapd: phone joined after a failed bluetooth reset; retrying the reset once")
+            BluetoothStackReset.reset(
+                tag = "hostapd-lease",
+                isCancelled = { closed || isCancelled() },
+                onDiagnostic = onDiagnostic,
+            )
+        }
         return count
     }
 
