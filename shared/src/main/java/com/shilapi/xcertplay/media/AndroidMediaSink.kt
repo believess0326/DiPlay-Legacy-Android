@@ -1154,11 +1154,19 @@ private class VideoDecoder(
         }
         // Some vendor decoders (e.g. MediaTek c2.mtk.avc.decoder) reject the tuned
         // parameters with BAD_VALUE. Fall back to a minimal format, then to software.
-        // Issue #324: some legacy chipsets (e.g. Huawei Ascend P7 / hi6620oem with OMX.k3.video.decoder.avc)
-        // crash with fatal SIGABRT in ACodec: CHECK(def.nBufferSize >= size) when initialising hardware AVC.
-        // Issue #326: AutoChips AC83xx chipsets (OMX.atc.video.decoder.avc) deadlock/hang on dynamic CarPlay AVC streams.
-        // On these known broken hardware decoders, prioritize the software decoder fallback directly.
+        // Issue #326: AutoChips AC83xx chipsets (OMX.atc.video.decoder.avc) deadlock/hang on dynamic CarPlay AVC streams;
+        // on those, prioritize the software decoder fallback directly.
+        // Issue #324 follow-up: HiSilicon/K3v2 (OMX.k3.video.decoder.avc) is different.
+        // Its hardware decoder aborts in ACodec (CHECK(def.nBufferSize >= size)) only
+        // when KEY_MAX_INPUT_SIZE forces a port buffer larger than the OMX port's
+        // native capacity — and on KitKat it is the ONLY decoder that can decode
+        // CarPlay's Main/High CABAC stream (the software decoder is Baseline-only
+        // PacketVideo and fails every frame with -2). So for K3 the hardware
+        // decoder is used first, with unconstrained native port sizing
+        // (tuned = false sets neither KEY_MAX_INPUT_SIZE nor KEY_PRIORITY);
+        // software stays only as a last resort if hardware configure throws.
         val defaultBroken = isKnownBrokenHardwareDecoder(mime)
+        val nativeSizing = isNativeSizingHardwareDecoder(mime)
         val software = softwareDecoderName(mime)
         // Issue #324: API <= 19 H.264 decoders (such as SoftAVC / OMX.google.h264.decoder on KitKat/JellyBean)
         // or old vendor decoders fail or ignore csd-0/csd-1 without in-band Annex B headers.
@@ -1169,17 +1177,25 @@ private class VideoDecoder(
                 START_CODE + sps + START_CODE + pps
             } else null
         } else null
-        val attempts = if (defaultBroken && software != null) {
-            Log.w(TAG, "default hardware decoder for $mime is known broken on this device; prioritizing software decoder: $software")
-            listOf(DecoderAttempt(software, tuned = false)) + listOf(
-                DecoderAttempt(codecName = null, tuned = true),
-                DecoderAttempt(codecName = null, tuned = false),
-            )
-        } else {
-            listOf(
-                DecoderAttempt(codecName = null, tuned = true),
-                DecoderAttempt(codecName = null, tuned = false),
-            ) + software?.let { listOf(DecoderAttempt(it, tuned = false)) }.orEmpty()
+        val attempts = when {
+            nativeSizing -> {
+                Log.w(TAG, "default hardware decoder for $mime needs native port sizing on this device; trying hardware without forced input size first")
+                listOf(DecoderAttempt(codecName = null, tuned = false)) +
+                    software?.let { listOf(DecoderAttempt(it, tuned = false)) }.orEmpty()
+            }
+            defaultBroken && software != null -> {
+                Log.w(TAG, "default hardware decoder for $mime is known broken on this device; prioritizing software decoder: $software")
+                listOf(DecoderAttempt(software, tuned = false)) + listOf(
+                    DecoderAttempt(codecName = null, tuned = true),
+                    DecoderAttempt(codecName = null, tuned = false),
+                )
+            }
+            else -> {
+                listOf(
+                    DecoderAttempt(codecName = null, tuned = true),
+                    DecoderAttempt(codecName = null, tuned = false),
+                ) + software?.let { listOf(DecoderAttempt(it, tuned = false)) }.orEmpty()
+            }
         }
         var next: MediaCodec? = null
         for (attempt in attempts) {
@@ -1255,11 +1271,22 @@ private class VideoDecoder(
     private fun isKnownBrokenHardwareDecoder(mime: String): Boolean {
         if (mime != MediaFormat.MIMETYPE_VIDEO_AVC) return false
         val defaultDecoder = defaultDecoderName(mime) ?: return false
-        // OMX.k3.video.decoder.avc on HiSilicon/K3v2 (Huawei Ascend P6/P7 etc.) aborts
-        // with CHECK(def.nBufferSize >= size) in ACodec.cpp when initialising metadata/buffers.
         // OMX.atc.video.decoder.avc on AutoChips AC83xx head units hangs/deadlocks when decoding dynamic bitstreams.
-        return defaultDecoder.startsWith("OMX.k3.video.decoder", ignoreCase = true) ||
-            defaultDecoder.startsWith("OMX.atc.video.decoder", ignoreCase = true)
+        return defaultDecoder.startsWith("OMX.atc.video.decoder", ignoreCase = true)
+    }
+
+    /**
+     * Issue #324 follow-up: OMX.k3.video.decoder.avc on HiSilicon/K3v2
+     * (Huawei Ascend P6/P7 etc.) aborts with CHECK(def.nBufferSize >= size)
+     * in ACodec.cpp when KEY_MAX_INPUT_SIZE forces a port buffer larger
+     * than the OMX port's native capacity — but it is the only decoder on
+     * KitKat that handles CarPlay's Main/High CABAC stream, so it must be
+     * used with native (unconstrained) port sizing, not skipped.
+     */
+    private fun isNativeSizingHardwareDecoder(mime: String): Boolean {
+        if (mime != MediaFormat.MIMETYPE_VIDEO_AVC) return false
+        val defaultDecoder = defaultDecoderName(mime) ?: return false
+        return defaultDecoder.startsWith("OMX.k3.video.decoder", ignoreCase = true)
     }
 
     private fun defaultDecoderName(mime: String): String? {
