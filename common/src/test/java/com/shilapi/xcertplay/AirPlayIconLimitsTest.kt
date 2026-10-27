@@ -34,7 +34,7 @@ class AirPlayIconLimitsTest {
         val ladder = AirPlayPersistence.iconScaleLadder()
         assertEquals(AirPlayPersistence.ICON_MAX_EDGE, ladder.first())
         assertEquals(ladder.sortedDescending(), ladder)
-        assertTrue(ladder.all { it in 192..AirPlayPersistence.ICON_MAX_EDGE })
+        assertTrue(ladder.all { it in 64..AirPlayPersistence.ICON_MAX_EDGE })
     }
 
     @Test fun undecodableIconBytesPassThroughUnchanged() {

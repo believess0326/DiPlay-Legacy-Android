@@ -219,7 +219,17 @@ class Iap2WirelessControlClient(
 
                     WIRELESS_CARPLAY_UPDATE -> {
                         val available = Iap2WirelessMessages.wirelessCarPlayAvailability(incoming)
-                        if (available) wirelessCarPlayAvailableSeen = true
+                        if (available) {
+                            wirelessCarPlayAvailableSeen = true
+                            if (carPlayStartSessionsSent == 0) {
+                                beforeStartSession()
+                                sendStartSession(endpoint, ::sendControl, onStartSessionSent)
+                                stage = later(stage, Iap2WirelessControlStage.CARPLAY_START_SENT)
+                                carPlayStartSessionsSent++
+                                lastStartSessionSentAtMillis = System.currentTimeMillis()
+                                onProgress("iap2 tx=0x4301 carplay-start-session")
+                            }
+                        }
                         onProgress("iap2 rx=0x4e0d wireless-carplay-update available=$available")
                     }
 

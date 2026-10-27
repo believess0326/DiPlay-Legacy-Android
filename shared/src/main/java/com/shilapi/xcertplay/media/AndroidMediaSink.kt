@@ -1103,21 +1103,23 @@ private class VideoDecoder(
                 pps.takeIf { it.isNotEmpty() }?.let { START_CODE + it },
             )
         }
-        // Issue: API 17 H.264 first frame fails. Old decoders ignore csd-0/csd-1,
-        // so prepend SPS/PPS in-band to the first frame (Annex B format).
-        inBandSpsPps = if (codec != VideoCodec.H265 && realSdkInt() == 17) {
+        // Some vendor decoders (e.g. MediaTek c2.mtk.avc.decoder) reject the tuned
+        // parameters with BAD_VALUE. Fall back to a minimal format, then to software.
+        // Issue #324: some legacy chipsets (e.g. Huawei Ascend P7 / hi6620oem with OMX.k3.video.decoder.avc)
+        // crash with fatal SIGABRT in ACodec: CHECK(def.nBufferSize >= size) when initialising hardware AVC.
+        // Issue #326: AutoChips AC83xx chipsets (OMX.atc.video.decoder.avc) deadlock/hang on dynamic CarPlay AVC streams.
+        // On these known broken hardware decoders, prioritize the software decoder fallback directly.
+        val defaultBroken = isKnownBrokenHardwareDecoder(mime)
+        val software = softwareDecoderName(mime)
+        // Issue #324: API <= 19 H.264 decoders (such as SoftAVC / OMX.google.h264.decoder on KitKat/JellyBean)
+        // or old vendor decoders fail or ignore csd-0/csd-1 without in-band Annex B headers.
+        // Prepend SPS/PPS in-band to the first frame (Annex B format).
+        inBandSpsPps = if (codec != VideoCodec.H265 && (realSdkInt() <= 19 || defaultBroken)) {
             val (sps, pps) = MediaCodecSupport.avcParameterSets(codecData)
             if (sps.isNotEmpty() && pps.isNotEmpty()) {
                 START_CODE + sps + START_CODE + pps
             } else null
         } else null
-        // Some vendor decoders (e.g. MediaTek c2.mtk.avc.decoder) reject the tuned
-        // parameters with BAD_VALUE. Fall back to a minimal format, then to software.
-        // Issue #324: some legacy chipsets (e.g. Huawei Ascend P7 / hi6620oem with OMX.k3.video.decoder.avc)
-        // crash with fatal SIGABRT in ACodec: CHECK(def.nBufferSize >= size) when initialising hardware AVC.
-        // On these known broken hardware decoders, prioritize the software decoder fallback directly.
-        val defaultBroken = isKnownBrokenHardwareDecoder(mime)
-        val software = softwareDecoderName(mime)
         val attempts = if (defaultBroken && software != null) {
             Log.w(TAG, "default hardware decoder for $mime is known broken on this device; prioritizing software decoder: $software")
             listOf(DecoderAttempt(software, tuned = false)) + listOf(
@@ -1206,7 +1208,9 @@ private class VideoDecoder(
         val defaultDecoder = defaultDecoderName(mime) ?: return false
         // OMX.k3.video.decoder.avc on HiSilicon/K3v2 (Huawei Ascend P6/P7 etc.) aborts
         // with CHECK(def.nBufferSize >= size) in ACodec.cpp when initialising metadata/buffers.
-        return defaultDecoder.startsWith("OMX.k3.video.decoder", ignoreCase = true)
+        // OMX.atc.video.decoder.avc on AutoChips AC83xx head units hangs/deadlocks when decoding dynamic bitstreams.
+        return defaultDecoder.startsWith("OMX.k3.video.decoder", ignoreCase = true) ||
+            defaultDecoder.startsWith("OMX.atc.video.decoder", ignoreCase = true)
     }
 
     private fun defaultDecoderName(mime: String): String? {
@@ -1402,7 +1406,7 @@ private class VideoDecoder(
             running = { running }, drain = { drainOutput(codec) },
             dequeue = { codec.dequeueInputBuffer(INPUT_TIMEOUT_US) },
         )
-        if (index < 0) { recover("video decoder input stalled"); return }
+        if (index < 0) { recover("video decoder input stalled", allowRebuild = false); return }
         @Suppress("DEPRECATION")
         val input = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) codec.getInputBuffer(index) else codec.inputBuffers[index]
         checkNotNull(input) { "Decoder input buffer unavailable" }

@@ -1140,7 +1140,19 @@ object AirPlayPersistence {
         File(context.filesDir, CUSTOM_ICON_FILE).takeIf { it.isFile }
 
     fun loadCustomAirPlayIconBytes(context: Context): ByteArray? = try {
-        loadCustomAirPlayIconFile(context)?.readBytes()?.takeIf { it.isNotEmpty() }
+        loadCustomAirPlayIconFile(context)?.readBytes()?.takeIf { it.isNotEmpty() }?.let { raw ->
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+            if (bounds.outWidth > 0 && bounds.outHeight > 0 && iconExceedsLimits(raw.size, bounds.outWidth, bounds.outHeight)) {
+                val normalized = normalizeCustomAirPlayIconBytes(raw)
+                runCatching {
+                    loadCustomAirPlayIconFile(context)?.writeBytes(normalized)
+                }
+                normalized
+            } else {
+                raw
+            }
+        }
     } catch (_: Throwable) {
         null
     }
@@ -1175,11 +1187,11 @@ object AirPlayPersistence {
      * when saved — at most [ICON_MAX_EDGE] px on the long edge and at most
      * [ICON_MAX_BYTES] encoded — so what is stored is already compliant.
      */
-    const val ICON_MAX_EDGE = 512
-    const val ICON_MAX_BYTES = 256_000
+    const val ICON_MAX_EDGE = 192
+    const val ICON_MAX_BYTES = 32_000
 
     /** Progressive downscale targets for oversized icons, largest first. */
-    fun iconScaleLadder(): List<Int> = listOf(512, 384, 256, 192)
+    fun iconScaleLadder(): List<Int> = listOf(192, 160, 128, 96, 64)
 
     /** True when an encoded icon of [byteCount] bytes and [width]x[height] exceeds the limits. */
     fun iconExceedsLimits(byteCount: Int, width: Int, height: Int): Boolean =

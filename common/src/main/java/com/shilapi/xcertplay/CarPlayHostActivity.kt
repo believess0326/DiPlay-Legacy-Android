@@ -5057,6 +5057,9 @@ class CarPlayHostActivity : ComponentActivity() {
                     leftMargin = bounds.left
                     topMargin = bounds.top
                 }
+                if (bounds.width > 0 && bounds.height > 0) {
+                    fallback.holder.setFixedSize(bounds.width, bounds.height)
+                }
                 fallback.requestLayout()
                 fallback.invalidate()
                 if (previousBounds != null && (bounds.width > previousBounds.width || bounds.height > previousBounds.height)) {
