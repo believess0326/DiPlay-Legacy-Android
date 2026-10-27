@@ -1,3 +1,14 @@
+# DiPlay 0.3.1 — 2026-10-27
+
+- Media focus exclusive switch (#290): add an opt-in toggle in Advanced audio-focus controls requesting AUDIOFOCUS_GAIN for media streams, resolving permanent ducking to silence on vendor stacks where MAY_DUCK fails.
+- Wireless CarPlay background handoff & session preservation (#316): preserve wireless session and data channels across app backgrounding and resume transitions, reducing reconnection latency.
+- Layout settle listening through settle window (#290): maintain size change recomputation throughout the 3s settle window, eliminating stuck viewport margins and bottom bars after reverse camera exit.
+- Wi-Fi Direct fast failure & diagnostic polish (#331, #285): fail fast with actionable guidance to Same LAN or wired mode when Wi-Fi Direct is unsupported on hardware/system; record root USB grant failure details in diagnostic log.
+- Bluetooth RFCOMM/DLC eviction & hotspot retry (#165, #313): evict wedged RFCOMM layers on DLC open failures; retry Bluetooth stack reset once when the first client joins hostapd.
+- Resume lifecycle guard (#310): prevent RejectedExecutionException on resume when the dark-mode executor is shut down during teardown.
+
+See [v0.3.1 release notes](docs/RELEASE-NOTES-0.3.1.md) for details.
+
 # DiPlay 0.3.0 — 2026-10-27
 
 - Huawei HiSilicon hardware AVC decoder native port sizing (#324): use unconstrained native port sizing (omit KEY_MAX_INPUT_SIZE override) on OMX.k3.video.decoder.avc, avoiding the fatal ACodec SIGABRT without suffering KitKat software decoder -2 Main/High CABAC black screens.
