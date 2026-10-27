@@ -1,3 +1,14 @@
+# DiPlay 0.2.99 — 2026-10-27
+
+- Microphone 24kHz hardware failure & software resampling fallback (#329): detect and gracefully fall back to native supported sample rates (16k/44.1k/48k) when legacy hardware AudioRecord rejects 24kHz with code=-2; resample in real-time to ensure Siri and voice inputs function properly.
+- Custom car brand icon RTSP handshake timeout fix (#328): resolve RTSP SETUP timeouts and dropped connections caused by synchronous custom icon serialization during wireless CarPlay bootstrapping.
+- SoftAVC decoder -2 crash & dynamic map stream decoder thrashing avoidance (#324, #326, #327): harden OMX.google.h264.decoder lifecycle; prevent rapid destruction loops on dynamic map stream switches.
+- SurfaceView viewport border padding elimination (#290): refine aspect ratio and layout bounds recomputation upon reverse-gear exit and multi-window resizing.
+- Wireless CarPlay start handoff & USB Bluetooth robustness (#316, #321): strengthen early protocol exchange and background connection transitions.
+- Root hostapd hotspot & MapEmbedService security hardening: sanitize SSID/passphrases against control characters, enforce strict ATTACH caller restrictions, and clean up staged config files on teardown.
+
+See [v0.2.99 release notes](docs/RELEASE-NOTES-0.2.99.md) for details.
+
 # DiPlay 0.2.98 — 2026-10-26
 
 - Huawei HiSilicon hardware AVC decoder crash workaround (#324): work around fatal Stagefright ACodec SIGABRT assertion `CHECK(def.nBufferSize >= size)` on Huawei Ascend P6/P7 (hi6620oem / Android 4.4.2); automatically prioritize stable software AVC decoder (OMX.google.h264.decoder) when OMX.k3.video.decoder.avc is detected.
