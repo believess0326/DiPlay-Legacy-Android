@@ -93,10 +93,17 @@ class UsbBtPairingAgent(
     }
 
     fun stop() {
-        if (!running.compareAndSet(false, true)) return
-        executor?.shutdownNow()
+        if (!running.compareAndSet(true, false)) return
+        val stoppingExecutor = executor
         executor = null
-        UsbBtLog.log(context, TAG, "pairing agent stopped")
+        stoppingExecutor?.shutdownNow()
+        val stopped = try {
+            stoppingExecutor?.awaitTermination(500, TimeUnit.MILLISECONDS) ?: true
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        UsbBtLog.log(context, TAG, "[WBTDIAG] pairing agent stopped workerTerminated=$stopped")
     }
 
     /**
@@ -114,9 +121,14 @@ class UsbBtPairingAgent(
             EVT_PIN_CODE_REQUEST,
             EVT_SIMPLE_PAIRING_COMPLETE,
             EVT_AUTHENTICATION_COMPLETE -> {
-                executor?.execute {
-                    runCatching { handleEvent(event) }
-                        .onFailure { UsbBtLog.warn(context, TAG, "pairing event handler failed", it) }
+                val worker = executor ?: return
+                runCatching {
+                    worker.execute {
+                        runCatching { handleEvent(event) }
+                            .onFailure { UsbBtLog.warn(context, TAG, "pairing event handler failed", it) }
+                    }
+                }.onFailure {
+                    if (running.get()) UsbBtLog.warn(context, TAG, "pairing event enqueue failed", it)
                 }
             }
         }

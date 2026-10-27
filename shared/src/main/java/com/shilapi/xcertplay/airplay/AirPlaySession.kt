@@ -26,6 +26,9 @@ data class AirPlayDeviceInfo(
 /** Session lifecycle and command callbacks for the driver/UI layer. */
 interface AirPlaySessionListener {
     fun onTcpAccepted(event: AirPlayTcpAccepted) {}
+    /** Called around each RTSP request handler; implementations must not block. */
+    fun onControlRequestStarted(method: String, path: String, cseq: String) {}
+    fun onControlRequestCompleted(method: String, path: String, cseq: String, elapsedMillis: Long) {}
     fun onSessionActive(session: AirPlaySession) {}
     fun onSessionEnded(session: AirPlaySession) {}
     fun onVideoFrameRendered(session: AirPlaySession) {}
@@ -496,6 +499,8 @@ class AirPlaySession(
                 for (request in parsed.messages) {
                     val cseq = request.headers["cseq"] ?: "-"
                     val path = request.path.lowercase()
+                    val handlerStartedNanos = System.nanoTime()
+                    listener.onControlRequestStarted(request.method, request.path, cseq)
                     val showInDebugOverlay =
                         !path.endsWith("/feedback") &&
                             !(request.method == "POST" && path.endsWith("/command"))
@@ -528,6 +533,9 @@ class AirPlaySession(
                                 "${error.javaClass.simpleName}: ${error.message?.take(200)}",
                         )
                         RtspMessage.Response(status = 500)
+                    } finally {
+                        val elapsed = ((System.nanoTime() - handlerStartedNanos) / 1_000_000L).coerceAtLeast(0)
+                        listener.onControlRequestCompleted(request.method, request.path, cseq, elapsed)
                     }
                     debugLog(
                         "airplay tx status=${response.status ?: 200} cseq=$cseq body=${response.body.size}",
