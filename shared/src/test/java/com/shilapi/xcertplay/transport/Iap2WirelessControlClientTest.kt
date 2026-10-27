@@ -179,6 +179,17 @@ class Iap2WirelessControlClientTest {
         }
     }
 
+    @Test fun multipleIpAddressesArePreservedInCarPlayStartSession() {
+        val endpoint = Iap2WirelessCarPlayEndpoint(
+            "TestSSID", "secret123", 6, Iap2WirelessSecurity.WPA_WPA2,
+            listOf("192.168.1.100", "fe80::1"), 7000, "dev-1", "aabbcc", "1.0",
+        )
+        val start = parameters(Iap2WirelessControlClient.carPlayStartSession(endpoint).payload)
+        val wireless = parameters(start.single { it.id == 1 }.payload)
+        val ipParams = wireless.filter { it.id == 3 }.map { String(it.payload, Charsets.UTF_8).trimEnd(' ') }
+        assertEquals(listOf("192.168.1.100", "fe80::1"), ipParams)
+    }
+
     private fun endpoint(ap: ByteArray? = null): Iap2WirelessCarPlayEndpoint = Iap2WirelessCarPlayEndpoint(
         ssid = "LIVI",
         passphrase = "secret123",

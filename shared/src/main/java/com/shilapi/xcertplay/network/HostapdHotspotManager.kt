@@ -208,7 +208,11 @@ class HostapdHotspotManager(
         onDiagnostic(
             "hostapd: hotspot ready iface=${HostapdConfig.INTERFACE_NAME} addr=${HostapdConfig.HOST_ADDRESS}",
         )
-        resetBluetoothStack()
+        BluetoothStackReset.reset(
+            tag = "hostapd",
+            isCancelled = { closed || isCancelled() },
+            onDiagnostic = onDiagnostic,
+        )
 
         val hostAddress = InetAddress.getByName(HostapdConfig.HOST_ADDRESS)
         val mac = runCatching {
@@ -335,57 +339,4 @@ class HostapdHotspotManager(
      * bootstrap that follows hotspot-ready needs a fresh stack. Any failure
      * here is logged and the connection attempt continues.
      */
-    private fun resetBluetoothStack() {
-        val adapter = try {
-            BluetoothAdapter.getDefaultAdapter()
-        } catch (_: Exception) {
-            null
-        } catch (_: Error) {
-            null
-        } ?: run {
-            onDiagnostic("hostapd: bluetooth reset skipped (no adapter)")
-            return
-        }
-        if (!adapter.isEnabled) {
-            onDiagnostic("hostapd: bluetooth reset skipped (adapter off)")
-            return
-        }
-        var disabled = RootShell.run("svc bluetooth disable", 10_000).success
-        if (!disabled) {
-            disabled = runCatching { adapter.disable() }.getOrDefault(false)
-        }
-        if (!disabled) {
-            onDiagnostic("hostapd: bluetooth reset unavailable (neither root nor adapter.disable succeeded)")
-            return
-        }
-        // From here the adapter is off, or going off, because of this reset, so
-        // it must be switched back on whatever happens next: a cancelled start,
-        // an interrupt or an adapter that is slow to turn off. Returning early
-        // from the wait used to leave the head unit's Bluetooth disabled.
-        try {
-            val offDeadline = System.nanoTime() + 5_000_000_000L
-            while (adapter.state != BluetoothAdapter.STATE_OFF && System.nanoTime() < offDeadline) {
-                if (closed || isCancelled()) break
-                Thread.sleep(200)
-            }
-            if (adapter.state != BluetoothAdapter.STATE_OFF) {
-                onDiagnostic("hostapd: bluetooth reset: adapter did not turn off in time; switching it back on")
-            }
-        } finally {
-            val enabled = runCatching { RootShell.run("svc bluetooth enable", 10_000).success }
-                .getOrDefault(false)
-            if (!enabled) {
-                runCatching { adapter.enable() }
-            }
-        }
-        val onDeadline = System.nanoTime() + 10_000_000_000L
-        while (!adapter.isEnabled && System.nanoTime() < onDeadline) {
-            if (closed || isCancelled()) return
-            Thread.sleep(200)
-        }
-        onDiagnostic(
-            if (adapter.isEnabled) "hostapd: bluetooth stack reset done" else
-                "hostapd: bluetooth stack reset done (adapter still coming up)",
-        )
-    }
 }

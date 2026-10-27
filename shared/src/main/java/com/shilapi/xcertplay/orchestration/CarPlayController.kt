@@ -1563,7 +1563,7 @@ class CarPlayController(
                         listener = wirelessSessionListener(generation, watchdog),
                         listenerIdentity = watchdog.listener,
                         media = media,
-                        additionalBindAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
+                        additionalBindAddresses = (candidates + hotspotInfo.hostAddresses).filter { it != hostAddress }.distinct(),
                     )
                 ) {
                     is CarPlayVpnService.AttachResult.Started -> wirelessChain(11, "wireless AirPlay transport attached, waiting for iPhone TCP")
@@ -1599,7 +1599,10 @@ class CarPlayController(
                 passphrase = hotspotInfo.passphrase,
                 channel = hotspotInfo.channel,
                 security = hotspotInfo.security,
-                ipAddresses = listOf(hostAddressText),
+                ipAddresses = (listOf(hostAddress) + candidates + hotspotInfo.hostAddresses)
+                    .map(::hostAddressText)
+                    .filter { it.isNotBlank() }
+                    .distinct(),
                 airPlayPort = listenerPort,
                 deviceIdentifier = deviceIdentifier,
                 publicKey = identity.publicKeyHex,

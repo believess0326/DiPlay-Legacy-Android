@@ -56,6 +56,9 @@ internal class LegacyExistingWifi(
                     else -> "Auto"
                 }
                 log("Existing Wi-Fi attached legacy iface=${iface.name} host=${address.hostAddress} channel=${if (channel > 0) channel else "auto"}")
+                if (RootShell.isRootAvailable()) {
+                    BluetoothStackReset.reset("legacy-wifi", isCancelled = { closed }, onDiagnostic = log)
+                }
                 monitor = Thread({
                     try {
                         while (!closed) {
