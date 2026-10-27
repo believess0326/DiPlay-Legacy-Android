@@ -1,3 +1,13 @@
+# DiPlay 0.3.2 — 2026-10-27
+
+- Hostapd process check without grep on minimal ROMs (#337): parse `ps` output in pure Kotlin without shell grep/wc/tail pipelines, resolving repeated hostapd kill-and-retry loops on Android 4.2 / MY16ADA.
+- Drop non-primary IPv6 link-local addresses from 0x5703 payload (#290, #339): eliminate 30-second TCP timeouts on wireless CarPlay caused by iPhones preferring unreachable unscoped IPv6 link-locals over working IPv4.
+- Wired CarPlay forced re-enumeration vendor request (#335): ensure forced re-enumeration bypasses stale fast-probe configurations and always issues the 0x51 vendor request with KitKat settle delay.
+- Restore wireless CarPlay MainAudio Untake (#312, #316): allow `takeMainAudio()` to untake audio on wireless sessions when returning from car radio/Bluetooth, resolving silent audio regressions.
+- Audio ducking diagnostics (#309): log volume and duration values for duckAudio/unduckAudio AirPlay commands.
+
+See [v0.3.2 release notes](docs/RELEASE-NOTES-0.3.2.md) for details.
+
 # DiPlay 0.3.1 — 2026-10-27
 
 - Media focus exclusive switch (#290): add an opt-in toggle in Advanced audio-focus controls requesting AUDIOFOCUS_GAIN for media streams, resolving permanent ducking to silence on vendor stacks where MAY_DUCK fails.
