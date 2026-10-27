@@ -273,12 +273,21 @@ internal class DiPlayUpdater(private val activity: DiPlayActivity) {
     }
 
     private fun showFailure(error: Exception) {
+        val isTimeout = generateSequence<Throwable>(error) { it.cause }.any {
+            it is java.net.SocketTimeoutException || it is java.net.ConnectException ||
+                it.message?.contains("timeout", ignoreCase = true) == true
+        }
+        val message = when {
+            DiPlayUpdateClient.isObsoleteSslv3Failure(error) ->
+                activity.getString(R.string.update_tls_unavailable)
+            isTimeout ->
+                activity.getString(R.string.update_network_timeout, "https://github.com/programmerguohuajing/DiPlay-Legacy-Android/releases")
+            else -> error.message ?: error.javaClass.simpleName
+        }
         DiPlayUpdateDialogs.confirm(
             activity,
             activity.getString(R.string.update_failed),
-            if (DiPlayUpdateClient.isObsoleteSslv3Failure(error))
-                activity.getString(R.string.update_tls_unavailable)
-            else error.message ?: error.javaClass.simpleName,
+            message,
             activity.getString(android.R.string.ok),
         ) {}
     }

@@ -144,6 +144,15 @@ class DiagnosticExportFallbackTest {
         assertEquals("report 11", read(latest!!))
     }
 
+    @Test fun fileProviderFailureFallsBackToFileUriSafely() {
+        val throwingContext = object : ContextWrapper(context) {
+            override fun getPackageName(): String = "invalid.throwing.authority"
+        }
+        val saved = DiagnosticExportStore.saveWithoutPicker(throwingContext, "DiPlay-test.txt", "report content")
+        assertNotNull(saved.uri)
+        assertEquals("file", saved.uri.scheme)
+    }
+
     private fun read(uri: Uri) = context.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
 
     private fun registerReportProvider() {

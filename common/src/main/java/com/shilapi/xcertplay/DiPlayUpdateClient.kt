@@ -134,8 +134,11 @@ internal object DiPlayUpdateClient {
         else listOf(url)
     }
 
-    /** The SHA-256 file is fetched from the canonical URL only, never a mirror. */
-    internal fun checksumCandidates(url: String): List<String> = listOf(url)
+    /** Prefer canonical URL for SHA-256 integrity check, with mirror fallback for restricted networks. */
+    internal fun checksumCandidates(url: String): List<String> {
+        val mirrors = downloadCandidates(url).filter { it != url }
+        return listOf(url) + mirrors
+    }
 
     private fun <T> withDownloadFallback(url: String, action: (String) -> T): T {
         var failure: Exception? = null
@@ -316,8 +319,8 @@ internal object DiPlayUpdateClient {
                 // Prioritize IPv4 addresses (Inet4Address) first to ensure immediate connectivity.
                 addresses.sortedBy { if (it is java.net.Inet4Address) 0 else 1 }
             }
-            .connectTimeout(12, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
             .build())
     }
 
