@@ -473,8 +473,16 @@ class UsbBtBluetoothAdapter(
 
             val dlc = when (val r = rfcomm.openDlc(channel)) {
                 is RfcommLayer.RfcommResult.Ok -> r.value
-                is RfcommLayer.RfcommResult.Failed ->
+                is RfcommLayer.RfcommResult.Failed -> {
+                    // Issue #165: a PN send failure leaves this RFCOMM layer
+                    // wedged, and the layer is cached per ACL handle — every
+                    // reconnect attempt then reuses it and fails the same way
+                    // while the ACL itself is reused. Evict it so the next
+                    // attempt builds a fresh DLC instead of replaying the
+                    // same failure.
+                    rfcommLayers.remove(handle)?.let { runCatching { it.close() } }
                     throw IOException("RFCOMM DLC open failed: ${r.reason}")
+                }
             }
 
             // 5) Byte-stream facade.
