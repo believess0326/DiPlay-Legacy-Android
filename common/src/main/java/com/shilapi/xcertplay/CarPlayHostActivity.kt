@@ -5117,6 +5117,14 @@ class CarPlayHostActivity : ComponentActivity() {
                 }
                 if (bounds.width > 0 && bounds.height > 0) {
                     fallback.holder.setFixedSize(bounds.width, bounds.height)
+                    // Issue #290: the reapply log alone could not prove whether
+                    // this branch ran, so a retest could not tell a skipped
+                    // resize from a resize the Surface ignored. Trace it.
+                    appendLog(
+                        "Display: fallback surface fixed size " +
+                            "${bounds.width}x${bounds.height} (was " +
+                            "${previousBounds?.width}x${previousBounds?.height})",
+                    )
                 }
                 fallback.requestLayout()
                 fallback.invalidate()
@@ -5162,9 +5170,12 @@ class CarPlayHostActivity : ComponentActivity() {
      * Issue #290: some ROMs settle the video view's size over several layout
      * passes after a camera cycle, so even the posted recompute can run against
      * a mid-transition size and nothing re-triggers it afterwards. Recompute
-     * once more when the view's size actually changes shortly after, then
-     * disarm; the delayed disarm keeps a later unrelated resize from being
-     * mistaken for this cycle's settle.
+     * on every size change inside the settle window, then disarm; the delayed
+     * disarm keeps a later unrelated resize from being mistaken for this
+     * cycle's settle. (An earlier one-shot version removed the listener on
+     * the first change, so an intermediate size consumed it and the final
+     * size never recomputed — the stuck small canvas behind the reverse
+     * black border and the first-entry bottom bar.)
      */
     private fun armSettledVideoReapply(view: View) {
         val listener = object : View.OnLayoutChangeListener {
@@ -5173,7 +5184,6 @@ class CarPlayHostActivity : ComponentActivity() {
                 oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int,
             ) {
                 if ((right - left) == (oldRight - oldLeft) && (bottom - top) == (oldBottom - oldTop)) return
-                changedView.removeOnLayoutChangeListener(this)
                 if (isDestroyed || videoView !== changedView) return
                 updateVideoLayout(changedView.width, changedView.height)
                 val content = contentRect(changedView.width, changedView.height)
