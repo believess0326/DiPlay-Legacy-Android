@@ -51,6 +51,8 @@ internal class AudioFocusCoordinator(
     private val muteMediaOnTransientLoss: Boolean = true,
     private val report: (String) -> Unit = {},
     private val nowNs: () -> Long = System::nanoTime,
+    /** Issue #290: true requests AUDIOFOCUS_GAIN for media; false keeps MAY_DUCK. */
+    private val mediaFocusExclusive: Boolean = false,
 ) {
     private data class Entry(val channel: AudioChannel, val attributes: Any?, var appliedVolume: Float = FULL_VOLUME)
 
@@ -164,11 +166,14 @@ internal class AudioFocusCoordinator(
         focusGeneration += 1
         abandonFocusLocked()
         val gain = when (primary.channel) {
-            // Never AUDIOFOCUS_GAIN: a permanent request on STREAM_MUSIC is what the head unit
-            // reported as "DiPlay owns the music stream", and the unit's own music player and
-            // WeChat were then denied the stream instead of ducking CarPlay (issue report).
-            // May-duck keeps CarPlay audible while every other player keeps its output.
-            AudioChannel.MEDIA -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            // Issue #290: MAY_DUCK is the default because a permanent request on
+            // STREAM_MUSIC made one head unit treat DiPlay as the sole owner of
+            // the music stream (its own players denied output instead of ducking
+            // CarPlay). But another unit's vendor stack answers MAY_DUCK with a
+            // permanent duck to silence — the exclusive switch restores GAIN
+            // for those units, at the cost of possibly muting other players.
+            AudioChannel.MEDIA -> if (mediaFocusExclusive) AudioManager.AUDIOFOCUS_GAIN
+                else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             AudioChannel.PHONE -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             AudioChannel.ASSISTANT -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             // Lone navigation takes transient focus so the head unit opens its audio path
@@ -296,6 +301,8 @@ class AndroidMediaSink(
     private val advancedAudioChannelMapping: Boolean = false,
     private val audioFocusEnabled: Boolean = false,
     private val audioFocusAutoYield: Boolean = true,
+    /** Issue #290: media focus exclusive mode; read per session, default keeps MAY_DUCK. */
+    private val mediaFocusExclusive: Boolean = false,
     private val mediaChannel: Int = 0,
     private val navigationChannel: Int = 0,
     /** Issues #253/#263: per-stream PCM volume in percent (100 = unchanged). */
@@ -334,6 +341,7 @@ class AndroidMediaSink(
         audioFocusEnabled,
         audioFocusAutoYield,
         onAudioDiagnostic,
+        mediaFocusExclusive = mediaFocusExclusive,
     )
 
     /** The media-key session may own Android's current focus request for this same sink. */

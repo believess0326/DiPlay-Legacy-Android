@@ -779,4 +779,6 @@
     <string name="settings_ecarx_hotspot_description">下次連線或開啟 DiPlay 時，關閉一般 Wi-Fi 並開啟已儲存的原廠熱點，保留名稱和密碼。如需開機自動執行，請同時啟用「車機啟動後開啟」。此 Android 5.1 車機不需 ADB 授權。</string>
     <string name="settings_legacy_hotspot_title">車機熱點自動開啟</string>
     <string name="settings_legacy_hotspot_description">在下次連線或打開 DiPlay 時，自動關閉 Wi-Fi 並開啟已儲存的車機熱點。保持熱點名稱與密碼不變。如需開機自動啟動，請同時開啟「車機啟動後打開」。在此車機上無需 ADB 授權。</string>
+    <string name="settings_media_focus_exclusive">媒體音訊焦點獨佔</string>
+    <string name="settings_media_focus_exclusive_description">媒體改請求永久焦點，不再讓其他播放器壓低 CarPlay。只對會把 CarPlay 壓到無聲的車機有效；可能導致其他播放器無聲。下次連接生效。</string>
 </resources>

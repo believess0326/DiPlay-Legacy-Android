@@ -725,4 +725,6 @@
     <string name="settings_ecarx_hotspot_description">Під час наступного підключення або відкриття DiPlay вимикає звичайний Wi-Fi та вмикає збережену точку доступу автомобіля, зберігаючи назву й пароль. Для запуску після завантаження також увімкніть «Відкривати після запуску автомобіля». На цій системі Android 5.1 дозвіл ADB не потрібен.</string>
     <string name="settings_legacy_hotspot_title">Автозапуск точки доступу автомобіля</string>
     <string name="settings_legacy_hotspot_description">При наступному підключенні або при відкритті DiPlay вимикає звичайний Wi-Fi та запускає збережену точку доступу. На цьому пристрої авторизація ADB не потрібна.</string>
+    <string name="settings_media_focus_exclusive">Ексклюзивний аудіофокус медіа</string>
+    <string name="settings_media_focus_exclusive_description">Запитувати постійний фокус для медіа замість приглушення CarPlay іншими програвачами. Допомагає лише на головних пристроях, які приглушують CarPlay до тиші; може заглушити інші програвачі. Діє з наступного підключення.</string>
 </resources>

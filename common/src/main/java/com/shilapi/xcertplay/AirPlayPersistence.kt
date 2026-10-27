@@ -53,6 +53,7 @@ object AirPlayPersistence {
     private const val KEY_ADVANCED_AUDIO_CHANNEL_MAPPING = "advanced_audio_channel_mapping"
     private const val KEY_AUDIO_FOCUS_ENABLED = "audio_focus_enabled"
     private const val KEY_AUDIO_FOCUS_AUTO_YIELD = "audio_focus_auto_yield"
+    private const val KEY_MEDIA_FOCUS_EXCLUSIVE = "media_focus_exclusive"
     private const val KEY_LEGACY_REVERSE_COLD_START = "legacy_reverse_cold_start"
     private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
     private const val KEY_MEDIA_VOLUME_PERCENT = "media_volume_percent"
@@ -277,6 +278,17 @@ object AirPlayPersistence {
     fun saveAudioFocusAutoYield(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_AUDIO_FOCUS_AUTO_YIELD, enabled)
+            .apply()
+    }
+
+    /** Issue #290: media focus exclusive mode; off by default, takes effect on the next connection. */
+    fun loadMediaFocusExclusive(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MEDIA_FOCUS_EXCLUSIVE, false)
+
+    fun saveMediaFocusExclusive(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_MEDIA_FOCUS_EXCLUSIVE, enabled)
             .apply()
     }
 

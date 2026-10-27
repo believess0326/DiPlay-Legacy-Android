@@ -713,4 +713,6 @@
     <string name="settings_ecarx_hotspot_description">En la próxima conexión o al abrir DiPlay, desactiva el Wi-Fi normal e inicia el punto de acceso guardado del coche. Conserva su nombre y contraseña. Para iniciar al arrancar, activa también «Abrir al arrancar el coche». Esta unidad Android 5.1 no necesita autorización ADB.</string>
     <string name="settings_legacy_hotspot_title">Punto de acceso del vehículo</string>
     <string name="settings_legacy_hotspot_description">En la próxima conexión o al abrir DiPlay, apague el Wi-Fi normal e inicie el punto de acceso guardado del vehículo. No se necesita autorización ADB en esta unidad.</string>
+    <string name="settings_media_focus_exclusive">Foco de audio multimedia exclusivo</string>
+    <string name="settings_media_focus_exclusive_description">Solicita foco permanente para multimedia en lugar de permitir que otros reproductores atenúen CarPlay. Solo ayuda en unidades que silencian CarPlay al atenuarlo; puede silenciar otros reproductores. Se aplica en la próxima conexión.</string>
 </resources>

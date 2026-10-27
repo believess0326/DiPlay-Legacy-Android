@@ -713,4 +713,6 @@
     <string name="settings_ecarx_hotspot_description">عند الاتصال التالي أو فتح DiPlay، يتم إيقاف Wi-Fi العادي وتشغيل نقطة اتصال السيارة المحفوظة مع الاحتفاظ بالاسم وكلمة المرور. للتشغيل عند الإقلاع، فعّل أيضًا «الفتح بعد تشغيل السيارة». لا تحتاج هذه الوحدة بنظام Android 5.1 إلى تفويض ADB.</string>
     <string name="settings_legacy_hotspot_title">بدء نقطة اتصال السيارة تلقائيًا</string>
     <string name="settings_legacy_hotspot_description">في الاتصال التالي أو عند فتح DiPlay، قم بإيقاف تشغيل Wi-Fi وبدء نقطة اتصال السيارة المحفوظة. لا يلزم إذن ADB على هذه الوحدة.</string>
+    <string name="settings_media_focus_exclusive">تركيز صوتي حصري للوسائط</string>
+    <string name="settings_media_focus_exclusive_description">طلب تركيز دائم للوسائط بدلاً من السماح للمشغلات الأخرى بخفض صوت CarPlay. يساعد فقط على الوحدات التي تخفض CarPlay إلى الصمت؛ وقد يكتم المشغلات الأخرى. يسري اعتباراً من الاتصال التالي.</string>
 </resources>

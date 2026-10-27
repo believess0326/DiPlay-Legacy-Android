@@ -5073,6 +5073,12 @@ class DiPlayActivity : ComponentActivity() {
             AirPlayPersistence.loadAudioFocusAutoYield(this)) {
             AirPlayPersistence.saveAudioFocusAutoYield(this, it)
         }
+        toggle(dependent, getString(R.string.settings_media_focus_exclusive),
+            getString(R.string.settings_media_focus_exclusive_description),
+            AirPlayPersistence.loadMediaFocusExclusive(this)) {
+            AirPlayPersistence.saveMediaFocusExclusive(this, it)
+            markReconnectNeeded()
+        }
         parent.addView(dependent)
     }
 
