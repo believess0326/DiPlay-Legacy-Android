@@ -4901,17 +4901,18 @@ class CarPlayHostActivity : ComponentActivity() {
             appendLog("THEME_DIAGNOSTIC request source=${source.label} applied=${if (night) "dark" else "light"} sessionActive=false")
             return
         }
-        airPlayCommandExecutor.execute {
-            try {
-                val sent = session.setNightMode(night)
-                // A successful write does not prove the iPhone changed its appearance.
-                appendLog(
-                    "THEME_DIAGNOSTIC send source=${source.label} applied=${if (night) "dark" else "light"} commandWritten=$sent",
-                )
-                Log.i(
-                    TAG,
-                    "AirPlay dark mode=${if (night) "dark" else "light"} eventChannelReady=$sent",
-                )
+        try {
+            airPlayCommandExecutor.execute {
+                try {
+                    val sent = session.setNightMode(night)
+                    // A successful write does not prove the iPhone changed its appearance.
+                    appendLog(
+                        "THEME_DIAGNOSTIC send source=${source.label} applied=${if (night) "dark" else "light"} commandWritten=$sent",
+                    )
+                    Log.i(
+                        TAG,
+                        "AirPlay dark mode=${if (night) "dark" else "light"} eventChannelReady=$sent",
+                    )
             } catch (error: Throwable) {
                 val failureClass = error.javaClass.simpleName.take(64)
                     .filter { it.isLetterOrDigit() || it == '_' || it == '$' }
@@ -4919,6 +4920,14 @@ class CarPlayHostActivity : ComponentActivity() {
                 appendLog("THEME_DIAGNOSTIC send source=${source.label} failureClass=$failureClass")
                 Log.w(TAG, "Could not send AirPlay dark mode update", error)
             }
+        }
+        } catch (error: java.util.concurrent.RejectedExecutionException) {
+            // Issue #310: the executor is shut down in teardown while a
+            // resume can still race it, and execute() itself throws outside
+            // the runnable's own try. Dropping this best-effort send is
+            // correct — it must never crash resume.
+            appendLog("THEME_DIAGNOSTIC send source=${source.label} failureClass=RejectedExecutionException")
+            Log.w(TAG, "Could not send AirPlay dark mode update: executor shut down", error)
         }
     }
 
