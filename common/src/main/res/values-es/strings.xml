@@ -714,5 +714,7 @@
     <string name="settings_legacy_hotspot_title">Punto de acceso del vehículo</string>
     <string name="settings_legacy_hotspot_description">En la próxima conexión o al abrir DiPlay, apague el Wi-Fi normal e inicie el punto de acceso guardado del vehículo. No se necesita autorización ADB en esta unidad.</string>
     <string name="settings_media_focus_exclusive">Foco de audio multimedia exclusivo</string>
+    <string name="wireless_forget_device_title">La conexión inalámbrica sigue fallando</string>
+    <string name="wireless_forget_device_message">CarPlay inalámbrico no ha podido conectar 4 veces seguidas. En el iPhone, ve a Ajustes → Wi-Fi, omite el punto de acceso del equipo y vuelve a emparejar y conectar.</string>
     <string name="settings_media_focus_exclusive_description">Solicita foco permanente para multimedia en lugar de permitir que otros reproductores atenúen CarPlay. Solo ayuda en unidades que silencian CarPlay al atenuarlo; puede silenciar otros reproductores. Se aplica en la próxima conexión.</string>
 </resources>

@@ -669,6 +669,8 @@
     <string name="hotspot_network_not_ready">热点网络未就绪</string>
     <string name="first_tcp_timeout">等待 iPhone 接入 CarPlay 超时</string>
     <string name="wireless_startup_retries_exhausted">自动重试已停止，请检查连接后手动重试。</string>
+    <string name="wireless_forget_device_title">无线连接连续失败</string>
+    <string name="wireless_forget_device_message">无线 CarPlay 已连续 4 次建链失败。请到 iPhone“设置 → 无线局域网”中找到车机热点，忽略此设备后重新配对连接。</string>
     <string name="wired_no_tcp_replug_required">连接反复失败。请拔下 iPhone 重新插入，然后点击重试。</string>
     <string name="retry_carplay_connection">重新连接</string>
     <string name="carplay_dock">CarPlay 程序栏</string>

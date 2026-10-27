@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -139,6 +140,14 @@ class CarPlayHostActivity : ComponentActivity() {
     private val siriKeyPresses = WheelKeyPresses()
     private val legacySiriPresses = mutableSetOf<Triple<Int, Int, Int>>()
     private val startupRetryBudget = WirelessStartupRetryBudget()
+    // Issue #290: persistent consecutive wireless link-failure streak, restored
+    // from prefs so it survives process restarts (the budget above does not).
+    private val wirelessLinkFailurePrompt: WirelessLinkFailurePrompt by lazy {
+        WirelessLinkFailurePrompt(
+            AirPlayPersistence.loadWirelessLinkFailures(this),
+            AirPlayPersistence.loadWirelessRepairPromptShown(this),
+        )
+    }
     private var startupRetryStopped = false
     private var startupRetryButton: View? = null
     private var startupFailureGeneration = -1
@@ -4534,6 +4543,14 @@ class CarPlayHostActivity : ComponentActivity() {
                         updateDebugOverlays()
                     }
                     if (!startupRetryBudget.firstFrame(session, android.os.SystemClock.elapsedRealtime())) return@runOnUiThread
+                    // Issue #290: a session showing its first frame breaks
+                    // the failure streak — the phone did connect in between,
+                    // so any later failures start a new streak and the prompt
+                    // can show again. (A mid-session loss is not itself a
+                    // counted failure; only FIRST_TCP_TIMEOUT counts.)
+                    wirelessLinkFailurePrompt.onSessionActivated()
+                    AirPlayPersistence.saveWirelessLinkFailures(this@CarPlayHostActivity, 0)
+                    AirPlayPersistence.saveWirelessRepairPromptShown(this@CarPlayHostActivity, false)
                     mainHandler.postDelayed({
                         if (controllerGeneration == restartGeneration && activeAirPlaySession === session &&
                             !shuttingDown.get() && CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity) &&
@@ -5319,6 +5336,22 @@ class CarPlayHostActivity : ComponentActivity() {
             lower.contains("reboot")
     }
 
+    // Issue #290: visible prompt after 4 consecutive wireless link failures.
+    // Dismissing it does not reset the streak (the shown flag persists), so
+    // it never nags twice for the same streak; only a session showing video
+    // resets.
+    private fun showWirelessRepairPrompt() {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            appendLog("wireless link failures reached prompt threshold; showing forget-and-repair prompt")
+            AlertDialog.Builder(this)
+                .setTitle(R.string.wireless_forget_device_title)
+                .setMessage(R.string.wireless_forget_device_message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
+    }
+
     private fun reconnectAfterLoss(reason: String, startupFailure: WirelessStartupFailure? = null) {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (menuOpen) recoveryPendingAfterMenu = true
@@ -5353,6 +5386,18 @@ class CarPlayHostActivity : ComponentActivity() {
                 setConnectionStage(getString(R.string.wired_no_tcp_replug_required))
                 return
             }
+        }
+        // Issue #290: count only genuine link-establishment failures (the
+        // iPhone never opens AirPlay TCP). Hotspot-not-ready and
+        // hotspot-configuration failures are car-side problems that
+        // forgetting the device on the iPhone would not fix, so they do not
+        // count. At the threshold the driver gets a visible prompt to forget
+        // the device on the iPhone and re-pair.
+        if (startupFailure == WirelessStartupFailure.FIRST_TCP_TIMEOUT) {
+            val showPrompt = wirelessLinkFailurePrompt.onFailure()
+            AirPlayPersistence.saveWirelessLinkFailures(this, wirelessLinkFailurePrompt.consecutiveFailures)
+            AirPlayPersistence.saveWirelessRepairPromptShown(this, wirelessLinkFailurePrompt.promptShown)
+            if (showPrompt) showWirelessRepairPrompt()
         }
         val startupDelay = if (startupFailure != null && startupFailure != WirelessStartupFailure.HOTSPOT_CONFIGURATION)
             startupRetryBudget.nextDelayMillis() else null

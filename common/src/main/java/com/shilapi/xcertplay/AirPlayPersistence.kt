@@ -63,6 +63,10 @@ object AirPlayPersistence {
     private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
     private const val KEY_NAVIGATION_STREAM_TYPE = "navigation_stream_type"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
+    /** Issue #290: consecutive wireless link-establishment failures (iPhone never opens AirPlay TCP). */
+    private const val KEY_WIRELESS_LINK_FAILURES = "wireless_link_failures"
+    /** Issue #290: whether the forget-and-repair prompt was already shown for the current streak. */
+    private const val KEY_WIRELESS_REPAIR_PROMPT_SHOWN = "wireless_repair_prompt_shown"
     private const val KEY_USB_BT_AUTO_START = "usb_bt_auto_start"
     private const val KEY_WIRELESS_HOTSPOT_MODE = "wireless_hotspot_mode"
     private const val KEY_WIFI_P2P_PREFERRED_CHANNEL = "wifi_p2p_preferred_channel"
@@ -289,6 +293,28 @@ object AirPlayPersistence {
     fun saveMediaFocusExclusive(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_MEDIA_FOCUS_EXCLUSIVE, enabled)
+            .apply()
+    }
+
+    /** Issue #290: consecutive wireless link-establishment failures; 0 when no streak is active. */
+    fun loadWirelessLinkFailures(context: Context): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_WIRELESS_LINK_FAILURES, 0)
+
+    fun saveWirelessLinkFailures(context: Context, failures: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_WIRELESS_LINK_FAILURES, failures)
+            .apply()
+    }
+
+    /** Issue #290: whether the forget-and-repair prompt was already shown for the current streak. */
+    fun loadWirelessRepairPromptShown(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WIRELESS_REPAIR_PROMPT_SHOWN, false)
+
+    fun saveWirelessRepairPromptShown(context: Context, shown: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_WIRELESS_REPAIR_PROMPT_SHOWN, shown)
             .apply()
     }
 

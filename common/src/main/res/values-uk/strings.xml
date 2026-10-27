@@ -726,5 +726,7 @@
     <string name="settings_legacy_hotspot_title">Автозапуск точки доступу автомобіля</string>
     <string name="settings_legacy_hotspot_description">При наступному підключенні або при відкритті DiPlay вимикає звичайний Wi-Fi та запускає збережену точку доступу. На цьому пристрої авторизація ADB не потрібна.</string>
     <string name="settings_media_focus_exclusive">Ексклюзивний аудіофокус медіа</string>
+    <string name="wireless_forget_device_title">Бездротове підключення не вдається</string>
+    <string name="wireless_forget_device_message">Бездротовий CarPlay не зміг підключитися 4 рази поспіль. На iPhone відкрийте «Параметри → Wi-Fi», забудьте точку доступу головного пристрою та виконайте сполучення заново.</string>
     <string name="settings_media_focus_exclusive_description">Запитувати постійний фокус для медіа замість приглушення CarPlay іншими програвачами. Допомагає лише на головних пристроях, які приглушують CarPlay до тиші; може заглушити інші програвачі. Діє з наступного підключення.</string>
 </resources>
