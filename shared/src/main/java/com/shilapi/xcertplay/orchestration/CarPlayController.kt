@@ -2701,26 +2701,23 @@ class CarPlayController(
                     mainHandler.post {
                         try {
                             if (closed || generation != availabilityPollGeneration.get() || phase != Phase.REENUMERATION) return@post
-                            if (configuration != null) {
+                            if (configuration != null && !forcedReenumerationForAttach) {
                                 connectionDiagnostic("CarPlay configuration ready from fast probe; skipping vendor request")
                                 useIphoneConfiguration(device, configuration)
+                            } else if (forcedReenumerationForAttach) {
+                                // Issue #335: the #275 forced re-enumeration was defeated
+                                // here — the fast probe found the stale configuration and
+                                // skipped the vendor request, so the phone never saw the
+                                // 0x51 transition and the reconnect reused the dead state.
+                                // A forced pass must issue the vendor request even when a
+                                // configuration is already visible.
+                                connectionDiagnostic("Forced re-enumeration active; requesting vendor re-enumeration despite fast-probe configuration (issue #275)")
+                                requestVendorReenumerationWithLegacySettle(device, generation)
                             } else if (System.nanoTime() < deadlineNanos) {
                                 mainHandler.postDelayed({ attempt() }, CARPLAY_MODE_DESCRIPTOR_PROBE_INTERVAL_MILLIS)
                             } else {
                                 connectionDiagnostic("No pre-existing CarPlay configuration found after probe; requesting vendor re-enumeration")
-                                // On legacy Android 4.x / API <= 19 (e.g. Allwinner T3, issues #311, #318),
-                                // allow the kernel usbfs driver a settle delay after closing the previous connection
-                                // before issuing vendor control transfer to avoid sw_usb spinlock lockups.
-                                // Note: MUST use realSdkInt() instead of Build.VERSION.SDK_INT because T3 ROMs fake SDK_INT.
-                                if (realSdkInt() <= Build.VERSION_CODES.KITKAT) {
-                                    mainHandler.postDelayed({
-                                        if (!closed && generation == availabilityPollGeneration.get() && phase == Phase.REENUMERATION) {
-                                            requestVendorReenumeration(device, generation)
-                                        }
-                                    }, 250)
-                                } else {
-                                    requestVendorReenumeration(device, generation)
-                                }
+                                requestVendorReenumerationWithLegacySettle(device, generation)
                             }
                         } catch (error: Throwable) {
                             fail(error)
@@ -2732,6 +2729,22 @@ class CarPlayController(
             }
         }
         attempt()
+    }
+
+    private fun requestVendorReenumerationWithLegacySettle(device: UsbDevice, generation: Int) {
+        // On legacy Android 4.x / API <= 19 (e.g. Allwinner T3, issues #311, #318),
+        // allow the kernel usbfs driver a settle delay after closing the previous connection
+        // before issuing vendor control transfer to avoid sw_usb spinlock lockups.
+        // Note: MUST use realSdkInt() instead of Build.VERSION.SDK_INT because T3 ROMs fake SDK_INT.
+        if (realSdkInt() <= Build.VERSION_CODES.KITKAT) {
+            mainHandler.postDelayed({
+                if (!closed && generation == availabilityPollGeneration.get() && phase == Phase.REENUMERATION) {
+                    requestVendorReenumeration(device, generation)
+                }
+            }, 250)
+        } else {
+            requestVendorReenumeration(device, generation)
+        }
     }
 
     private fun requestVendorReenumeration(device: UsbDevice, generation: Int) {
