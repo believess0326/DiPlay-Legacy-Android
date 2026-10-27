@@ -45,7 +45,25 @@ class HostapdHotspotManager(
     private var wifiWasOn = true
     private var confirmedClientCount: Int? = null
 
-    override fun start(timeoutMillis: Long): WirelessHotspotInfo {
+    /**
+     * Set once [start] has changed anything on the head unit (killed stale
+     * processes, switched Wi-Fi, written the config). [teardown] undoes system
+     * state only when this is set, so closing a manager that never started does
+     * not kill the unit's own processes or take wlan0 down.
+     */
+    @Volatile
+    private var touchedSystem = false
+
+    override fun start(timeoutMillis: Long): WirelessHotspotInfo = try {
+        startHotspot(timeoutMillis)
+    } catch (error: Throwable) {
+        // A failed or cancelled start must not leave hostapd/dnsmasq running,
+        // the passphrase-bearing config on disk or Wi-Fi switched on behind.
+        teardown()
+        throw error
+    }
+
+    private fun startHotspot(timeoutMillis: Long): WirelessHotspotInfo {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "HostapdHotspotManager.start must not run on the main thread"
         }
@@ -85,6 +103,7 @@ class HostapdHotspotManager(
             )
         }
 
+        touchedSystem = true
         RootShell.run(HostapdConfig.killStaleScript(), 10_000)
         checkActive()
 
@@ -114,13 +133,24 @@ class HostapdHotspotManager(
         try {
             staged.writeText(conf)
         } catch (error: Exception) {
+            staged.delete() // do not leave a partly written copy of the passphrase behind
             throw IOException("hostapd: hostapd_full.conf deploy failed: could not stage the config: ${error.message}")
         }
-        val deployed = RootShell.run(
-            "mkdir -p /data/misc/wifi; cp ${staged.absolutePath} ${HostapdConfig.TMP_CONF_PATH}" +
-                " && cp ${HostapdConfig.TMP_CONF_PATH} ${HostapdConfig.CONF_PATH}",
-            10_000,
-        )
+        val deployed = try {
+            RootShell.run(
+                "mkdir -p /data/misc/wifi; cp ${staged.absolutePath} ${HostapdConfig.TMP_CONF_PATH}" +
+                    " && cp ${HostapdConfig.TMP_CONF_PATH} ${HostapdConfig.CONF_PATH}",
+                10_000,
+            )
+        } finally {
+            // The app-private staging copy holds the WPA passphrase: drop it as
+            // soon as it has been handed over (or the hand-over failed).
+            staged.delete()
+        }
+        // The intermediate copy in /data/local/tmp is readable by the adb shell
+        // user and only exists for the copy above; hostapd reads CONF_PATH.
+        // A separate command keeps the deploy exit status from being masked.
+        RootShell.run(HostapdConfig.removeStagedConfScript(), 5_000)
         if (!deployed.success) {
             throw IOException("hostapd: hostapd_full.conf deploy failed: ${deployed.output.trim().take(200)}")
         }
@@ -229,10 +259,22 @@ class HostapdHotspotManager(
     override fun close() {
         if (closed) return
         closed = true
-        if (!started && !wifiWasOn) return
+        teardown()
+    }
+
+    /**
+     * Stops what [start] began and removes what it wrote: hostapd/dnsmasq, the
+     * generated configuration (it carries the WPA passphrase), logs and lease
+     * state, and Wi-Fi again if this backend had to switch it on. Safe to call
+     * more than once, and a no-op when [start] never changed anything.
+     */
+    private fun teardown() {
+        if (!touchedSystem) return
+        touchedSystem = false
         runCatching {
             RootShell.run(
-                HostapdConfig.killStaleScript() + "; ifconfig ${HostapdConfig.INTERFACE_NAME} down 2>/dev/null",
+                HostapdConfig.killStaleScript() + "; ifconfig ${HostapdConfig.INTERFACE_NAME} down 2>/dev/null" +
+                    "; " + HostapdConfig.removeGeneratedFilesScript(),
                 10_000,
             )
             if (!wifiWasOn) {
@@ -316,18 +358,25 @@ class HostapdHotspotManager(
             onDiagnostic("hostapd: bluetooth reset unavailable (neither root nor adapter.disable succeeded)")
             return
         }
-        val offDeadline = System.nanoTime() + 5_000_000_000L
-        while (adapter.state != BluetoothAdapter.STATE_OFF && System.nanoTime() < offDeadline) {
-            if (closed || isCancelled()) return
-            Thread.sleep(200)
-        }
-        if (adapter.state != BluetoothAdapter.STATE_OFF) {
-            onDiagnostic("hostapd: bluetooth reset skipped (adapter did not turn off)")
-            return
-        }
-        val enabled = RootShell.run("svc bluetooth enable", 10_000).success
-        if (!enabled) {
-            runCatching { adapter.enable() }
+        // From here the adapter is off, or going off, because of this reset, so
+        // it must be switched back on whatever happens next: a cancelled start,
+        // an interrupt or an adapter that is slow to turn off. Returning early
+        // from the wait used to leave the head unit's Bluetooth disabled.
+        try {
+            val offDeadline = System.nanoTime() + 5_000_000_000L
+            while (adapter.state != BluetoothAdapter.STATE_OFF && System.nanoTime() < offDeadline) {
+                if (closed || isCancelled()) break
+                Thread.sleep(200)
+            }
+            if (adapter.state != BluetoothAdapter.STATE_OFF) {
+                onDiagnostic("hostapd: bluetooth reset: adapter did not turn off in time; switching it back on")
+            }
+        } finally {
+            val enabled = runCatching { RootShell.run("svc bluetooth enable", 10_000).success }
+                .getOrDefault(false)
+            if (!enabled) {
+                runCatching { adapter.enable() }
+            }
         }
         val onDeadline = System.nanoTime() + 10_000_000_000L
         while (!adapter.isEnabled && System.nanoTime() < onDeadline) {

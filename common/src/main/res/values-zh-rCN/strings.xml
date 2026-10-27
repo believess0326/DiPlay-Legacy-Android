@@ -217,9 +217,11 @@
     <string name="hotspot_name">热点名称</string>
     <string name="hotspot_password">热点密码</string>
     <string name="hotspot_password_contains_u_0000">热点密码包含 U+0000</string>
+    <string name="hotspot_password_contains_control_character">热点密码包含控制字符</string>
     <string name="hotspot_setup">热点设置</string>
     <string name="hotspot_ssid">热点 SSID</string>
     <string name="hotspot_ssid_contains_u_0000">热点 SSID 包含 U+0000</string>
+    <string name="hotspot_ssid_contains_control_character">热点 SSID 包含控制字符</string>
     <string name="hotspot_ssid_is_required">必须填写热点 SSID</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">热点 SSID 最多为 32 个 UTF-8 字节</string>
     <string name="hotspot_status">热点状态</string>

@@ -3,6 +3,8 @@ package com.shilapi.xcertplay
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
@@ -15,6 +17,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import android.os.Process
 import android.os.RemoteException
 import android.util.Log
 import android.view.Gravity
@@ -77,15 +80,21 @@ class MapEmbedService : Service() {
         }
         val caller = packageManager.getNameForUid(message.sendingUid) ?: "uid ${message.sendingUid}"
         when (message.what) {
-            MSG_ATTACH -> attach(client, caller, message.data)
+            MSG_ATTACH -> attach(client, caller, message.sendingUid, message.data)
             MSG_RESIZE -> embeds[client.binder]?.resize(message.data.getInt(KEY_WIDTH), message.data.getInt(KEY_HEIGHT))
             MSG_DETACH -> embeds.remove(client.binder)?.release()
         }
     }
 
-    private fun attach(client: Messenger, caller: String, data: Bundle) {
+    private fun attach(client: Messenger, caller: String, uid: Int, data: Bundle) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             refuse(client, caller, ERROR_UNSUPPORTED)
+            return
+        }
+        // Who may ask is decided before anything about the driver's own setting is
+        // revealed, so an app that is not allowed cannot learn whether sharing is on.
+        if (!MapEmbedCallerPolicy.isAllowed(callerOf(uid), thisAppIsDebuggable())) {
+            refuse(client, caller, ERROR_NOT_ALLOWED)
             return
         }
         val error = when {
@@ -122,6 +131,39 @@ class MapEmbedService : Service() {
             putParcelable(KEY_SURFACE_PACKAGE, embed.surfacePackage)
             putBoolean(KEY_STREAM_ACTIVE, MapMirrors.streamActive)
         })
+    }
+
+    private fun thisAppIsDebuggable(): Boolean =
+        (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    /** Gathers the facts [MapEmbedCallerPolicy] decides on; any failure leaves that fact false. */
+    private fun callerOf(uid: Int): MapEmbedCallerPolicy.Caller {
+        if (uid == Process.myUid()) return MapEmbedCallerPolicy.UNKNOWN.copy(isThisApp = true)
+        // No caller to vouch for: refuse rather than guess.
+        if (uid < 0) return MapEmbedCallerPolicy.UNKNOWN
+        val pm = packageManager
+        val sharesSignature = runCatching {
+            pm.checkSignatures(Process.myUid(), uid) == PackageManager.SIGNATURE_MATCH
+        }.getOrDefault(false)
+        val launcher = runCatching {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0,
+            ).any { it.activityInfo?.applicationInfo?.uid == uid }
+        }.getOrDefault(false)
+        val debuggablePeer = runCatching {
+            pm.getPackagesForUid(uid).orEmpty().any { name ->
+                @Suppress("DEPRECATION")
+                (pm.getApplicationInfo(name, 0).flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            }
+        }.getOrDefault(false)
+        return MapEmbedCallerPolicy.Caller(
+            isThisApp = false,
+            isSystemUid = MapEmbedCallerPolicy.isSystemUid(uid),
+            sharesOurSignature = sharesSignature,
+            isLauncher = launcher,
+            isDebuggablePeer = debuggablePeer,
+        )
     }
 
     private fun refuse(client: Messenger, caller: String, error: String) {
@@ -250,6 +292,7 @@ class MapEmbedService : Service() {
         const val ERROR_DISABLED = "disabled" // the driver has not allowed sharing in DiPlay
         const val ERROR_UNSUPPORTED = "unsupported" // Android 10 or older
         const val ERROR_BAD_REQUEST = "bad_request"
+        const val ERROR_NOT_ALLOWED = "not_allowed" // the caller is not a launcher, a system app or signed like DiPlay
 
         /** Keeps the stream's shape (8:3 or 16:9) and fills the view, cutting the edges that do not fit. */
         internal fun cropToFill(view: TextureView, width: Int, height: Int) {

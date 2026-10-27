@@ -216,9 +216,11 @@
     <string name="hotspot_name">اسم نقطة الاتصال</string>
     <string name="hotspot_password">كلمة مرور نقطة الاتصال</string>
     <string name="hotspot_password_contains_u_0000">كلمة مرور نقطة الاتصال تحتوي على U+0000</string>
+    <string name="hotspot_password_contains_control_character">كلمة مرور نقطة الاتصال تحتوي على حرف تحكم</string>
     <string name="hotspot_setup">إعداد نقطة الاتصال</string>
     <string name="hotspot_ssid">‏SSID نقطة الاتصال</string>
     <string name="hotspot_ssid_contains_u_0000">‏SSID نقطة الاتصال يحتوي على U+0000</string>
+    <string name="hotspot_ssid_contains_control_character">‏SSID نقطة الاتصال يحتوي على حرف تحكم</string>
     <string name="hotspot_ssid_is_required">‏SSID نقطة الاتصال مطلوب</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">يجب ألا يتجاوز SSID لنقطة الاتصال 32 بايت UTF-8</string>
     <string name="hotspot_status">حالة نقطة الاتصال</string>

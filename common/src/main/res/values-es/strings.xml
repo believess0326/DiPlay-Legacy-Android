@@ -216,9 +216,11 @@
     <string name="hotspot_name">Nombre del punto de acceso</string>
     <string name="hotspot_password">Contraseña del punto de acceso</string>
     <string name="hotspot_password_contains_u_0000">La contraseña del punto de acceso contiene U+0000</string>
+    <string name="hotspot_password_contains_control_character">La contraseña del punto de acceso contiene un carácter de control</string>
     <string name="hotspot_setup">Configuración del punto de acceso</string>
     <string name="hotspot_ssid">SSID del punto de acceso</string>
     <string name="hotspot_ssid_contains_u_0000">El SSID del punto de acceso contiene U+0000</string>
+    <string name="hotspot_ssid_contains_control_character">El SSID del punto de acceso contiene un carácter de control</string>
     <string name="hotspot_ssid_is_required">Se requiere el SSID del punto de acceso</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">El SSID del punto de acceso debe tener como máximo 32 bytes UTF-8</string>
     <string name="hotspot_status">Estado del punto de acceso</string>

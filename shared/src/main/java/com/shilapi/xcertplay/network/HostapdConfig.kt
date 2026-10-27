@@ -34,11 +34,26 @@ object HostapdConfig {
         // The manual-hotspot validation allows an open network; hostapd WPA2
         // mode is the only configuration this backend offers.
         if (passphrase.isEmpty()) return "The hostapd hotspot password must be 8–63 characters"
+        // Both values are written verbatim into a config file that hostapd
+        // reads as root: one line per directive. A line break would let the
+        // value smuggle in further directives, so no control character is
+        // accepted (hostapd itself rejects them in wpa_passphrase as well).
+        if (hasControlCharacter(ssid) || hasControlCharacter(passphrase)) {
+            return "The hostapd hotspot name or password contains a control character"
+        }
+        // hostapd counts the passphrase in bytes, not characters.
+        if (passphrase.encodeToByteArray().size !in 8..63) {
+            return "The hostapd hotspot password must be 8–63 bytes"
+        }
         if (channel !in MIN_CHANNEL..MAX_CHANNEL) {
             return "hostapd channel must be $MIN_CHANNEL..$MAX_CHANNEL (2.4 GHz)"
         }
         return null
     }
+
+    /** True for ASCII control characters, which includes CR, LF and DEL (hostapd's own test). */
+    fun hasControlCharacter(value: String): Boolean =
+        value.any { it < ' ' || it == '\u007f' }
 
     /** The hostapd configuration file body for the generated AP. */
     fun renderConf(ssid: String, passphrase: String, channel: Int): String = buildString {
@@ -107,11 +122,35 @@ object HostapdConfig {
             "--dhcp-option=3,$HOST_ADDRESS --dhcp-option=6,$HOST_ADDRESS " +
             ">$DNSMASQ_LOG_PATH 2>&1 &"
 
-    /** Kills leftover hostapd/dnsmasq from an earlier run and clears stale lease state. */
+    /**
+     * Kills leftover hostapd/dnsmasq from an earlier run and clears stale lease state.
+     *
+     * A process is killed only when one of its `ps` fields is exactly the
+     * binary name (or a path ending in it). The earlier `grep -E "hostapd"`
+     * matched any line that merely contained the word, so an unrelated process
+     * (an app package, a helper script, `su` running a hostapd command) could
+     * be killed with `kill -9`. The PID is taken from column 2, as on Android's
+     * toolbox/toybox `ps`; anything that is not all digits is skipped.
+     * `set -f` stops `[kworker/...]`-style names from being glob-expanded.
+     */
     fun killStaleScript(): String =
-        "for name in hostapd dnsmasq; do ps | grep -E \"\$name\" | grep -v grep | " +
-            "while read line; do set -- \$line; kill -9 \$2 2>/dev/null; done; done; sleep 1; " +
+        "set -f; for name in hostapd dnsmasq; do ps | while read line; do set -- \$line; hit=0; " +
+            "for f in \"\$@\"; do [ \"\${f##*/}\" = \"\$name\" ] && hit=1; done; " +
+            "[ \$hit = 1 ] || continue; case \"\$2\" in ''|*[!0-9]*) continue;; esac; " +
+            "kill -9 \$2 2>/dev/null; done; done; sleep 1; " +
             "rm -f $LEASES_PATH $DNSMASQ_PID_PATH"
+
+    /**
+     * Removes the generated configuration, which holds the WPA passphrase, plus
+     * the logs and lease state of this backend. [TMP_CONF_PATH] sits in the
+     * shell-readable /data/local/tmp, so it is also removed as soon as it has
+     * been copied to [CONF_PATH].
+     */
+    fun removeGeneratedFilesScript(): String =
+        "rm -f $CONF_PATH $TMP_CONF_PATH $HOSTAPD_LOG_PATH $DNSMASQ_LOG_PATH $LEASES_PATH $DNSMASQ_PID_PATH"
+
+    /** Removes only the shell-readable staging copy of the configuration. */
+    fun removeStagedConfScript(): String = "rm -f $TMP_CONF_PATH"
 
     /** One dnsmasq lease line: `<expiry epoch> <mac> <ip> <hostname> <client id>`. */
     data class Lease(val expiryEpochSeconds: Long, val macAddress: String, val ipAddress: String)

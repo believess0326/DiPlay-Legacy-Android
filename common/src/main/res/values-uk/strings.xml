@@ -221,9 +221,11 @@
     <string name="hotspot_name">Назва точки доступу</string>
     <string name="hotspot_password">Пароль точки доступу</string>
     <string name="hotspot_password_contains_u_0000">Пароль точки доступу містить U+0000</string>
+    <string name="hotspot_password_contains_control_character">Пароль точки доступу містить керувальний символ</string>
     <string name="hotspot_setup">Налаштування точки доступу</string>
     <string name="hotspot_ssid">SSID точки доступу</string>
     <string name="hotspot_ssid_contains_u_0000">SSID точки доступу містить U+0000</string>
+    <string name="hotspot_ssid_contains_control_character">SSID точки доступу містить керувальний символ</string>
     <string name="hotspot_ssid_is_required">Укажіть SSID точки доступу</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">SSID точки доступу має містити не більше 32 байтів UTF-8</string>
     <string name="hotspot_status">Стан точки доступу</string>

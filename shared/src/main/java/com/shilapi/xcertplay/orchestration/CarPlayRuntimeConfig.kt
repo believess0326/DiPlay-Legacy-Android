@@ -130,11 +130,20 @@ class CarPlayRuntimeConfig(
             require(ssid.encodeToByteArray().size <= 32) {
                 "hostapdSsid must be at most 32 UTF-8 bytes"
             }
+            // Both values are written into a config file hostapd reads as root,
+            // one directive per line: a line break would inject directives.
+            require(!com.shilapi.xcertplay.network.HostapdConfig.hasControlCharacter(ssid)) {
+                "hostapdSsid must not contain control characters"
+            }
             val passphrase = hostapdPassphrase.orEmpty()
             require('\u0000' !in passphrase) {
                 "hostapdPassphrase must not contain U+0000"
             }
-            require(passphrase.length in 8..63) {
+            require(!com.shilapi.xcertplay.network.HostapdConfig.hasControlCharacter(passphrase)) {
+                "hostapdPassphrase must not contain control characters"
+            }
+            // hostapd counts the passphrase in bytes, not characters.
+            require(passphrase.encodeToByteArray().size in 8..63) {
                 "hostapdPassphrase must be between 8 and 63 characters"
             }
             require(hostapdChannel in 1..13) {

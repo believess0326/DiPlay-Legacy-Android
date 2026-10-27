@@ -216,9 +216,11 @@
     <string name="hotspot_name">熱點名稱</string>
     <string name="hotspot_password">熱點密碼</string>
     <string name="hotspot_password_contains_u_0000">熱點密碼包含 U+0000</string>
+    <string name="hotspot_password_contains_control_character">熱點密碼包含控制字元</string>
     <string name="hotspot_setup">熱點設定</string>
     <string name="hotspot_ssid">熱點 SSID</string>
     <string name="hotspot_ssid_contains_u_0000">熱點 SSID 包含 U+0000</string>
+    <string name="hotspot_ssid_contains_control_character">熱點 SSID 包含控制字元</string>
     <string name="hotspot_ssid_is_required">必須填寫熱點 SSID</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">熱點 SSID 最多為 32 個 UTF-8 位元組</string>
     <string name="hotspot_status">熱點狀態</string>

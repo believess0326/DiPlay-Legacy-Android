@@ -66,7 +66,8 @@ Requirements:
 
 - Android 11 (API 30) or newer on the head unit;
 - the driver turns on **Share the live map with other launchers** in DiPlay (off by default);
-- CarPlay connected with **CarPlay map on instrument cluster** on, for the map itself.
+- CarPlay connected with **CarPlay map on instrument cluster** on, for the map itself;
+- your app is allowed to ask (see [Who may attach](#who-may-attach)).
 
 A complete working example is the sample app in [`samples/maphost`](../samples/maphost/src/main/java/com/diplay/maphost/MainActivity.kt).
 
@@ -83,7 +84,18 @@ Service action: `com.shihab.diplay.action.EMBED_MAP`. The package differs betwee
 | launcher → DiPlay | `3` DETACH | — | Stop showing the map |
 | DiPlay → launcher | `101` ATTACHED | `surfacePackage` (SurfacePackage), `streamActive` (boolean) | Put this into your SurfaceView |
 | DiPlay → launcher | `102` STREAM_STATE | `streamActive` (boolean) | The map started or stopped |
-| DiPlay → launcher | `199` ERROR | `error`: `disabled`, `unsupported` or `bad_request` | The map cannot be shown |
+| DiPlay → launcher | `199` ERROR | `error`: `disabled`, `unsupported`, `bad_request` or `not_allowed` | The map cannot be shown |
+
+### Who may attach
+
+The map shows the car's route and position, so DiPlay does not hand it to every app that can bind to the service, even when the driver has turned sharing on. `ATTACH` is accepted from:
+
+- an app with an activity in the **HOME** category, which is any launcher, whether or not it is the default one;
+- a platform component (a uid outside the application range, such as the system uid);
+- an app signed with the same certificate as DiPlay;
+- on a **debuggable DiPlay build only** (for example `com.shihab.diplay.hudtest`), other debuggable apps, so that the [`maphost`](../samples/maphost) sample can be tried.
+
+Any other caller gets `ERROR` with `not_allowed`, before DiPlay says anything about the driver's setting. The driver's switch remains the consent for sharing; this check decides who may use it. Declaring a HOME activity is visible to the user, but it is not a signature check.
 
 Turning sharing off releases every attached map and sends `ERROR` with `disabled` to its launcher. Treat this as a detach. Enabling sharing again requires a fresh `ATTACH`; old views do not reconnect automatically.
 

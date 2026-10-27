@@ -3802,9 +3802,15 @@ class CarPlayHostActivity : ComponentActivity() {
                 hostapdSsid.encodeToByteArray().size > 32 ->
                     getString(R.string.hotspot_ssid_must_be_at_most_32_utf_8_bytes)
                 '\u0000' in hostapdSsid -> getString(R.string.hotspot_ssid_contains_u_0000)
+                // Line breaks and other control characters would reach the root-run
+                // hostapd.conf as extra directives (HostapdConfig.error).
+                com.shilapi.xcertplay.network.HostapdConfig.hasControlCharacter(hostapdSsid) ->
+                    getString(R.string.hotspot_ssid_contains_control_character)
                 hostapdChannel !in 1..13 -> getString(R.string.hostapd_channel_must_be_1_13)
                 '\u0000' in hostapdPassphrase -> getString(R.string.hotspot_password_contains_u_0000)
-                hostapdPassphrase.length !in 8..63 ->
+                com.shilapi.xcertplay.network.HostapdConfig.hasControlCharacter(hostapdPassphrase) ->
+                    getString(R.string.hotspot_password_contains_control_character)
+                hostapdPassphrase.encodeToByteArray().size !in 8..63 ->
                     getString(R.string.wpa2_wpa3_password_must_be_8_63_characters)
                 else -> null
             }

@@ -31,3 +31,13 @@ DiPlay-v0.2.34-legacy-release.apk.sha256
 ```
 
 The SHA-256 file uses the format `<64-lowercase-hex>  <apk-filename>`. If either asset is missing, invalid, unsigned with the existing certificate or served from a different origin, the app refuses to install it.
+
+## Testing a build before everyone gets it / 先给测试用户的预发布
+
+Every stable release is offered to every installed copy, so a build that still needs real-car validation should be published as a **pre-release** instead.
+
+- The REST path ignores anything marked *pre-release* or *draft* on GitHub.
+- The Atom-feed fallback (used when the REST API is rate-limited) **cannot see that flag**: it accepts any tag of the exact form `vX.Y.Z`. A pre-release must therefore also carry a suffix in its tag, such as `v0.2.98-pre1` or `v0.2.98-beta1`. Tags with a suffix are never offered by either path.
+- Testers install the pre-release APK by hand. When the build is validated, publish it again under the plain `vX.Y.Z` tag as a stable release.
+
+先发给测试用户的版本请标记为 GitHub 预发布（pre-release），并且标签必须带后缀（如 `v0.2.98-pre1`）：REST 接口会忽略预发布标记，但备用的 Atom 订阅看不到该标记，只会拒绝带后缀的标签。
