@@ -1,3 +1,13 @@
+# DiPlay 0.3.0 — 2026-10-27
+
+- Huawei HiSilicon hardware AVC decoder native port sizing (#324): use unconstrained native port sizing (omit KEY_MAX_INPUT_SIZE override) on OMX.k3.video.decoder.avc, avoiding the fatal ACodec SIGABRT without suffering KitKat software decoder -2 Main/High CABAC black screens.
+- Legacy-chip reverse-exit delayed cold start (#315): introduce an experimental opt-in setting in Advanced display; fully release video decoder during reverse gear and cold-start with fresh IDR keyframe after a 2.5s settling delay, avoiding driver deadlocks on MTK 8227L.
+- Boot-time hotspot self-healing broadcast (#315): trigger background hotspot auto-enable on BOOT_COMPLETED when opted in, eliminating manual system settings setup on units that never bring AP up at boot.
+- Diagnostic export crash & in-app updater timeout polish (#332, #333): guard external files dir lookups on API 17 disguised as 4.4; improve updater mirror failover diagnostics.
+- Existing Wi-Fi multi-IP broadcast & Bluetooth stack auto-reset (#330): filter multi-NIC interfaces for local existing Wi-Fi announcements; add automated reset for stuck Bluetooth stacks on legacy head units.
+
+See [v0.3.0 release notes](docs/RELEASE-NOTES-0.3.0.md) for details.
+
 # DiPlay 0.2.99 — 2026-10-27
 
 - Microphone 24kHz hardware failure & software resampling fallback (#329): detect and gracefully fall back to native supported sample rates (16k/44.1k/48k) when legacy hardware AudioRecord rejects 24kHz with code=-2; resample in real-time to ensure Siri and voice inputs function properly.
