@@ -61,6 +61,7 @@ internal class MicrophoneUplink(
     private var thread: Thread? = null
     /** The audio source actually used by the current recorder; null before start. */
     @Volatile private var usedSource: Int? = null
+    @Volatile private var actualSampleRate: Int = config.sampleRate
 
     fun start(): Boolean {
         if (!running.compareAndSet(false, true)) return true
@@ -70,16 +71,34 @@ internal class MicrophoneUplink(
         } else {
             AndroidAudioFormat.CHANNEL_IN_MONO
         }
-        val minBuffer = AudioRecord.getMinBufferSize(
-            config.sampleRate,
-            channelMask,
-            AndroidAudioFormat.ENCODING_PCM_16BIT,
-        )
+        val candidateRates = if (config.sampleRate == 24000) {
+            listOf(24000, 48000, 16000)
+        } else {
+            listOf(config.sampleRate)
+        }
+        var selectedRate = config.sampleRate
+        var minBuffer = -1
+        for (rate in candidateRates) {
+            val min = AudioRecord.getMinBufferSize(
+                rate,
+                channelMask,
+                AndroidAudioFormat.ENCODING_PCM_16BIT,
+            )
+            if (min > 0) {
+                selectedRate = rate
+                minBuffer = min
+                break
+            }
+        }
         if (minBuffer <= 0) {
             Log.w(TAG, "microphone unavailable rate=${config.sampleRate} channels=${config.channels}")
             stats.failure(MicrophoneFailureStage.MIN_BUFFER, code = minBuffer)
             running.set(false)
             return false
+        }
+        actualSampleRate = selectedRate
+        if (selectedRate != config.sampleRate) {
+            Log.i(TAG, "microphone hardware sampleRate $selectedRate selected for requested ${config.sampleRate}")
         }
 
         val source = when (config.audioType) {
@@ -105,7 +124,8 @@ internal class MicrophoneUplink(
             running.set(false)
             return false
         }
-        val bufferSize = maxOf(minBuffer * 2, config.frameBytes * 4)
+        val scale = if (config.sampleRate > 0) maxOf(1, actualSampleRate / config.sampleRate) else 1
+        val bufferSize = maxOf(minBuffer * 2, config.frameBytes * 4 * scale)
         // Some head units throw on VOICE_RECOGNITION at build(); VOICE_COMMUNICATION works there.
         val nextRecorder = createRecorder(source, channelMask, bufferSize)
             ?: if (source == MediaRecorder.AudioSource.VOICE_RECOGNITION) {
@@ -174,7 +194,7 @@ internal class MicrophoneUplink(
                     .setAudioFormat(
                         AndroidAudioFormat.Builder()
                             .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(config.sampleRate)
+                            .setSampleRate(actualSampleRate)
                             .setChannelMask(channelMask)
                             .build(),
                     )
@@ -184,7 +204,7 @@ internal class MicrophoneUplink(
                 @Suppress("DEPRECATION")
                 AudioRecord(
                     source,
-                    config.sampleRate,
+                    actualSampleRate,
                     channelMask,
                     AndroidAudioFormat.ENCODING_PCM_16BIT,
                     bufferSize,
@@ -281,19 +301,24 @@ internal class MicrophoneUplink(
     private fun capture(recorder: AudioRecord, socket: DatagramSocket) {
         val frame = ByteArray(config.frameBytes)
         val readBuffer = ByteArray(maxOf(frame.size, MIN_READ_BYTES))
+        val rawBuffer = if (actualSampleRate != config.sampleRate) {
+            ByteArray(maxOf(readBuffer.size * 2, MIN_READ_BYTES * 2))
+        } else {
+            readBuffer
+        }
         val counters = MicrophoneCounters()
         val routeInfo = { routeType(recorder) }
         var canceller = echoCanceller
-        val clock = canceller?.let { CaptureClock(config.sampleRate) }
+        val clock = canceller?.let { CaptureClock(actualSampleRate) }
         val reference = canceller?.let { ShortArray(it.frameSamples) }
         var filled = 0
         try {
             while (running.get()) {
                 stats.reading()
                 val count = if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
-                    recorder.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
+                    recorder.read(rawBuffer, 0, rawBuffer.size, AudioRecord.READ_BLOCKING)
                 } else {
-                    recorder.read(readBuffer, 0, readBuffer.size)
+                    recorder.read(rawBuffer, 0, rawBuffer.size)
                 }
                 stats.read(count)
                 if (count > 0) clock?.read(recorder, count / 2)
@@ -308,9 +333,16 @@ internal class MicrophoneUplink(
                     stats.flush(routeType = routeInfo)
                     continue
                 }
+                val processedCount = when {
+                    actualSampleRate == 48000 && config.sampleRate == 24000 ->
+                        downsample48To24(rawBuffer, count, readBuffer)
+                    actualSampleRate == 16000 && config.sampleRate == 24000 ->
+                        upsample16To24(rawBuffer, count, readBuffer)
+                    else -> count
+                }
                 var offset = 0
-                while (offset < count && running.get()) {
-                    val copied = minOf(frame.size - filled, count - offset)
+                while (offset < processedCount && running.get()) {
+                    val copied = minOf(frame.size - filled, processedCount - offset)
                     readBuffer.copyInto(frame, filled, offset, offset + copied)
                     filled += copied
                     offset += copied
@@ -498,7 +530,7 @@ internal class MicrophoneUplink(
         currentEncoder?.close()
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "xcertplay-usb"
         const val MIN_READ_BYTES = 2_048
         const val CLOSE_JOIN_MILLIS = 500L
@@ -512,6 +544,42 @@ internal class MicrophoneUplink(
         @Volatile var voiceCommunicationSilentBroken = false
         /** Minimum silent frames before declaring VOICE_COMMUNICATION broken (~4s at 20ms). */
         const val BROKEN_SILENCE_FRAMES = 200L
+
+        internal fun downsample48To24(input: ByteArray, inputCount: Int, output: ByteArray): Int {
+            val samplesIn = inputCount / 2
+            val samplesOut = samplesIn / 2
+            val maxOut = minOf(samplesOut, output.size / 2)
+            for (i in 0 until maxOut) {
+                val inIdx = i * 4
+                val s0 = ((input[inIdx].toInt() and 0xFF) or (input[inIdx + 1].toInt() shl 8)).toShort().toInt()
+                val s1 = ((input[inIdx + 2].toInt() and 0xFF) or (input[inIdx + 3].toInt() shl 8)).toShort().toInt()
+                val avg = (s0 + s1) / 2
+                val outIdx = i * 2
+                output[outIdx] = (avg and 0xFF).toByte()
+                output[outIdx + 1] = ((avg shr 8) and 0xFF).toByte()
+            }
+            return maxOut * 2
+        }
+
+        internal fun upsample16To24(input: ByteArray, inputCount: Int, output: ByteArray): Int {
+            val samplesIn = inputCount / 2
+            val pairs = samplesIn / 2
+            val maxPairs = minOf(pairs, output.size / 6)
+            for (i in 0 until maxPairs) {
+                val inIdx = i * 4
+                val s0 = ((input[inIdx].toInt() and 0xFF) or (input[inIdx + 1].toInt() shl 8)).toShort().toInt()
+                val s1 = ((input[inIdx + 2].toInt() and 0xFF) or (input[inIdx + 3].toInt() shl 8)).toShort().toInt()
+                val mid = (s0 + s1) / 2
+                val outIdx = i * 6
+                output[outIdx] = (s0 and 0xFF).toByte()
+                output[outIdx + 1] = ((s0 shr 8) and 0xFF).toByte()
+                output[outIdx + 2] = (mid and 0xFF).toByte()
+                output[outIdx + 3] = ((mid shr 8) and 0xFF).toByte()
+                output[outIdx + 4] = (s1 and 0xFF).toByte()
+                output[outIdx + 5] = ((s1 shr 8) and 0xFF).toByte()
+            }
+            return maxPairs * 6
+        }
     }
 }
 
@@ -546,7 +614,7 @@ internal class CaptureClock(private val sampleRate: Int) {
     fun frameEndNs(samplesIntoRead: Int): Long =
         lastReadEndNs - (lastReadSamples - samplesIntoRead).coerceAtLeast(0) * 1_000_000_000L / sampleRate
 
-    private companion object {
+    internal companion object {
         const val FALLBACK_LATENCY_NS = 20_000_000L
     }
 }
