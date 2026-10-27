@@ -519,7 +519,7 @@ class CarPlayController(
     fun takeMainAudioAndScreen(): Boolean {
         val session = activeSession ?: return false
         if (config.transport == CarPlayTransport.WIRELESS) {
-            debugLog("[WBTDIAG] skipped resume changeModes for wireless session; retaining negotiated Screen and MainAudio ownership")
+            debugLog("skipped resume changeModes for wireless session; retaining negotiated Screen and MainAudio ownership")
             return false
         }
         val resources = listOf(
@@ -538,7 +538,7 @@ class CarPlayController(
     fun takeMainAudio(): Boolean {
         val session = activeSession ?: return false
         if (config.transport == CarPlayTransport.WIRELESS) {
-            debugLog("[WBTDIAG] suppressed MainAudio Untake for wireless session; preserve AirPlay screen and iAP2 tunnel")
+            debugLog("suppressed MainAudio Untake for wireless session; preserve AirPlay screen and iAP2 tunnel")
             return false
         }
         val resources = listOf(
@@ -2234,7 +2234,7 @@ class CarPlayController(
     }
 
     private fun wirelessDiagnostic(message: String) {
-        debugLog("[WBTDIAG] $message")
+        debugLog(message)
     }
 
     private fun scheduleWirelessSessionRecovery(generation: Int, delayMillis: Long) {

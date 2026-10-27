@@ -103,7 +103,7 @@ class UsbBtPairingAgent(
             Thread.currentThread().interrupt()
             false
         }
-        UsbBtLog.log(context, TAG, "[WBTDIAG] pairing agent stopped workerTerminated=$stopped")
+        UsbBtLog.log(context, TAG, "pairing agent stopped workerTerminated=$stopped")
     }
 
     /**

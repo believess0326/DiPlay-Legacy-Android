@@ -1090,7 +1090,7 @@ class CarPlayHostActivity : ComponentActivity() {
         super.onResume()
         UsbBtPairingUiRouter.register(this)
         if (CarPlayBackgroundSession.hasSession()) {
-            appendLog("[WBTDIAG] Activity resumed while CarPlay controller is retained")
+            appendLog("Activity resumed while CarPlay controller is retained")
         }
         DiPlayBootstrap.restoreUsbBluetooth(this)
         oemLabel = AirPlayPersistence.loadOemLabel(this)
@@ -1588,7 +1588,7 @@ class CarPlayHostActivity : ComponentActivity() {
         // The controller, USB/iAP2 link, and VPN attachment intentionally outlive the UI.
         isActivityStarted = false
         if (CarPlayBackgroundSession.hasSession()) {
-            appendLog("[WBTDIAG] Activity stopped while CarPlay controller remains retained")
+            appendLog("Activity stopped while CarPlay controller remains retained")
         }
         logThemeState(ThemeModeDiagnostics.Source.STOP, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)

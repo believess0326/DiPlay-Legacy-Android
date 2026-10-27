@@ -889,7 +889,7 @@ class UsbBtBluetoothAdapter(
         // outstanding links are disconnected. Closing HCI first silently drops
         // these frames and can leave the phone parked in Bluetooth bootstrap.
         if (closingHci != null && gracefulRadioOff) {
-            UsbBtLog.log(appContext, TAG, "[WBTDIAG] handoff shutdown stage=close RFCOMM streams")
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=close RFCOMM streams")
             activeStreams.values.toList().forEach { stream ->
                 val result = runCatching { stream.close() }
                 shutdownResults += "rfcommClose=${if (result.isSuccess) "ok" else result.exceptionOrNull()?.javaClass?.simpleName}"
@@ -897,19 +897,19 @@ class UsbBtBluetoothAdapter(
             rfcommLayers.values.toList().forEach { layer -> runCatching { layer.close() } }
 
             val handles = aclHandleByAddr.values.toSet()
-            UsbBtLog.log(appContext, TAG, "[WBTDIAG] handoff shutdown stage=disconnect ACL count=${handles.size}")
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=disconnect ACL count=${handles.size}")
             handles.forEach { handle ->
                 val result = runCatching {
                     closingHci.sendCommand(OP_DISCONNECT, encodeDisconnect(handle), timeoutMs = 1_000)
                 }.getOrNull()
                 shutdownResults += "disconnect=0x${handle.toString(16)}:${result.describeShutdownResult()}"
             }
-            UsbBtLog.log(appContext, TAG, "[WBTDIAG] handoff shutdown stage=disable inquiry/page scan")
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=disable inquiry/page scan")
             val scanResult = runCatching {
                 closingHci.sendCommand(OP_WRITE_SCAN_ENABLE, byteArrayOf(0), timeoutMs = 1_000)
             }.getOrNull()
             shutdownResults += "scanDisable=${scanResult.describeShutdownResult()}"
-            UsbBtLog.log(appContext, TAG, "[WBTDIAG] handoff shutdown stage=HCI reset")
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=HCI reset")
             val resetResult = runCatching {
                 closingHci.sendCommand(OP_RESET, byteArrayOf(), timeoutMs = 1_000)
             }.getOrNull()
@@ -962,7 +962,7 @@ class UsbBtBluetoothAdapter(
         encryptLatches.values.forEach { it.countDown() }
         encryptLatches.clear()
         if (wasActive) {
-            UsbBtLog.log(appContext, TAG, "[WBTDIAG] USB Bluetooth shut down ${shutdownResults.joinToString(" ")}")
+            UsbBtLog.log(appContext, TAG, "USB Bluetooth shut down ${shutdownResults.joinToString(" ")}")
         }
         shutdownResults.joinToString(" ")
     }

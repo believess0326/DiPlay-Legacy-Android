@@ -22,7 +22,7 @@ internal object DiPlayBootstrap {
      */
     @Synchronized fun restoreUsbBluetooth(context: Context, force: Boolean = false) {
         if (CarPlayBackgroundSession.hasSession()) {
-            Log.i(TAG, "[WBTDIAG] USB Bluetooth auto-restore skipped while CarPlay controller is retained")
+            Log.i(TAG, "USB Bluetooth auto-restore skipped while CarPlay controller is retained")
             return
         }
         val now = System.currentTimeMillis()
