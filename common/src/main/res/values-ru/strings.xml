@@ -677,6 +677,8 @@
     <string name="settings_car_bluetooth_mac_invalid">Пожалуйста, введите корректный 12-значный шестнадцатеричный MAC-адрес.</string>
     <string name="settings_harman_fullscreen_experimental">Полный экран Harman (экспериментально)</string>
     <string name="settings_harman_fullscreen_experimental_description">Позволяет CarPlay занять область штатной боковой панели на совместимых устройствах Harman. Применяется при следующем открытии окна CarPlay; на других прошивках возможны ошибки отображения.</string>
+    <string name="settings_legacy_reverse_cold_start">Отложенный холодный перезапуск при выходе из заднего хода (экспериментально)</string>
+    <string name="settings_legacy_reverse_cold_start_description">Для старых чипов (например, MTK 8227L): при включении заднего хода видеодекодер полностью освобождается, а через 2,5 с после выхода перезапускается и запрашивает новый ключевой кадр. Включайте только если экран чернеет при выходе из заднего хода.</string>
     <string name="settings_usb_bluetooth_title">Внешний USB Bluetooth</string>
     <string name="settings_usb_bluetooth_subtitle">Прямой стек для внешних USB Bluetooth адаптеров (UGREEN CM591/CM390, Realtek, Actions ATS2851) для беспроводного CarPlay.</string>
     <string name="settings_usb_bluetooth_not_detected">Внешний USB Bluetooth адаптер не обнаружен — подключите совместимый адаптер.</string>

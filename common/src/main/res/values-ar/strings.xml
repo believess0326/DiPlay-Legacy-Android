@@ -677,6 +677,8 @@
     <string name="settings_car_bluetooth_mac_invalid">يرجى إدخال عنوان MAC سداسي عشري صالح من 12 خانة.</string>
     <string name="settings_harman_fullscreen_experimental">ملء شاشة Harman (تجريبي)</string>
     <string name="settings_harman_fullscreen_experimental_description">يتيح لـ CarPlay شغل منطقة اللوحة الجانبية الأصلية في وحدات Harman المدعومة. يُطبّق عند فتح نافذة CarPlay التالية؛ وقد تظهر أخطاء على برامج ثابتة أخرى.</string>
+    <string name="settings_legacy_reverse_cold_start">إعادة تشغيل باردة متأخرة عند الخروج من الرجوع (تجريبي)</string>
+    <string name="settings_legacy_reverse_cold_start_description">للرقائق القديمة (مثل MTK 8227L): أثناء الرجوع يُحرَّر مفكك الفيديو بالكامل، وبعد 2.5 ثانية من الخروج يعاد تشغيله باردًا ويُطلب إطار رئيسي جديد. فعّله فقط إذا تحولت الشاشة إلى السوداء عند الخروج من الرجوع.</string>
     <string name="settings_usb_bluetooth_title">محول بلوتوث USB خارجي</string>
     <string name="settings_usb_bluetooth_subtitle">مكدس أجهزة مباشر لمحوّلات USB بلوتوث الخارجية (مثل UGREEN CM591/CM390 وRealtek وActions ATS2851) لتشغيل CarPlay اللاسلكي.</string>
     <string name="settings_usb_bluetooth_not_detected">لم يتم اكتشاف محول بلوتوث USB خارجي — يرجى توصيل محول متوافق.</string>

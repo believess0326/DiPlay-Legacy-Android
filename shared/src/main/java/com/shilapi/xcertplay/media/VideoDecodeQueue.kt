@@ -19,6 +19,10 @@ internal sealed interface VideoJob {
     data class DetachSurface(val request: SurfaceDetachRequest) : VideoJob
     /** Ask the iPhone for a keyframe, so a surface that just came back gets a picture without waiting for motion. */
     data object RefreshPicture : VideoJob
+    /** Issue #315: legacy reverse strategy — release the codec and stop the input pump. */
+    data object ReleaseForReverse : VideoJob
+    /** Issue #315: legacy reverse strategy — cold-start the codec after the exit delay. */
+    data object ResumeFromReverse : VideoJob
     data object Resync : VideoJob
     /** A frame was lost before it reached this queue, so the reference chain is broken (issue #288). */
     data object ReferenceLost : VideoJob

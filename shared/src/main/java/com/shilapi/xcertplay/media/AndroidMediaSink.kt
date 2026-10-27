@@ -514,6 +514,16 @@ class AndroidMediaSink(
         videoDecoders[type]?.refreshPicture()
     }
 
+    /** Issue #315: legacy reverse strategy — release stream [type]'s decoder and stop its input pump. */
+    fun suspendVideoForReverse(type: Int) {
+        videoDecoders[type]?.suspendForReverse()
+    }
+
+    /** Issue #315: legacy reverse strategy — cold-start stream [type]'s decoder after the exit delay. */
+    fun resumeVideoFromReverse(type: Int) {
+        videoDecoders[type]?.resumeFromReverse()
+    }
+
     /**
      * Also decodes stream [type] onto [surface] with its own decoder, one per [key], which
      * starts at the next keyframe it asks for; null stops it. The stream's own surface is not affected.
@@ -927,6 +937,10 @@ private class VideoDecoder(
     private val queue = VideoDecodeQueue()
     @Volatile private var running = true
     @Volatile private var decoder: MediaCodec? = null
+    // Issue #315: worker-confined; set only by the ReleaseForReverse /
+    // ResumeFromReverse jobs, read by feed/changeSurface/recover on the
+    // same worker, so no synchronization is needed.
+    private var reverseSuspended = false
     private var outputSurface: Surface? = surface
     private var parking: ParkingOutput? = null
     private var lastConfig: VideoJob.Config? = null
@@ -966,6 +980,16 @@ private class VideoDecoder(
             queue.discardFrames()
         }
         queue.offer(VideoJob.SurfaceChanged(surface))
+    }
+
+    /** Issue #315: legacy reverse strategy — fully release the codec and stop the input pump. */
+    fun suspendForReverse() {
+        queue.offer(VideoJob.ReleaseForReverse)
+    }
+
+    /** Issue #315: legacy reverse strategy — cold-start the codec after the exit delay. */
+    fun resumeFromReverse() {
+        queue.offer(VideoJob.ResumeFromReverse)
     }
 
     /** Asks the worker to stop rendering to [surface], parking the codec when [park]. */
@@ -1028,6 +1052,26 @@ private class VideoDecoder(
                         }
                         is VideoJob.SurfaceChanged -> changeSurface(job.surface)
                         is VideoJob.DetachSurface -> detach(job.request)
+                        is VideoJob.ReleaseForReverse -> {
+                            queue.discardFrames()
+                            releaseDecoder()
+                            consecutiveInputWithoutOutput = 0
+                            consecutiveDroppedWithoutKeyFrame = 0
+                            keyframeWaitStartedNs = 0L
+                            referenceChain.reset()
+                            reverseSuspended = true
+                            report("video: decoder released for reverse (legacy cold start)")
+                        }
+                        is VideoJob.ResumeFromReverse -> {
+                            reverseSuspended = false
+                            if (outputSurface != null) {
+                                releaseDecoder()
+                                lastConfig?.let {
+                                    configureDecoder(it)
+                                    requestKeyFrameIfDue(force = true)
+                                }
+                            }
+                        }
                         // Once per new surface, so it skips the rate limit an earlier request may still hold.
                         is VideoJob.RefreshPicture -> {
                             lastKeyFrameRequestNs = System.nanoTime()
@@ -1043,10 +1087,15 @@ private class VideoDecoder(
                     }
                     decoder?.let(::drainOutput)
                     stats.logIfDue()?.let(report)
-                    if (outputSurface != null && stats.shouldRecoverDegeneratePipeline()) {
-                        recover("pipeline receiving frames but 0 rendered", allowRebuild = false)
-                    } else if (referenceChain.needsKeyFrame && lastConfig != null && outputSurface != null) {
-                        requestKeyFrameIfDue()
+                    // Issue #315: while suspended for reverse, received frames
+                    // are intentionally dropped and 0 are rendered; neither the
+                    // degenerate recovery nor the keyframe loop may fire.
+                    if (!reverseSuspended) {
+                        if (outputSurface != null && stats.shouldRecoverDegeneratePipeline()) {
+                            recover("pipeline receiving frames but 0 rendered", allowRebuild = false)
+                        } else if (referenceChain.needsKeyFrame && lastConfig != null && outputSurface != null) {
+                            requestKeyFrameIfDue()
+                        }
                     }
                 } catch (error: Exception) {
                     if (running) Log.e(TAG, "video decoder job failed: ${job?.javaClass?.simpleName}", error)
@@ -1331,6 +1380,13 @@ private class VideoDecoder(
         val now = System.nanoTime()
         lastOutputRenderedNs = now
         surfaceAttachedAtNs = now
+        if (reverseSuspended) {
+            // Issue #315: a surface churn during reverse must only record
+            // the new surface; the codec stays released until the delayed
+            // cold start (ResumeFromReverse) runs.
+            releaseDecoder()
+            return
+        }
         if (surface == null) {
             releaseDecoder()
             Log.i(TAG, "video decoder detached from surface")
@@ -1356,6 +1412,9 @@ private class VideoDecoder(
     }
 
     private fun feed(nalus: ByteArray, presentNs: Long = 0L) {
+        // Issue #315: the input pump is cut while suspended for reverse —
+        // frames must be dropped here, not lazily rebuild the codec below.
+        if (reverseSuspended) return
         val annexB = MediaCodecSupport.toAnnexB(nalus)
         val config = lastConfig ?: return
         if (outputSurface == null) return
@@ -1453,6 +1512,9 @@ private class VideoDecoder(
     }
 
     private fun recover(reason: String, allowRebuild: Boolean = true) {
+        // Issue #315: no recovery may resurrect the codec while it is
+        // suspended for reverse; the delayed cold start owns the restart.
+        if (reverseSuspended) return
         Log.w(TAG, "Video recovery: $reason; waiting for keyframe")
         // Issue #251: while a keyframe wait is already running, rebuilding the
         // decoder races the keyframe's arrival — the rebuild discards the

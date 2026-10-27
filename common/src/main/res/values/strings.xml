@@ -787,6 +787,8 @@
     <string name="report_usb_copy_paths">Additional copies:\n%1$s</string>
     <string name="settings_harman_fullscreen_experimental">Harman head-unit full screen (experimental)</string>
     <string name="settings_harman_fullscreen_experimental_description">Let CarPlay occupy the OEM side-panel area on supported Harman head units. Applies when the CarPlay window next opens; other firmware may display incorrectly.</string>
+    <string name="settings_legacy_reverse_cold_start">Reverse-exit delayed cold start (experimental)</string>
+    <string name="settings_legacy_reverse_cold_start_description">For old chips (e.g. MTK 8227L): while reversing, the video decoder is fully released; 2.5 s after reverse exit it cold-starts and requests a fresh keyframe. Enable only if reverse exit black-screens on your unit.</string>
     <string name="usb_bt_dongle_status">USB Bluetooth dongle</string>
     <string name="usb_bt_dongle_connected">USB Bluetooth dongle connected (%1$s)</string>
     <string name="usb_bt_dongle_not_found">No USB Bluetooth dongle found — plug one in</string>

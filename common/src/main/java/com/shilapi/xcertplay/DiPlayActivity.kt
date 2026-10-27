@@ -1523,6 +1523,11 @@ class DiPlayActivity : ComponentActivity() {
                 SidePanelSettings.setEnabled(this, it)
                 markReconnectNeeded()
             }
+            toggle(card, getString(R.string.settings_legacy_reverse_cold_start),
+                getString(R.string.settings_legacy_reverse_cold_start_description),
+                AirPlayPersistence.loadLegacyReverseColdStart(this)) { enabled ->
+                AirPlayPersistence.saveLegacyReverseColdStart(this, enabled)
+            }
             if (CarPlayRotation.enabled(this)) {
                 val pictures = CarPlayRotation.Picture.entries
                 choice(card, getString(R.string.carplay_rotation_picture), listOf(

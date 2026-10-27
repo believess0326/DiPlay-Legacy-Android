@@ -677,6 +677,8 @@
     <string name="settings_car_bluetooth_mac_invalid">Introduce una dirección MAC hexadecimal válida de 12 dígitos.</string>
     <string name="settings_harman_fullscreen_experimental">Pantalla completa Harman (experimental)</string>
     <string name="settings_harman_fullscreen_experimental_description">Permite que CarPlay ocupe el panel lateral original en unidades Harman compatibles. Se aplica al abrir de nuevo la ventana de CarPlay; otros firmwares podrían mostrarse incorrectamente.</string>
+    <string name="settings_legacy_reverse_cold_start">Arranque en frío retardado al salir de la marcha atrás (experimental)</string>
+    <string name="settings_legacy_reverse_cold_start_description">Para chips antiguos (p. ej. MTK 8227L): al engranar la marcha atrás se libera por completo el decodificador de vídeo; 2,5 s después de salir, arranca en frío y pide un fotograma clave nuevo. Actívalo solo si la pantalla se queda en negro al salir de la marcha atrás.</string>
     <string name="settings_usb_bluetooth_title">Bluetooth USB externo</string>
     <string name="settings_usb_bluetooth_subtitle">Pila de hardware directa para adaptadores USB Bluetooth externos (ej. UGREEN CM591/CM390, Realtek, Actions ATS2851) para CarPlay inalámbrico.</string>
     <string name="settings_usb_bluetooth_not_detected">No se detectó ningún adaptador Bluetooth USB externo — conecta uno compatible.</string>

@@ -53,6 +53,7 @@ object AirPlayPersistence {
     private const val KEY_ADVANCED_AUDIO_CHANNEL_MAPPING = "advanced_audio_channel_mapping"
     private const val KEY_AUDIO_FOCUS_ENABLED = "audio_focus_enabled"
     private const val KEY_AUDIO_FOCUS_AUTO_YIELD = "audio_focus_auto_yield"
+    private const val KEY_LEGACY_REVERSE_COLD_START = "legacy_reverse_cold_start"
     private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
     private const val KEY_MEDIA_VOLUME_PERCENT = "media_volume_percent"
     private const val KEY_NAVIGATION_VOLUME_PERCENT = "navigation_volume_percent"
@@ -261,6 +262,17 @@ object AirPlayPersistence {
     fun loadAudioFocusAutoYield(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_AUDIO_FOCUS_AUTO_YIELD, true)
+
+    /** Issue #315: legacy-chip reverse cold start; off by default, takes effect on the next reverse. */
+    fun loadLegacyReverseColdStart(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LEGACY_REVERSE_COLD_START, false)
+
+    fun saveLegacyReverseColdStart(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_LEGACY_REVERSE_COLD_START, enabled)
+            .apply()
+    }
 
     fun saveAudioFocusAutoYield(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

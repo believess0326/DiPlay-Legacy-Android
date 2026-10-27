@@ -750,6 +750,8 @@
     <string name="report_usb_copy_paths">另外保存到：\n%1$s</string>
     <string name="settings_harman_fullscreen_experimental">哈曼车机全屏（实验性）</string>
     <string name="settings_harman_fullscreen_experimental_description">让 CarPlay 占用受支持哈曼车机的原厂侧栏区域。下次打开 CarPlay 窗口时生效；其他固件可能显示异常。</string>
+    <string name="settings_legacy_reverse_cold_start">倒车退出延迟冷启动（实验性）</string>
+    <string name="settings_legacy_reverse_cold_start_description">针对老旧芯片（如 MTK 8227L）：挂倒挡时彻底释放视频解码器，退出倒挡 2.5 秒后再冷启动并索取全新关键帧。仅在倒车退出黑屏的车机上开启。</string>
     <string name="usb_bt_dongle_status">USB 蓝牙 dongle</string>
     <string name="usb_bt_dongle_connected">USB 蓝牙 dongle 已连接（%1$s）</string>
     <string name="usb_bt_dongle_not_found">未发现 USB 蓝牙 dongle——请插入一个</string>

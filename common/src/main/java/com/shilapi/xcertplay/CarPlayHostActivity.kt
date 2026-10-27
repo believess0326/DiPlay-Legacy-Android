@@ -315,6 +315,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     // Issues #300/#302/#307: listen for reverse camera exit broadcasts sent by head unit ROMs
     // (Yecon, Mstar, TS, SYU, etc.) to immediately refresh video and reapply layout.
+    // Issue #315 adds the enter half for the legacy cold-start strategy.
     private val reverseCameraReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
@@ -329,6 +330,16 @@ class CarPlayHostActivity : ComponentActivity() {
                 "action.backcar.stop" -> {
                     handleReverseCameraExit(action)
                 }
+                "com.yecon.action.BACKCAR_START",
+                "android.intent.action.BACK_CAR_START",
+                "com.mstar.backcar.start",
+                "android.intent.action.BACKCAR_ON",
+                "com.autochips.backcar.start",
+                "xy.android.intent.action.BACKCAR_ON",
+                "com.xy.backcar.start",
+                "action.backcar.start" -> {
+                    handleReverseCameraEnter(action)
+                }
                 "com.syu.canbus.action.BACKCAR",
                 "com.android.internal.car.ACTION_CAMERA_STATUS",
                 "com.ts.car.backcar" -> {
@@ -337,15 +348,52 @@ class CarPlayHostActivity : ComponentActivity() {
                         ?: intent.getIntExtra("camerastatus", -1)
                     if (state == 0) {
                         handleReverseCameraExit("$action(state=$state)")
+                    } else if (state == 1) {
+                        // State-carrying broadcasts use 1 for camera-on by the
+                        // same convention that reads 0 as camera-off above.
+                        handleReverseCameraEnter("$action(state=$state)")
                     }
                 }
             }
         }
     }
 
+    /** Issue #315: true between a legacy reverse-enter and its delayed cold start. */
+    private var legacyReverseActive = false
+
+    /** Issue #315: delayed cold start after reverse exit; cancelled if reverse re-engages. */
+    private val legacyReverseResumeRunnable = Runnable {
+        if (activeAirPlaySession != null && !isDestroyed && !isFinishing) {
+            sink?.resumeVideoFromReverse(SCREEN_TYPE_MAIN)
+            reapplyVideoLayout()
+            fallbackVideoView?.invalidate()
+        }
+    }
+
+    private fun handleReverseCameraEnter(source: String) {
+        if (!AirPlayPersistence.loadLegacyReverseColdStart(this)) return
+        if (activeAirPlaySession == null || isDestroyed || isFinishing) return
+        mainHandler.removeCallbacks(legacyReverseResumeRunnable)
+        if (legacyReverseActive) return
+        legacyReverseActive = true
+        appendLog("Display: reverse camera started by broadcast source=$source; legacy cold start: decoder released")
+        sink?.suspendVideoForReverse(SCREEN_TYPE_MAIN)
+    }
+
     private fun handleReverseCameraExit(source: String) {
         appendLog("Display: reverse camera stopped by broadcast source=$source")
         if (activeAirPlaySession == null || isDestroyed || isFinishing) return
+        if (AirPlayPersistence.loadLegacyReverseColdStart(this) && legacyReverseActive) {
+            legacyReverseActive = false
+            mainHandler.removeCallbacks(legacyReverseResumeRunnable)
+            // Issue #315: on PF8227/MTK 8227L the hardware video channel
+            // races the system reverse layer if the decoder comes back
+            // immediately; wait for the system UI and Surface to settle,
+            // then cold-start the decoder and request a fresh keyframe.
+            appendLog("Display: legacy cold start: decoder restart delayed ${LEGACY_REVERSE_COLD_START_DELAY_MILLIS}ms after reverse exit")
+            mainHandler.postDelayed(legacyReverseResumeRunnable, LEGACY_REVERSE_COLD_START_DELAY_MILLIS)
+            return
+        }
         mainHandler.post {
             sink?.refreshPicture(SCREEN_TYPE_MAIN)
             reapplyVideoLayout()
@@ -734,6 +782,16 @@ class CarPlayHostActivity : ComponentActivity() {
             addAction("xy.android.intent.action.BACKCAR_OFF")
             addAction("com.xy.backcar.stop")
             addAction("action.backcar.stop")
+            // Issue #315: legacy cold start also needs the enter half, so the
+            // codec can be released before the reverse layer takes over.
+            addAction("com.yecon.action.BACKCAR_START")
+            addAction("android.intent.action.BACK_CAR_START")
+            addAction("com.mstar.backcar.start")
+            addAction("android.intent.action.BACKCAR_ON")
+            addAction("com.autochips.backcar.start")
+            addAction("xy.android.intent.action.BACKCAR_ON")
+            addAction("com.xy.backcar.start")
+            addAction("action.backcar.start")
             addAction("com.syu.canbus.action.BACKCAR")
             addAction("com.android.internal.car.ACTION_CAMERA_STATUS")
             addAction("com.ts.car.backcar")
@@ -6083,6 +6141,8 @@ class CarPlayHostActivity : ComponentActivity() {
         const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
         const val CONFIGURATION_POLL_INTERVAL_MILLIS = 2_000L
         const val RECONNECT_DELAY_MILLIS = 2_000L
+        /** Issue #315: legacy reverse cold start waits this long after reverse exit before restarting the decoder. */
+        const val LEGACY_REVERSE_COLD_START_DELAY_MILLIS = 2_500L
         /** Issues #275/#243: automatic wired no-TCP retries allowed on pre-Lollipop units before asking for a physical replug. */
         const val WIRED_NO_TCP_FAILURE_LIMIT = 2
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L

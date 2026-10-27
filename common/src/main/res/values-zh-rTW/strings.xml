@@ -743,6 +743,8 @@
     <string name="report_usb_copy_paths">其他儲存位置：\n%1$s</string>
     <string name="settings_harman_fullscreen_experimental">Harman 車機全螢幕（實驗性）</string>
     <string name="settings_harman_fullscreen_experimental_description">讓 CarPlay 佔用受支援 Harman 車機的原廠側欄區域。下次開啟 CarPlay 視窗時生效；其他韌體可能顯示異常。</string>
+    <string name="settings_legacy_reverse_cold_start">倒車退出延遲冷啟動（實驗性）</string>
+    <string name="settings_legacy_reverse_cold_start_description">針對老舊晶片（如 MTK 8227L）：掛倒檔時徹底釋放視訊解碼器，退出倒檔 2.5 秒後再冷啟動並索取全新關鍵幀。僅在倒車退出黑屏的車機上開啟。</string>
     <string name="settings_usb_bluetooth_title">外置 USB 藍牙</string>
     <string name="settings_usb_bluetooth_subtitle">直接驅動外置 USB 藍牙適配器（支援綠聯 CM591/CM390、Realtek、炬芯 ATS2851 等），用於無線 CarPlay 數據通道。</string>
     <string name="settings_usb_bluetooth_not_detected">未檢測到外置 USB 藍牙適配器 — 請插入相容的 USB 藍牙裝置。</string>
