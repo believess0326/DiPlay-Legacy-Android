@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import com.shilapi.xcertplay.compat.realSdkInt
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.mfi.LocalMfiAuthenticationClient
@@ -20,6 +21,10 @@ internal object DiPlayBootstrap {
      * Retries if previous attempt occurred before the USB bus finished enumeration.
      */
     @Synchronized fun restoreUsbBluetooth(context: Context, force: Boolean = false) {
+        if (CarPlayBackgroundSession.hasSession()) {
+            Log.i(TAG, "USB Bluetooth auto-restore skipped while CarPlay controller is retained")
+            return
+        }
         val now = System.currentTimeMillis()
         if (!force && usbBtRestoreTried && (now - lastRestoreAttemptMillis < 3000L)) return
         lastRestoreAttemptMillis = now
@@ -142,6 +147,8 @@ internal object DiPlayBootstrap {
     }
 
     private val AUTH_FILES = listOf("identity.pk8", "certificate.p7b")
+
+    private const val TAG = "DiPlayBootstrap"
 }
 
 internal enum class DefaultConnectionMode(val key: String) {

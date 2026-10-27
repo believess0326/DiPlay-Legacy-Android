@@ -115,6 +115,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 sealed class CarPlayStatus {
@@ -308,6 +309,11 @@ class CarPlayController(
     private val wirelessHandoffRequested = AtomicBoolean(false)
     private val wirelessTunnelReady = AtomicBoolean(false)
     private val wirelessActiveReported = AtomicBoolean(false)
+    private val wirelessPostTransportConfigurationSent = AtomicBoolean(false)
+    private val wirelessBootstrapReleaseScheduled = AtomicBoolean(false)
+    private val wirelessAirPlayRequestsInFlight = AtomicInteger()
+    private val wirelessLastAirPlayActivityMs = AtomicLong(0L)
+    private val wirelessTcpAcceptedAtMs = AtomicLong(0L)
     /** Set when the handoff fell back and kept Bluetooth as the only iAP2 channel. */
     private val wirelessHandoffFellBack = AtomicBoolean(false)
     private val wirelessGeneration = AtomicInteger(0)
@@ -512,9 +518,13 @@ class CarPlayController(
      */
     fun takeMainAudioAndScreen(): Boolean {
         val session = activeSession ?: return false
+        if (config.transport == CarPlayTransport.WIRELESS) {
+            debugLog("skipped resume changeModes for wireless session; retaining negotiated Screen and MainAudio ownership")
+            return false
+        }
         val resources = listOf(
-            linkedMapOf("resourceID" to 1, "transferType" to 1), // Take Screen (Accessory displays screen)
-            linkedMapOf("resourceID" to 2, "transferType" to 2), // Untake MainAudio (iPhone outputs audio)
+            linkedMapOf("resourceID" to 1, "transferType" to 1), // Take Screen
+            linkedMapOf("resourceID" to 2, "transferType" to 2), // Untake MainAudio
         )
         debugLog("requesting CarPlay MainAudio (Untake) and Screen (Take) via changeModes")
         return changeModes(resources = resources)
@@ -527,6 +537,10 @@ class CarPlayController(
      */
     fun takeMainAudio(): Boolean {
         val session = activeSession ?: return false
+        if (config.transport == CarPlayTransport.WIRELESS) {
+            debugLog("suppressed MainAudio Untake for wireless session; preserve AirPlay screen and iAP2 tunnel")
+            return false
+        }
         val resources = listOf(
             linkedMapOf("resourceID" to 2, "transferType" to 2), // Untake MainAudio (iPhone outputs audio)
         )
@@ -1249,6 +1263,9 @@ class CarPlayController(
             wirelessHandoffRequested.set(false)
             wirelessTunnelReady.set(false)
             wirelessActiveReported.set(false)
+            wirelessPostTransportConfigurationSent.set(false)
+            wirelessBootstrapReleaseScheduled.set(false)
+            wirelessTcpAcceptedAtMs.set(0L)
             wirelessHandoffFellBack.set(false)
             val next = wirelessGeneration.incrementAndGet()
             onStatus(CarPlayStatus.StartingHotspot, next)
@@ -1736,6 +1753,11 @@ class CarPlayController(
                                     keepAliveAfterDeadline = { keepBluetoothControlAlive(generation) },
                                     beforeStartSession = { startedHotspot?.validateReady() },
                                     onStartSessionSent = { watchdog.startSessionSent(it.sentAtNanos) },
+                                    onPostTransportWiFiConfigurationSent = {
+                                        wirelessPostTransportConfigurationSent.set(true)
+                                        wirelessDiagnostic("post-transport Wi-Fi config sent; eligible for USB Bluetooth release after AirPlay TCP")
+                                        maybeScheduleWirelessBluetoothBootstrapRelease(generation)
+                                    },
                                     onIncoming = ::onRouteFrame,
                                     onProgress = { message ->
                                         diagnostics.controlProgress(message)
@@ -1842,6 +1864,11 @@ class CarPlayController(
                             keepAliveAfterDeadline = { keepBluetoothControlAlive(generation) },
                             beforeStartSession = { startedHotspot?.validateReady() },
                             onStartSessionSent = { watchdog.startSessionSent(it.sentAtNanos) },
+                            onPostTransportWiFiConfigurationSent = {
+                                wirelessPostTransportConfigurationSent.set(true)
+                                wirelessDiagnostic("post-transport Wi-Fi config sent; eligible for USB Bluetooth release after AirPlay TCP")
+                                maybeScheduleWirelessBluetoothBootstrapRelease(generation)
+                            },
                             onIncoming = ::onRouteFrame,
                             onProgress = { message ->
                                 diagnostics.controlProgress(message)
@@ -2045,39 +2072,28 @@ class CarPlayController(
                 if (isStaleWirelessRun(generation)) return
                 if (watchdog.accepted(event)) {
                     wirelessDiagnostics?.connectionAccepted()
-                    // Issue #316: With external USB-BT dongles or certain iOS versions,
-                    // iPhone connects Wi-Fi TCP and then halts RTSP waiting for the accessory
-                    // to release/disconnect the Bluetooth bootstrap RFCOMM channel.
-                    // If no RTSP session activates within 2.5s of TCP acceptance, proactively release
-                    // the Bluetooth bootstrap transport so iOS immediately proceeds with AirPlay RTSP.
-                    mainHandler.postDelayed({
-                        if (!closed && phase == Phase.WIRELESS && generation == wirelessGeneration.get() &&
-                            activeSession == null && !wirelessActiveReported.get()
-                        ) {
-                            debugLog("TCP accepted but AirPlay RTSP silent after 2500ms; releasing Bluetooth bootstrap for wireless handoff")
-                            Thread({
-                                synchronized(wirelessResourceLock) {
-                                    if (!closed && phase == Phase.WIRELESS && generation == wirelessGeneration.get() &&
-                                        activeSession == null && !wirelessActiveReported.get()
-                                    ) {
-                                        closeBluetoothBootstrapTransport()
-                                    }
-                                }
-                            }, "diplay-early-bt-release").apply {
-                                isDaemon = true
-                                start()
-                            }
-                        }
-                    }, 2500L)
-                    mainHandler.postDelayed({
-                        if (!closed && phase == Phase.WIRELESS && generation == wirelessGeneration.get() &&
-                            activeSession == null && !wirelessActiveReported.get()
-                        ) {
-                            debugLog("AirPlay session establishment timed out after TCP accept; resetting wireless stack")
-                            fail(IOException("Wireless CarPlay session timed out waiting for RTSP after TCP accept"), generation)
-                        }
-                    }, 15_000L)
+                    wirelessAirPlayRequestsInFlight.set(0)
+                    wirelessLastAirPlayActivityMs.set(SystemClock.elapsedRealtime())
+                    wirelessTcpAcceptedAtMs.set(SystemClock.elapsedRealtime())
+                    wirelessDiagnostic("tcp accepted; bootstrap-release quiet timer armed; inFlight=0")
+                    scheduleWirelessBootstrapQuietRelease(generation, WIRELESS_BOOTSTRAP_RELEASE_QUIET_MILLIS)
+                    scheduleWirelessSessionRecovery(generation, WIRELESS_SESSION_RECOVERY_INITIAL_MILLIS)
+                    maybeScheduleWirelessBluetoothBootstrapRelease(generation)
                 }
+            }
+
+            override fun onControlRequestStarted(method: String, path: String, cseq: String) {
+                if (isStaleWirelessRun(generation)) return
+                val inFlight = wirelessAirPlayRequestsInFlight.incrementAndGet()
+                wirelessLastAirPlayActivityMs.set(SystemClock.elapsedRealtime())
+                wirelessDiagnostic("RTSP request start method=$method path=$path cseq=$cseq inFlight=$inFlight")
+            }
+
+            override fun onControlRequestCompleted(method: String, path: String, cseq: String, elapsedMillis: Long) {
+                if (isStaleWirelessRun(generation)) return
+                val inFlight = wirelessAirPlayRequestsInFlight.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+                wirelessLastAirPlayActivityMs.set(SystemClock.elapsedRealtime())
+                wirelessDiagnostic("RTSP handler done method=$method path=$path cseq=$cseq elapsedMs=$elapsedMillis inFlight=$inFlight")
             }
 
             override fun onTransportError(message: String) {
@@ -2088,6 +2104,7 @@ class CarPlayController(
 
             override fun onSessionActive(session: AirPlaySession) {
                 if (isStaleWirelessRun(generation) || !watchdog.sessionEstablished()) return
+                wirelessDiagnostic("AirPlay session active; Bluetooth bootstrap retained until tunnel handoff")
                 wirelessDiagnostics?.let {
                     it.sessionActive()
                     it.close()
@@ -2100,6 +2117,7 @@ class CarPlayController(
 
             override fun onSessionEnded(session: AirPlaySession) {
                 if (isStaleWirelessRun(generation)) return
+                wirelessDiagnostic("AirPlay session ended activeSessionPresent=${activeSession != null}")
                 if (activeSession == null) {
                     watchdog.onTcpClosedBeforeEstablished()
                 }
@@ -2132,6 +2150,109 @@ class CarPlayController(
             override fun onVideoPlaybackUiRequested(session: AirPlaySession) =
                 sessionListener.onVideoPlaybackUiRequested(session)
         }
+
+    /**
+     * Do not release Bluetooth while an AirPlay RTSP handler is still working.
+     * Pair-setup and SETUP can take several seconds on this head unit.
+     */
+    private fun scheduleWirelessBootstrapQuietRelease(generation: Int, delayMillis: Long) {
+        startupTimer.schedule({
+            if (closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get() ||
+                activeSession != null || wirelessActiveReported.get()) return@schedule
+
+            val inFlight = wirelessAirPlayRequestsInFlight.get()
+            val quietFor = (SystemClock.elapsedRealtime() - wirelessLastAirPlayActivityMs.get()).coerceAtLeast(0L)
+            if (inFlight > 0) {
+                wirelessDiagnostic("bootstrap release deferred; RTSP handler still running inFlight=$inFlight quietMs=$quietFor")
+                scheduleWirelessBootstrapQuietRelease(generation, WIRELESS_BOOTSTRAP_RELEASE_RECHECK_MILLIS)
+                return@schedule
+            }
+            if (quietFor < WIRELESS_BOOTSTRAP_RELEASE_QUIET_MILLIS) {
+                wirelessDiagnostic("bootstrap release deferred; RTSP activity recent quietMs=$quietFor")
+                scheduleWirelessBootstrapQuietRelease(
+                    generation,
+                    (WIRELESS_BOOTSTRAP_RELEASE_QUIET_MILLIS - quietFor).coerceAtLeast(1L),
+                )
+                return@schedule
+            }
+
+            synchronized(wirelessResourceLock) {
+                if (closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get() ||
+                    activeSession != null || wirelessActiveReported.get()) return@synchronized
+                val lockedInFlight = wirelessAirPlayRequestsInFlight.get()
+                val lockedQuietFor = (SystemClock.elapsedRealtime() - wirelessLastAirPlayActivityMs.get()).coerceAtLeast(0L)
+                if (lockedInFlight > 0 || lockedQuietFor < WIRELESS_BOOTSTRAP_RELEASE_QUIET_MILLIS) {
+                    wirelessDiagnostic("bootstrap release canceled after state recheck inFlight=$lockedInFlight quietMs=$lockedQuietFor")
+                    scheduleWirelessBootstrapQuietRelease(
+                        generation,
+                        if (lockedInFlight > 0) WIRELESS_BOOTSTRAP_RELEASE_RECHECK_MILLIS
+                        else (WIRELESS_BOOTSTRAP_RELEASE_QUIET_MILLIS - lockedQuietFor).coerceAtLeast(1L),
+                    )
+                    return@synchronized
+                }
+                wirelessDiagnostic("releasing Bluetooth bootstrap after RTSP quiet period quietMs=$lockedQuietFor")
+                shutdownUsbBluetoothForStalledHandoff()
+                closeBluetoothBootstrapTransport()
+            }
+        }, delayMillis, TimeUnit.MILLISECONDS)
+    }
+
+    private fun shutdownUsbBluetoothForStalledHandoff() {
+        val dongle = CarPlayBluetoothManager.get(appContext).usbDongle
+        if (dongle == null || !dongle.isSupported()) {
+            wirelessDiagnostic("stalled handoff: no USB Bluetooth dongle; leaving other Bluetooth adapters unchanged")
+            return
+        }
+        if (!dongle.isEnabled()) {
+            wirelessDiagnostic("stalled handoff: USB Bluetooth dongle is already off")
+            return
+        }
+        wirelessDiagnostic("stalled handoff: orderly shutdown of USB Bluetooth RFCOMM/ACL/scan/controller to release iPhone from BT bootstrap")
+        val result = runCatching { dongle.shutdownForWirelessHandoff() }
+        val stillEnabled = runCatching { dongle.isEnabled() }.getOrDefault(true)
+        wirelessDiagnostic(
+            "stalled handoff: USB Bluetooth shutdown ${if (result.isSuccess && !stillEnabled) "complete" else "incomplete"} " +
+                "failure=${result.exceptionOrNull()?.javaClass?.simpleName ?: "none"} stillEnabled=$stillEnabled " +
+                "steps=${result.getOrNull() ?: "unavailable"}",
+        )
+    }
+
+    private fun maybeScheduleWirelessBluetoothBootstrapRelease(generation: Int) {
+        if (!wirelessPostTransportConfigurationSent.get() || wirelessTcpAcceptedAtMs.get() == 0L ||
+            !wirelessBootstrapReleaseScheduled.compareAndSet(false, true)) return
+        wirelessDiagnostic("post-transport config and AirPlay TCP are both present; USB Bluetooth release scheduled in ${WIRELESS_TCP_BT_RELEASE_DELAY_MILLIS}ms")
+        startupTimer.schedule({
+            if (closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get() ||
+                activeSession != null || wirelessActiveReported.get()) {
+                wirelessDiagnostic("delayed USB Bluetooth release canceled: wireless state changed")
+                return@schedule
+            }
+            wirelessDiagnostic("releasing USB Bluetooth after post-transport AirPlay TCP; RTSP inFlight=${wirelessAirPlayRequestsInFlight.get()}")
+            shutdownUsbBluetoothForStalledHandoff()
+            closeBluetoothBootstrapTransport()
+        }, WIRELESS_TCP_BT_RELEASE_DELAY_MILLIS, TimeUnit.MILLISECONDS)
+    }
+
+    private fun wirelessDiagnostic(message: String) {
+        debugLog(message)
+    }
+
+    private fun scheduleWirelessSessionRecovery(generation: Int, delayMillis: Long) {
+        startupTimer.schedule({
+            if (closed || phase != Phase.WIRELESS || generation != wirelessGeneration.get() ||
+                activeSession != null || wirelessActiveReported.get()) return@schedule
+
+            val elapsed = (SystemClock.elapsedRealtime() - wirelessTcpAcceptedAtMs.get()).coerceAtLeast(0L)
+            val inFlight = wirelessAirPlayRequestsInFlight.get()
+            if (inFlight > 0 && elapsed < WIRELESS_SESSION_RECOVERY_MAX_MILLIS) {
+                wirelessDiagnostic("session recovery deferred; RTSP handler still running inFlight=$inFlight elapsedSinceTcpMs=$elapsed")
+                scheduleWirelessSessionRecovery(generation, WIRELESS_SESSION_RECOVERY_RECHECK_MILLIS)
+                return@schedule
+            }
+            wirelessDiagnostic("session recovery firing elapsedSinceTcpMs=$elapsed inFlight=$inFlight")
+            fail(IOException("Wireless CarPlay session timed out waiting for RTSP after TCP accept"), generation)
+        }, delayMillis, TimeUnit.MILLISECONDS)
+    }
 
     private fun onWirelessTunnelReady(generation: Int) {
         synchronized(wirelessResourceLock) {
@@ -4157,6 +4278,12 @@ class CarPlayController(
         private const val DIRECT_DETACH_POLL_MILLIS = 2_000L
         private const val NO_IPHONE_DEVICES_LOG_INTERVAL_MILLIS = 10_000L
         private const val WIRELESS_HANDOFF_TIMEOUT_MILLIS = 45_000L
+        private const val WIRELESS_BOOTSTRAP_RELEASE_QUIET_MILLIS = 2_500L
+        private const val WIRELESS_BOOTSTRAP_RELEASE_RECHECK_MILLIS = 1_000L
+        private const val WIRELESS_TCP_BT_RELEASE_DELAY_MILLIS = 1_000L
+        private const val WIRELESS_SESSION_RECOVERY_INITIAL_MILLIS = 15_000L
+        private const val WIRELESS_SESSION_RECOVERY_RECHECK_MILLIS = 5_000L
+        private const val WIRELESS_SESSION_RECOVERY_MAX_MILLIS = 90_000L
         /** 无线建连持续观察设备入网的时长（port 自 ding2548-ui/DiPlay@main）。 */
         private const val WIRELESS_CLIENT_WATCH_MILLIS = 120_000L
         private const val WIRELESS_CLIENT_WATCH_POLL_MILLIS = 2_000L

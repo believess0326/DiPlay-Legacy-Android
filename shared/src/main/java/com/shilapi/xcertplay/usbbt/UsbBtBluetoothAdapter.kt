@@ -21,7 +21,9 @@ import com.shilapi.xcertplay.usbbt.HciProtocol.OP_ACCEPT_CONNECTION_REQUEST
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_AUTHENTICATION_REQUESTED
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_CREATE_CONNECTION
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_DISCONNECT
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_RESET
 import com.shilapi.xcertplay.usbbt.HciProtocol.OP_SET_CONNECTION_ENCRYPTION
+import com.shilapi.xcertplay.usbbt.HciProtocol.OP_WRITE_SCAN_ENABLE
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeAcceptConnection
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeAuthenticationRequested
 import com.shilapi.xcertplay.usbbt.HciProtocol.encodeBdAddr
@@ -79,6 +81,8 @@ class UsbBtBluetoothAdapter(
 
     /** Guard for lifecycle transitions. */
     private val lock = Any()
+    /** Serializes enable against the orderly wireless-handoff shutdown sequence. */
+    private val shutdownLock = Any()
 
     @Volatile private var hci: UsbBtHci? = null
     private var pairingAgent: UsbBtPairingAgent? = null
@@ -171,7 +175,7 @@ class UsbBtBluetoothAdapter(
      * permission broadcast receiver (registered here) automatically retries
      * enable() on a background thread once the user grants access.
      */
-    override fun enable(): Boolean = synchronized(lock) {
+    override fun enable(): Boolean = synchronized(shutdownLock) { synchronized(lock) {
         if (isEnabled()) return true
         ensureUsbReceivers()
         val mgr = usbManager ?: return false
@@ -230,7 +234,7 @@ class UsbBtBluetoothAdapter(
 
         UsbBtLog.warn(appContext, TAG, "enable: all candidate dongles failed to open/initialize")
         return false
-    }
+    } }
 
     override fun disable() {
         if (!isEnabled() && synchronized(lock) { hci == null && activeDevice == null } && !pumpRunning.get()) {
@@ -865,7 +869,65 @@ class UsbBtBluetoothAdapter(
 
     /** Shut the adapter down; idempotent. */
     fun shutdown(unregisterReceivers: Boolean = true) {
+        shutdownInternal(unregisterReceivers, gracefulRadioOff = false)
+    }
+
+    /** Shut down the USB radio and return command results for wireless-handoff diagnostics. */
+    fun shutdownForWirelessHandoff(): String =
+        shutdownInternal(unregisterReceivers = false, gracefulRadioOff = true)
+
+    private fun UsbBtHci.HciResult<*>?.describeShutdownResult(): String = when (this) {
+        null -> "noReply"
+        is UsbBtHci.HciResult.Ok<*> -> "ok"
+        is UsbBtHci.HciResult.Failed -> "failed:${reason}"
+    }
+
+    private fun shutdownInternal(unregisterReceivers: Boolean, gracefulRadioOff: Boolean): String = synchronized(shutdownLock) {
         val wasActive = isEnabled() || synchronized(lock) { hci != null || activeDevice != null } || pumpRunning.get()
+        val closingHci = synchronized(lock) { hci }
+        val shutdownResults = mutableListOf<String>()
+
+        // Stop the pairing worker before touching the controller. It can otherwise
+        // race the shutdown sequence by answering a queued SSP event after reset.
+        val closingPairingAgent = pairingAgent
+        pairingAgent = null
+        closingPairingAgent?.stop()
+
+        // Keep the HCI dispatcher and ACL path alive while RFCOMM sends DISC and
+        // outstanding links are disconnected. Closing HCI first silently drops
+        // these frames and can leave the phone parked in Bluetooth bootstrap.
+        if (closingHci != null && gracefulRadioOff) {
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=close RFCOMM streams")
+            activeStreams.values.toList().forEach { stream ->
+                val result = runCatching { stream.close() }
+                shutdownResults += "rfcommClose=${if (result.isSuccess) "ok" else result.exceptionOrNull()?.javaClass?.simpleName}"
+            }
+            rfcommLayers.values.toList().forEach { layer -> runCatching { layer.close() } }
+
+            val handles = aclHandleByAddr.values.toSet()
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=disconnect ACL count=${handles.size}")
+            handles.forEach { handle ->
+                val result = runCatching {
+                    closingHci.sendCommand(OP_DISCONNECT, encodeDisconnect(handle), timeoutMs = 1_000)
+                }.getOrNull()
+                shutdownResults += "disconnect=0x${handle.toString(16)}:${result.describeShutdownResult()}"
+            }
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=disable inquiry/page scan")
+            val scanResult = runCatching {
+                closingHci.sendCommand(OP_WRITE_SCAN_ENABLE, byteArrayOf(0), timeoutMs = 1_000)
+            }.getOrNull()
+            shutdownResults += "scanDisable=${scanResult.describeShutdownResult()}"
+            UsbBtLog.log(appContext, TAG, "handoff shutdown stage=HCI reset")
+            val resetResult = runCatching {
+                closingHci.sendCommand(OP_RESET, byteArrayOf(), timeoutMs = 1_000)
+            }.getOrNull()
+            shutdownResults += "hciReset=${resetResult.describeShutdownResult()}"
+        } else if (closingHci == null) {
+            shutdownResults += "hci=alreadyClosed"
+        } else {
+            shutdownResults += "radioShutdown=skipped"
+        }
+
         pumpRunning.set(false)
         eventPumpThread?.interrupt()
         runCatching { eventPumpThread?.join(300) }
@@ -873,14 +935,12 @@ class UsbBtBluetoothAdapter(
         aclPumpThread?.interrupt()
         runCatching { aclPumpThread?.join(300) }
         aclPumpThread = null
-        pairingAgent?.stop()
-        pairingAgent = null
         if (unregisterReceivers) {
             runCatching { usbReceivers?.close() }
             usbReceivers = null
         }
         awaitingPermission.set(false)
-        val closingHci = synchronized(lock) {
+        val detachedHci = synchronized(lock) {
             val toClose = hci
             hci = null
             activeDevice = null
@@ -888,8 +948,8 @@ class UsbBtBluetoothAdapter(
             initSteps = emptyList()
             toClose
         }
-        if (closingHci != null) {
-            runCatching { closingHci.close() }
+        if (detachedHci != null) {
+            runCatching { detachedHci.close() }
         }
         rfcommLayers.values.forEach { runCatching { it.close() } }
         rfcommLayers.clear()
@@ -910,8 +970,9 @@ class UsbBtBluetoothAdapter(
         encryptLatches.values.forEach { it.countDown() }
         encryptLatches.clear()
         if (wasActive) {
-            UsbBtLog.log(appContext, TAG, "USB Bluetooth shut down")
+            UsbBtLog.log(appContext, TAG, "USB Bluetooth shut down ${shutdownResults.joinToString(" ")}")
         }
+        shutdownResults.joinToString(" ")
     }
 
     /** Snapshot for diagnostics (LegacyConnectionProbe). */
