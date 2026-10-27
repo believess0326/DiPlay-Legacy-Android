@@ -797,6 +797,13 @@ class AirPlaySession(
         val type = string(body["type"])
         val params = asMap(body["params"]) ?: emptyMap()
         debugLog("airplay command type=$type keys=${params.keys.sorted()}")
+        if (type == "duckAudio" || type == "unduckAudio") {
+            // Issue #309: duck/duck pairs balanced 67/67 in a report, but the
+            // volume values were never logged, so a duck that never restores
+            // its volume is invisible in the report (playback still shows
+            // playing=true). Log the values so the next report can prove it.
+            debugLog("airplay command type=$type volume=${params["volume"]} durationMs=${params["durationMs"]}")
+        }
         val streamId = request.headers["x-apple-streamid"]?.toLongOrNull()
         val data = params["data"] as? ByteArray
         if (streamId != null && data != null) {
