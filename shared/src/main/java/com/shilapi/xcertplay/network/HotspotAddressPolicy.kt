@@ -41,6 +41,22 @@ internal object HotspotAddressPolicy {
         return select(addresses)
     }
 
+    /**
+     * Issue #290: the addresses offered to the iPhone in the 0x5703 payload.
+     * 0.3.0 offered every interface address; on a unit whose hotspot
+     * interface also carries an IPv6 link-local, the iPhone may try that
+     * address first, but additional addresses are bound unscoped, so a
+     * scoped IPv6 SYN never matches and no TCP arrives (0.2.99 offered
+     * IPv4 only and connected 4/4 on the same car and phone, 0.3.0/0.3.1
+     * 0/13+ with the same Bluetooth, iAP2 and hotspot healthy). Keep the
+     * primary address whatever its family, all IPv4 addresses and
+     * non-link-local IPv6 addresses; drop non-primary IPv6 link-locals.
+     * The multi-IPv4 announcement (#330) is preserved.
+     */
+    fun offeredAddresses(primary: InetAddress, addresses: List<InetAddress>): List<InetAddress> =
+        (listOf(primary) + addresses).distinct()
+            .filter { it == primary || it !is Inet6Address || !it.isLinkLocalAddress }
+
     fun alternateFamilyCandidate(addresses: List<InetAddress>, published: InetAddress): InetAddress? {
         val publishedIsIpv6 = published is Inet6Address
         var linkLocal: InetAddress? = null

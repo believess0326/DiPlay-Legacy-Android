@@ -1616,7 +1616,7 @@ class CarPlayController(
                 passphrase = hotspotInfo.passphrase,
                 channel = hotspotInfo.channel,
                 security = hotspotInfo.security,
-                ipAddresses = (listOf(hostAddress) + candidates + hotspotInfo.hostAddresses)
+                ipAddresses = HotspotAddressPolicy.offeredAddresses(hostAddress, candidates + hotspotInfo.hostAddresses)
                     .map(::hostAddressText)
                     .filter { it.isNotBlank() }
                     .distinct(),
@@ -1630,6 +1630,7 @@ class CarPlayController(
             wirelessAirPlayEndpoint = endpoint
             debugLog(
                 "wireless endpoint addressCount=${endpoint.ipAddresses.size} " +
+                    "addresses=${endpoint.ipAddresses.joinToString(",")} " +
                     "family=${if (hostAddress is Inet6Address) "IPv6" else "IPv4"} " +
                     "port=${endpoint.airPlayPort} channel=${endpoint.channel} security=${endpoint.security}",
             )
