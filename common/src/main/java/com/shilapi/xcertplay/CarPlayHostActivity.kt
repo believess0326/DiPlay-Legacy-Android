@@ -5144,6 +5144,29 @@ class CarPlayHostActivity : ComponentActivity() {
                 }
                 fallback.requestLayout()
                 fallback.invalidate()
+                if (previousBounds != null && bounds.height > previousBounds.height) {
+                    // Issue #290: on some firmwares a live Surface ignores
+                    // setFixedSize — the size is latched at creation. A
+                    // reverse window is shorter than full screen, so on the
+                    // return trip the window grows back taller but the
+                    // surface stays at the reverse size, leaving borders on
+                    // all four sides until something rebuilds it (re-entering
+                    // from the desktop recreates the surface, which is why
+                    // that workaround clears the borders). Force one
+                    // recreation here: hide now, show on the next frame so
+                    // the new surface is created at the fixed size requested
+                    // above. Height growth is the reverse-return signature;
+                    // width-only growth (dock reveal) is left untouched.
+                    fallback.visibility = View.GONE
+                    fallback.post {
+                        if (fallbackVideoView === fallback) fallback.visibility = View.VISIBLE
+                    }
+                    appendLog(
+                        "Display: fallback surface recreate after grow to " +
+                            "${bounds.width}x${bounds.height} (was " +
+                            "${previousBounds.width}x${previousBounds.height})",
+                    )
+                }
                 if (previousBounds != null && (bounds.width > previousBounds.width || bounds.height > previousBounds.height)) {
                     sink?.refreshPicture(SCREEN_TYPE_MAIN)
                 }
