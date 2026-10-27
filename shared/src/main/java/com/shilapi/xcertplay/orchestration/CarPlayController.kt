@@ -3387,9 +3387,22 @@ class CarPlayController(
             if (hotspot === primary) hotspot = null
             closeBestEffort("legacy-wifi-p2p") { primary?.close() }
             if (isStaleWirelessRun(generation)) throw primaryFailure
-            if (realSdkInt() < 26) throw IOException(
-                "Wi-Fi Direct could not start on Android 7; use the car hotspot: ${primaryFailure.message}", primaryFailure,
-            )
+            if (realSdkInt() < 26) {
+                val causeMessage = primaryFailure.message ?: primaryFailure.javaClass.simpleName
+                // Issue #331: keep an already-actionable unsupported message
+                // (from checkPrerequisites) instead of overwriting it with
+                // the car-hotspot hint, and never blame "Android 7" on a
+                // device running another version.
+                if (causeMessage.contains("is not supported on this head unit")) throw primaryFailure
+                if (causeMessage.contains("code=1")) throw IOException(
+                    "Wi-Fi Direct is not supported on this head unit (createGroup code=1); " +
+                        "use Existing Wi-Fi / Same LAN or a wired connection instead: $causeMessage",
+                    primaryFailure,
+                )
+                throw IOException(
+                    "Wi-Fi Direct could not start on this device; use the car hotspot: $causeMessage", primaryFailure,
+                )
+            }
             debugLog(
                 "legacy Wi-Fi Direct failed; falling back to LocalOnlyHotspot: " +
                     (primaryFailure.message ?: primaryFailure.javaClass.simpleName),

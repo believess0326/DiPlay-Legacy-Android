@@ -214,6 +214,15 @@ internal class LegacyWifiP2pGroupManager(
         if (wifi?.isWifiEnabled == false) {
             throw IOException("Turn on Wi-Fi in the head unit settings before using Wi-Fi Direct")
         }
+        // Issue #331: on units without Wi-Fi Direct support the group
+        // creation fails with code=1 after several attempts; fail here
+        // with an actionable message instead of retrying a mode that
+        // can never work on this hardware.
+        if (!appContext.packageManager.hasSystemFeature("android.hardware.wifi.direct")) {
+            throw IOException(
+                "Wi-Fi Direct is not supported on this head unit; use Existing Wi-Fi / Same LAN or a wired connection",
+            )
+        }
     }
     private fun requestGroupInfo(
         channel: WifiP2pManager.Channel,
