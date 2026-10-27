@@ -4,6 +4,11 @@ import java.io.IOException
 
 object WirelessStartupPolicy {
     const val HOTSPOT_READY_MILLIS = 15_000L
+    // Issue #343: once a usable IPv4 is in hand, waiting for a preferred IPv6
+    // address that never arrives costs the full 15 s on every connect. Cap
+    // that wait at a short grace; IPv6 link-locals normally appear within a
+    // second of interface up, so 2 s still gives a real window.
+    const val IPV6_WAIT_GRACE_MILLIS = 2_000L
     // Right after a cold boot the system hotspot legitimately does not exist yet:
     // on slow head units the vendor hotspot service can take a minute or more to
     // bring the AP up, so a 15 s observation only burns the startup retry budget

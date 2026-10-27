@@ -57,6 +57,10 @@ internal object HotspotAddressPolicy {
         (listOf(primary) + addresses).distinct()
             .filter { it == primary || it !is Inet6Address || !it.isLinkLocalAddress }
 
+    /** Issue #343: a usable IPv4 is enough to stop waiting for the preferred IPv6. */
+    fun hasUsableIpv4(addresses: List<InetAddress>): Boolean =
+        addresses.any { it is Inet4Address && usable(it) }
+
     fun alternateFamilyCandidate(addresses: List<InetAddress>, published: InetAddress): InetAddress? {
         val publishedIsIpv6 = published is Inet6Address
         var linkLocal: InetAddress? = null

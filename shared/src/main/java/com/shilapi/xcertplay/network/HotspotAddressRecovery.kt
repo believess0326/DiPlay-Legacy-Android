@@ -19,7 +19,8 @@ internal class HotspotAddressRecovery(
     ): List<InetAddress> {
         require(timeoutMillis >= 0)
         val started = nowMillis()
-        val deadline = started + timeoutMillis
+        val fullDeadline = started + timeoutMillis
+        var fallbackDeadline = fullDeadline
         var candidates = initial
         if (preferredFamily == HotspotAddressPolicy.FAMILY_IPV6 && !candidates.any(::scopedLinkLocal)) {
             log("wireless address waiting preference=IPv6 timeoutMs=$timeoutMillis")
@@ -31,9 +32,21 @@ internal class HotspotAddressRecovery(
                 log("wireless address preference=IPv6 ready elapsedMs=${nowMillis() - started}")
                 return candidates.filter { it !is Inet6Address || !it.isLinkLocalAddress || scopedLinkLocal(it) }
             }
-            val remaining = deadline - nowMillis()
+            // Issue #343: a hotspot that never gets IPv6 used to burn the full
+            // 15 s wait on every connect even with a usable IPv4 already in
+            // hand. Once IPv4 is usable, cap the IPv6 wait at a short grace so
+            // an IPv6 address still gets a brief window to appear, then fall
+            // back instead of idling the whole timeout.
+            if (HotspotAddressPolicy.hasUsableIpv4(candidates)) {
+                fallbackDeadline = minOf(fallbackDeadline, started + WirelessStartupPolicy.IPV6_WAIT_GRACE_MILLIS)
+            }
+            val remaining = fallbackDeadline - nowMillis()
             if (remaining <= 0) {
-                log("wireless address preference=IPv6 unavailable elapsedMs=${nowMillis() - started}; using available family")
+                if (fallbackDeadline < fullDeadline) {
+                    log("wireless address preference=IPv6 grace expired elapsedMs=${nowMillis() - started}; using available family")
+                } else {
+                    log("wireless address preference=IPv6 unavailable elapsedMs=${nowMillis() - started}; using available family")
+                }
                 return candidates
             }
             pause(minOf(WirelessStartupPolicy.INTERFACE_POLL_MILLIS, remaining))
