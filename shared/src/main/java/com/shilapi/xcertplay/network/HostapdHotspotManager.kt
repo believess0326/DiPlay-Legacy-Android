@@ -165,10 +165,15 @@ class HostapdHotspotManager(
         // Release any half-up state before hostapd claims the interface
         // (the proven on-device recipe does the same).
         RootShell.run("ifconfig ${HostapdConfig.INTERFACE_NAME} down 2>/dev/null", 5_000)
-        val launched = RootShell.run(
-            "$hostapdPath -B ${HostapdConfig.CONF_PATH} >${HostapdConfig.HOSTAPD_LOG_PATH} 2>&1 & sleep 1",
-            15_000,
-        )
+        // Issue #337: echo the daemon's pid (`echo $!`) — the hostapd
+        // invocation itself is byte-identical to the proven recipe, but the
+        // pid lets a later failure tell whether THIS hostapd died, was
+        // killed, or never started. The shell's exit code is sleep's, so it
+        // says nothing about hostapd; the pid is the real witness.
+        val launchCmd =
+            "$hostapdPath -B ${HostapdConfig.CONF_PATH} >${HostapdConfig.HOSTAPD_LOG_PATH} 2>&1 & echo \$!; sleep 1"
+        val launched = RootShell.run(launchCmd, 15_000)
+        val launchedPid = HostapdConfig.parseLaunchedPid(launched.output)
         var running = false
         val checkDeadline = System.nanoTime() + 3_000_000_000L
         while (System.nanoTime() < checkDeadline) {
@@ -179,15 +184,49 @@ class HostapdHotspotManager(
             Thread.sleep(300)
         }
         if (!launched.success || !running) {
+            // Issue #337: the old failure line only carried hapd.log, which
+            // is empty on the reporter's unit — so "never started", "died
+            // instantly", "killed" and "misjudged by ps parsing" were
+            // indistinguishable. Gather the evidence that splits them: the
+            // launch command, the echoed pid, whether that pid still exists
+            // (via /proc, which does not depend on `ps` dialects), the
+            // pid's `ps` line, the launch shell's own words, and whether
+            // hapd.log is missing, empty, or has content. NOTE: a -B
+            // daemon's exit code/signal cannot be recovered after the fact
+            // (init reaps it), so pid-alive is the substitute witness — no
+            // exit code is claimed here.
+            val psLine = launchedPid?.let { pid ->
+                HostapdConfig.psLineForPid(RootShell.run("ps", 5_000).output, pid)
+            }
+            val procCheck = launchedPid?.let { pid ->
+                RootShell.run("ls -d /proc/$pid 2>/dev/null", 3_000)
+            }
+            val pidAlive: Boolean? = when {
+                procCheck == null -> null
+                procCheck.exitCode == null -> null
+                else -> procCheck.success
+            }
+            val logStat = RootShell.run("ls -l ${HostapdConfig.HOSTAPD_LOG_PATH} 2>/dev/null", 3_000)
+            val logBytes = logStat.output.trim().split(Regex("\\s+")).getOrNull(4)?.toLongOrNull()
             // `tail` does not exist on minimal ROMs (issue #308): read the
             // whole log (it is truncated fresh at every launch) and keep its
             // end, where hostapd puts the failure.
             val log = RootShell.run("cat ${HostapdConfig.HOSTAPD_LOG_PATH} 2>/dev/null", 5_000)
-            throw IOException(
-                "hostapd: hostapd did not stay up; hapd.log=${log.output.trim().replace('\n', ' ').takeLast(300)}",
-            )
+            val evidence = buildString {
+                append("cmd=").append(launchCmd)
+                append("; pid=").append(launchedPid ?: "unknown")
+                append("; pidAlive=").append(pidAlive?.toString() ?: "unknown")
+                append("; psLine=").append(psLine?.take(160) ?: if (launchedPid == null) "unknown" else "none")
+                append("; launchOk=").append(launched.success)
+                append("; launchExit=").append(launched.exitCode ?: "none")
+                append("; launchOut=").append(launched.output.trim().replace('\n', ' ').take(200))
+                append("; hapdBytes=").append(logBytes ?: "missing")
+                append("; hapd.log=").append(log.output.trim().replace('\n', ' ').takeLast(300))
+            }
+            onDiagnostic("hostapd: launch failed evidence: $evidence")
+            throw IOException("hostapd: hostapd did not stay up; $evidence")
         }
-        onDiagnostic("hostapd: hostapd is up on ${HostapdConfig.INTERFACE_NAME}")
+        onDiagnostic("hostapd: hostapd is up on ${HostapdConfig.INTERFACE_NAME} pid=${launchedPid ?: "unknown"}")
 
         var addressed = false
         var lastSetOutput = ""

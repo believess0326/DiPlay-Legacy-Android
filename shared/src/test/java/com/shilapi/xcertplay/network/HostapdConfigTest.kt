@@ -197,4 +197,23 @@ class HostapdConfigTest {
         assertEquals(3, HostapdConfig.countHostapdProcesses(ps))
         assertEquals(0, HostapdConfig.countHostapdProcesses(""))
     }
+
+    @Test fun parseLaunchedPidTakesFirstDigitsOnlyLine() {
+        assertEquals(1234, HostapdConfig.parseLaunchedPid("1234\n"))
+        assertEquals(1234, HostapdConfig.parseLaunchedPid("sh: hostapd: not found\n1234\n"))
+        assertEquals(1234, HostapdConfig.parseLaunchedPid("\n  1234  \n"))
+        assertNull(HostapdConfig.parseLaunchedPid(""))
+        assertNull(HostapdConfig.parseLaunchedPid("sh: hostapd: not found\n"))
+        assertNull(HostapdConfig.parseLaunchedPid("pid=1234\n"))
+    }
+
+    @Test fun psLineForPidAcceptsBothPidColumnsAndRejectsSubstrings() {
+        val toybox = "USER     PID   PPID  NAME\nroot     101   1     /system/bin/hostapd\n"
+        val busybox = "PID   USER  VSZ   STAT  COMMAND\n101   root  1234  S     /system/bin/hostapd\n"
+        assertEquals("root     101   1     /system/bin/hostapd", HostapdConfig.psLineForPid(toybox, 101))
+        assertEquals("101   root  1234  S     /system/bin/hostapd", HostapdConfig.psLineForPid(busybox, 101))
+        assertNull(HostapdConfig.psLineForPid(toybox, 10))
+        assertNull(HostapdConfig.psLineForPid(toybox, 1011))
+        assertNull(HostapdConfig.psLineForPid("", 101))
+    }
 }

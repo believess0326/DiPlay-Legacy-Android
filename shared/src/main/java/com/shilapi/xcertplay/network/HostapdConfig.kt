@@ -153,6 +153,34 @@ object HostapdConfig {
     fun removeStagedConfScript(): String = "rm -f $TMP_CONF_PATH"
 
     /**
+     * Issue #337: the hostapd launch echoes the daemon's pid (`echo $!`), so
+     * a later failure can tell whether THIS hostapd died, was killed, or was
+     * never started — instead of only knowing that no hostapd-shaped process
+     * matched `ps`. Parses the first all-digits line of the launch shell's
+     * merged output; anything else (exec errors, blank lines) is ignored.
+     */
+    fun parseLaunchedPid(launchOutput: String): Int? =
+        launchOutput.lineSequence().map { it.trim() }
+            .firstOrNull { it.isNotEmpty() && it.all { c -> c.isDigit() } }
+            ?.toIntOrNull()
+
+    /**
+     * Issue #337: the `ps` line for one pid, if present. Android
+     * toolbox/toybox `ps` puts the pid in column 2, busybox in column 1 —
+     * accept either, so a missing line means the process is gone, not that
+     * the dialect differs. Field equality (not substring) avoids matching
+     * pid 123 against pid 1234. Returns the trimmed line, or null.
+     */
+    fun psLineForPid(psOutput: String, pid: Int): String? {
+        val want = pid.toString()
+        return psOutput.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }
+            .firstOrNull { line ->
+                val fields = line.split(Regex("\\s+"))
+                fields.getOrNull(0) == want || fields.getOrNull(1) == want
+            }
+    }
+
+    /**
      * Counts active hostapd processes in `ps` output without depending on `grep`, `wc`, or `tail`.
      * Minimal ROMs (e.g. Android 4.2 toolbox, issues #308, #337) lack these shell utilities.
      */
