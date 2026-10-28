@@ -1,3 +1,16 @@
+# DiPlay 0.3.4 — 2026-10-28
+
+- Rebuild video decoder after repeated output stalls (#346): force-rebuild the decoder and cold-start with a fresh IDR frame when output stalls exceed threshold, fixing frozen/corrupt CarPlay video that cannot self-recover after extended driving.
+- Auto-disconnect phone Bluetooth after CarPlay connects (experimental) (#343): new opt-in toggle to automatically disconnect iPhone Bluetooth from the head unit once wireless CarPlay is established, eliminating audio channel conflicts and noise.
+- Apply earpiece loudspeaker remedy on pre-API 24 head units (#343): correctly apply earpiece loudspeaker volume correction on devices below API 24, fixing low or silent audio on affected models.
+- Run hostapd once in the foreground on launch failure (#337): capture real hostapd error output by running it synchronously in the foreground on failure, enabling precise diagnosis on non-rooted head units.
+- Fall back to app_process radio helper when svc leaves wlan0 absent (#301): automatically fall back to the app_process radio path when `svc wifi enable` fails to create wlan0, improving wireless hotspot compatibility on some AOSP head units.
+- Apple vendor IE toggle for root hostapd backend (experimental) (#344): new experimental option to control Apple vendor IE broadcast in root hostapd mode, resolving iPhone association rejections on strict firmware.
+- Keep RFCOMM cause chain in bootstrap failure logs (#293): preserve the full RFCOMM failure cause chain rather than truncating to a generic error, improving wireless connection diagnostic accuracy.
+- Drop apostrophe breaking AAPT string compilation (#343): remove unescaped apostrophe from i18n strings that caused AAPT build failures in affected locales.
+
+See [v0.3.4 release notes](docs/RELEASE-NOTES-0.3.4.md) for details.
+
 # DiPlay 0.3.3 — 2026-10-28
 
 - Wireless link failure forget-and-repair prompt after 4 consecutive failures (#290): surface a targeted dialog guiding users to forget the car hotspot and re-pair after four consecutive link failures, resolving persistent wireless CarPlay connection failures caused by hotspot IP drift or stale credentials.
