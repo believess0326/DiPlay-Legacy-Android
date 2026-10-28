@@ -206,6 +206,7 @@ class CarPlayHostActivity : ComponentActivity() {
         hostapdPassphrase = hostapdPassphrase,
         hostapdChannel = hostapdChannel,
         hostapdAppleVendorIe = hostapdAppleVendorIe,
+        carplayAutoDisconnectBt = carplayAutoDisconnectBt,
         locationReportingEnabled = locationReportingEnabled,
         directUsbfsMode = AirPlayPersistence.loadDirectUsbfsMode(this),
     )
@@ -577,6 +578,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var hostapdPassphrase = ""
     private var hostapdChannel = 1
     private var hostapdAppleVendorIe = false
+    private var carplayAutoDisconnectBt = false
     private var awaitingVpnConsent = false
     private var vpnConsentLaunchElapsed = 0L
     private var vpnConsentInstantDenyCount = 0
@@ -926,6 +928,7 @@ class CarPlayHostActivity : ComponentActivity() {
         hostapdPassphrase = AirPlayPersistence.loadHostapdPassphrase(this)
         hostapdChannel = AirPlayPersistence.loadHostapdChannel(this)
         hostapdAppleVendorIe = AirPlayPersistence.loadHostapdAppleVendorIe(this)
+        carplayAutoDisconnectBt = AirPlayPersistence.loadCarplayAutoDisconnectBt(this)
     }
 
     private fun requestStartupPrerequisites() {

@@ -80,6 +80,7 @@ object AirPlayPersistence {
     private const val KEY_HOSTAPD_PASSPHRASE = "hostapd_passphrase"
     private const val KEY_HOSTAPD_CHANNEL = "hostapd_channel"
     private const val KEY_HOSTAPD_APPLE_VENDOR_IE = "hostapd_apple_vendor_ie"
+    private const val KEY_CARPLAY_AUTO_DISCONNECT_BT = "carplay_auto_disconnect_bt"
     private const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
@@ -740,6 +741,14 @@ object AirPlayPersistence {
 
     fun saveHostapdAppleVendorIe(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_HOSTAPD_APPLE_VENDOR_IE, enabled).apply()
+    }
+
+    /** Issue #343: auto-disconnect phone Bluetooth after wireless CarPlay connects (Advanced, experimental). */
+    fun loadCarplayAutoDisconnectBt(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_CARPLAY_AUTO_DISCONNECT_BT, false)
+
+    fun saveCarplayAutoDisconnectBt(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_CARPLAY_AUTO_DISCONNECT_BT, enabled).apply()
     }
 
     fun loadHostapdSsid(context: Context): String =

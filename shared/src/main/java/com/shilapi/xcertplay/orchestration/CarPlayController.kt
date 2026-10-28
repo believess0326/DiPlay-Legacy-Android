@@ -311,6 +311,8 @@ class CarPlayController(
     private val wirelessActiveReported = AtomicBoolean(false)
     private val wirelessPostTransportConfigurationSent = AtomicBoolean(false)
     private val wirelessBootstrapReleaseScheduled = AtomicBoolean(false)
+    /** Issue #343: true once this session's handoff turned Bluetooth off; restored at session end. */
+    private val autoBtDisabled = AtomicBoolean(false)
     private val wirelessAirPlayRequestsInFlight = AtomicInteger()
     private val wirelessLastAirPlayActivityMs = AtomicLong(0L)
     private val wirelessTcpAcceptedAtMs = AtomicLong(0L)
@@ -2104,7 +2106,12 @@ class CarPlayController(
             }
 
             override fun onSessionActive(session: AirPlaySession) {
-                if (isStaleWirelessRun(generation) || !watchdog.sessionEstablished()) return
+                if (isStaleWirelessRun(generation)) return
+                // Issue #343: a new wireless session starts with the auto-disconnect
+                // flag clear, so a previous session whose end never fired cannot
+                // suppress this session's disconnect.
+                autoBtDisabled.set(false)
+                if (!watchdog.sessionEstablished()) return
                 wirelessDiagnostic("AirPlay session active; Bluetooth bootstrap retained until tunnel handoff")
                 wirelessDiagnostics?.let {
                     it.sessionActive()
@@ -2118,6 +2125,11 @@ class CarPlayController(
 
             override fun onSessionEnded(session: AirPlaySession) {
                 if (isStaleWirelessRun(generation)) return
+                // Issue #343: turn Bluetooth back on if this session disabled it.
+                if (autoBtDisabled.compareAndSet(true, false)) {
+                    runCatching { BluetoothAdapter.getDefaultAdapter()?.enable() }
+                    wirelessDiagnostic("autoBtDisconnect=restored (wireless session ended)")
+                }
                 wirelessDiagnostic("AirPlay session ended activeSessionPresent=${activeSession != null}")
                 if (activeSession == null) {
                     watchdog.onTcpClosedBeforeEstablished()
@@ -2287,6 +2299,24 @@ class CarPlayController(
                     debugLog("wireless handoff ready; closing Bluetooth bootstrap transport")
                     closeBluetoothBootstrapTransport()
                     onStatus(CarPlayStatus.WirelessActive, generation)
+                    // Issue #343: the session is now fully on Wi-Fi (tunnel ready,
+                    // bootstrap transport closed by the app itself), so dropping the
+                    // Bluetooth link cannot break the bootstrap anymore. With the
+                    // experimental switch on, turn the head unit Bluetooth off to
+                    // drop the phone's native Bluetooth link (the native call
+                    // screen rides that link); it is turned back on at session end.
+                    if (config.carplayAutoDisconnectBt && !autoBtDisabled.get()) {
+                        val adapter = runCatching { BluetoothAdapter.getDefaultAdapter() }.getOrNull()
+                        if (adapter == null) {
+                            debugLog("autoBtDisconnect=skipped (no Bluetooth adapter)")
+                        } else if (!adapter.isEnabled) {
+                            debugLog("autoBtDisconnect=skipped (adapter already off)")
+                        } else {
+                            runCatching { adapter.disable() }
+                            autoBtDisabled.set(true)
+                            debugLog("autoBtDisconnect=disabled (wireless CarPlay connected, experimental switch)")
+                        }
+                    }
                 }
             },
             "xcertplay-wireless-handoff",
