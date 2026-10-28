@@ -1,3 +1,14 @@
+# DiPlay 0.3.3 — 2026-10-28
+
+- Wireless link failure forget-and-repair prompt after 4 consecutive failures (#290): surface a targeted dialog guiding users to forget the car hotspot and re-pair after four consecutive link failures, resolving persistent wireless CarPlay connection failures caused by hotspot IP drift or stale credentials.
+- Cap IPv6 address wait at a short grace once IPv4 is usable (#343): compress the remaining IPv6 wait to a short grace period once IPv4 is ready, reducing hotspot setup latency significantly.
+- Force fallback surface recreation on reverse-return height growth (#290): trigger surface rebuild when CarPlay display height grows anomalously during reverse-return, fixing black/frozen screen regressions after exiting reverse camera.
+- Capture hostapd launch evidence on hotspot bring-up failure (#337): save hostapd startup log evidence to diagnostic report on bring-up failure, aiding root-cause analysis on non-rooted head units.
+- Log PCM peak in audio stats (#309): record per-buffer PCM peak (dBFS) in audio statistics alongside ducking diagnostics to help diagnose volume anomalies and silence issues.
+- Best-effort sync on USB diagnostic report copy (#341): fsync after USB report file copy to reduce diagnostic package corruption on low-end head-unit filesystems.
+
+See [v0.3.3 release notes](docs/RELEASE-NOTES-0.3.3.md) for details.
+
 # DiPlay 0.3.2 — 2026-10-27
 
 - Hostapd process check without grep on minimal ROMs (#337): parse `ps` output in pure Kotlin without shell grep/wc/tail pipelines, resolving repeated hostapd kill-and-retry loops on Android 4.2 / MY16ADA.
