@@ -731,7 +731,26 @@ class AndroidMediaSink(
                 // mode, so flag the refusal explicitly in the report (issue #272).
                 onAudioDiagnostic("Audio: mode entered communication from=$savedAudioMode" +
                     " now=${manager.mode} stream=$id" +
-                    " modeRefused=${manager.mode != AudioManager.MODE_IN_COMMUNICATION}")
+                    " modeRefused=${manager.mode != AudioManager.MODE_IN_COMMUNICATION}" +
+                    " speakerphone=${manager.isSpeakerphoneOn} scoOn=${manager.isBluetoothScoOn}")
+            }
+            // Issue #343: the earpiece remedy (upstream #797) only exists on
+            // API 24+, where the routing listener can observe it — but a
+            // pre-24 head unit in communication mode with the speakerphone
+            // off and no SCO link routes VOICE_CALL to a built-in earpiece
+            // it does not have, so the call is silent while PCM flows fine
+            // (proven on the 5.1.1 reporter's logs: route=streamType=0,
+            // volume 7/7, first PCM write done, still no sound). Pre-24 has
+            // no routing callback, so derive the same condition from
+            // AudioManager state and apply the same loudspeaker remedy,
+            // once per call (moveCallToLoudspeaker guards that). It stays
+            // off when SCO is on (the call is already audible over BT) or
+            // the speakerphone is already on.
+            if (realSdkInt() < Build.VERSION_CODES.N &&
+                manager.mode == AudioManager.MODE_IN_COMMUNICATION &&
+                !manager.isSpeakerphoneOn && !manager.isBluetoothScoOn
+            ) {
+                moveCallToLoudspeaker(id)
             }
         }
     }
