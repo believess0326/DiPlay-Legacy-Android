@@ -287,6 +287,24 @@ internal class AudioFocusCoordinator(
 }
 
 /**
+ * Issue #309: peak |sample| of a PCM16-LE chunk (the decoder output format
+ * this file already assumes in its fade/gain passes). Silence reads 0, full
+ * scale reads 32768. A trailing odd byte is ignored, like the fade pass.
+ */
+internal fun pcm16Peak(data: ByteArray, offset: Int, length: Int): Int {
+    var peak = 0
+    var i = offset
+    val end = offset + length - 1
+    while (i < end) {
+        val sample = (data[i].toInt() and 0xff) or (data[i + 1].toInt() shl 8)
+        val magnitude = if (sample == -32768) 32768 else if (sample < 0) -sample else sample
+        if (magnitude > peak) peak = magnitude
+        i += 2
+    }
+    return peak
+}
+
+/**
  * Android rendering backend for the CarPlay media engine. Video frames are
  * decoded with MediaCodec onto a Surface; audio streams are decoded to PCM and
  * played through AudioTrack. Each audio stream keeps its own track and usage so
@@ -1775,6 +1793,7 @@ private class AudioRenderer(
     private val frameBytes = if (format.channels >= 2) 4 else 2
     private var totalWrittenFrames = 0L
     private var writtenFramesThisWindow = 0L
+    private var pcmPeakThisWindow = 0
     private var writeErrorsThisWindow = 0
     private var lastWriteErrorCode: Int? = null
     private var zeroWritesThisWindow = 0
@@ -2573,6 +2592,10 @@ private class AudioRenderer(
                 break
             }
             if (count < writeLength) partialWritesThisWindow++
+            // Issue #309: frame counts prove PCM flows but not that it is audible —
+            // a phone-side duck stuck at silence looks identical in the stats. Track
+            // the window peak so the next report can tell silence from sound.
+            pcmPeakThisWindow = maxOf(pcmPeakThisWindow, pcm16Peak(data, offset + written, count))
             written += count
             // Keeps the focus lease alive only while audio is actually flowing.
             audioFocusCoordinator.onPcmRendered()
@@ -2657,7 +2680,7 @@ private class AudioRenderer(
             "dropped=${packetsDropped.getAndSet(0)} underruns=+${underruns - statsLastUnderruns} queue=${queue.size} " +
             "playing=$playbackStarted maxGapMs=${maxArrivalGapMs.getAndSet(0)} " +
             "sinceRxMs=${if (lastRx == 0L) -1 else (now - lastRx) / 1_000_000L} maxWriteMs=$maxWriteMs " +
-            "writtenFrames=$writtenFramesThisWindow totalWrittenFrames=$totalWrittenFrames " +
+            "writtenFrames=$writtenFramesThisWindow pcmPeak=$pcmPeakThisWindow totalWrittenFrames=$totalWrittenFrames " +
             "playbackHeadFrames=${playbackHeadFrames ?: -1} playbackAdvanceFrames=${playbackAdvanceFrames ?: -1} " +
             "estimatedQueuedFrames=${queuedFrames ?: -1} writeErrors=$writeErrorsThisWindow " +
             "lastWriteError=${lastWriteErrorCode ?: "none"} zeroWrites=$zeroWritesThisWindow " +
@@ -2677,6 +2700,7 @@ private class AudioRenderer(
         statsLastUnderruns = underruns
         maxWriteMs = 0L
         writtenFramesThisWindow = 0L
+        pcmPeakThisWindow = 0
         writeErrorsThisWindow = 0
         lastWriteErrorCode = null
         zeroWritesThisWindow = 0
