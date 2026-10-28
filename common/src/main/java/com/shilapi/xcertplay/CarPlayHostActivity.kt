@@ -252,11 +252,13 @@ class CarPlayHostActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             awaitingWirelessPermissions = false
             wirelessPermissionsReady = hasRequiredWirelessPermissions()
+            val connectState = if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) "granted" else "denied"
+            val scanState = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) "n/a" else if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED) "granted" else "denied"
             appendLog(
                 if (wirelessPermissionsReady) {
-                    "Wireless startup permissions granted"
+                    "Wireless startup permissions granted (connect=$connectState scan=$scanState)"
                 } else {
-                    "Wireless startup permissions denied"
+                    "Wireless startup permissions denied (connect=$connectState scan=$scanState)"
                 },
             )
             updateHotspotStatusBlock()
@@ -1048,10 +1050,12 @@ class CarPlayHostActivity : ComponentActivity() {
         return when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> buildList {
                 add(Manifest.permission.BLUETOOTH_CONNECT)
+                add(Manifest.permission.BLUETOOTH_SCAN)
                 if (needsWifiRuntimePermission) add(Manifest.permission.NEARBY_WIFI_DEVICES)
             }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> buildList {
                 add(Manifest.permission.BLUETOOTH_CONNECT)
+                add(Manifest.permission.BLUETOOTH_SCAN)
                 if (needsWifiRuntimePermission) {
                     add(Manifest.permission.ACCESS_COARSE_LOCATION)
                     add(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -5176,16 +5180,30 @@ class CarPlayHostActivity : ComponentActivity() {
                     // all four sides until something rebuilds it (re-entering
                     // from the desktop recreates the surface, which is why
                     // that workaround clears the borders). Force one
-                    // recreation here: hide now, show on the next frame so
-                    // the new surface is created at the fixed size requested
+                    // recreation here: remove the view and re-add it so
+                    // a new surface is created at the fixed size requested
                     // above. Height growth is the reverse-return signature;
                     // width-only growth (dock reveal) is left untouched.
-                    fallback.visibility = View.GONE
-                    fallback.post {
-                        if (fallbackVideoView === fallback) fallback.visibility = View.VISIBLE
+                    // Issue #290 (0.3.4 retest): hiding and re-showing the
+                    // same view did NOT recreate its Surface on this
+                    // firmware — the picture stayed at the reverse size
+                    // even though the recreate log fired. Removing the
+                    // view from its parent and re-adding it forces
+                    // surfaceDestroyed / surfaceCreated, the same
+                    // lifecycle desktop re-entry already survives.
+                    val parent = fallback.parent as? ViewGroup
+                    val index = parent?.indexOfChild(fallback) ?: -1
+                    if (parent != null && index >= 0) {
+                        parent.removeView(fallback)
+                        parent.addView(fallback, index, fallback.layoutParams)
+                    } else {
+                        fallback.visibility = View.GONE
+                        fallback.post {
+                            if (fallbackVideoView === fallback) fallback.visibility = View.VISIBLE
+                        }
                     }
                     appendLog(
-                        "Display: fallback surface recreate after grow to " +
+                        "Display: fallback surface re-add after grow to " +
                             "${bounds.width}x${bounds.height} (was " +
                             "${previousBounds.width}x${previousBounds.height})",
                     )

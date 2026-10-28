@@ -237,7 +237,7 @@ class HostapdHotspotManager(
             // AND hapd.log is missing (not empty) — the daemon never got far
             // enough to write a byte, so the -B evidence cannot say why.
             // Run the same binary once in the foreground and capture its own
-            // words: a config error, a driver error, or an unwritable log
+            // words and exit code: a config error, a driver error, or an unwritable log
             // directory all print here. Bounded to ~2s, killed afterwards,
             // and the next start's killStale cleans up if the kill misses.
             // Once per manager: later retries fail identically.
@@ -246,7 +246,7 @@ class HostapdHotspotManager(
                 foregroundProbeDone = true
                 val probeCmd =
                     "$hostapdPath ${HostapdConfig.CONF_PATH} >${HostapdConfig.FG_PROBE_LOG_PATH} 2>&1 & FG=\$!; sleep 2; " +
-                        "if kill -0 \$FG 2>/dev/null; then echo FG_ALIVE; kill \$FG; sleep 1; else echo FG_DEAD; fi; " +
+                        "if kill -0 \$FG 2>/dev/null; then echo FG_ALIVE; kill \$FG; sleep 1; else wait \$FG 2>/dev/null; echo FG_DEAD FG_EXIT=\$?; fi; " +
                         "ls -ld /data/local/tmp 2>/dev/null; cat ${HostapdConfig.FG_PROBE_LOG_PATH} 2>/dev/null"
                 val probeResult = runCatching { RootShell.run(probeCmd, 10_000) }.getOrNull()
                 fgProbe = probeResult?.output?.trim()?.replace('\n', ' ')?.take(600) ?: "unavailable"

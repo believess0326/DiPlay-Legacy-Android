@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import com.shilapi.xcertplay.compat.BluetoothCompat
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import com.shilapi.xcertplay.transport.BluetoothRfcommDuplexStream
@@ -126,12 +127,23 @@ class AndroidBluetoothAdapter(
         val latch = CountDownLatch(1)
         Thread({
             try {
-                if (adapter.isDiscovering) {
-                    runCatching { adapter.cancelDiscovery() }
-                    var cancelWait = 0
-                    while (adapter.isDiscovering && cancelWait++ < 10) {
-                        try { Thread.sleep(50L) } catch (_: InterruptedException) { break }
+                // Issue #293: on Android 12+ reading/cancelling discovery
+                // needs BLUETOOTH_SCAN, which the app did not declare or
+                // request. A missing scan permission must not kill the
+                // RFCOMM connect itself (socket.connect needs CONNECT,
+                // not SCAN): skip discovery handling and proceed. The
+                // manifest + startup gate now request SCAN, so this is
+                // only a backstop.
+                try {
+                    if (adapter.isDiscovering) {
+                        runCatching { adapter.cancelDiscovery() }
+                        var cancelWait = 0
+                        while (adapter.isDiscovering && cancelWait++ < 10) {
+                            try { Thread.sleep(50L) } catch (_: InterruptedException) { break }
+                        }
                     }
+                } catch (error: SecurityException) {
+                    Log.w("AndroidBluetoothAdapter", "Skipping discovery cancel: scan permission missing", error)
                 }
                 socket.connect()
             } catch (t: Throwable) {
