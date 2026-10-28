@@ -17,7 +17,9 @@ import java.net.NetworkInterface
  * root, in the arrangement proven on those units:
  *
  *  1. kill stale hostapd/dnsmasq and stale lease state;
- *  2. force the framework Wi-Fi radio on (`svc wifi enable`) so wlan0 exists;
+ *  2. force the framework Wi-Fi radio on (`svc wifi enable`, falling back to
+ *     the privileged app_process helper when svc leaves the radio off —
+ *     issue #301(a)) so wlan0 exists;
  *  3. generate hostapd.conf from the configured SSID/password/channel, copy
  *     it to the standard /data/misc/wifi/hostapd.conf, and start the system's
  *     /system/bin/hostapd;
@@ -124,12 +126,26 @@ class HostapdHotspotManager(
             RootShell.run("svc wifi enable", 10_000)
             awaitInterface(deadlineMillis(deadline, 15_000)) { interfaceExists() }
             if (closed || isCancelled()) throw InterruptedIOException("Hostapd hotspot startup cancelled")
+            var helperEvidence = ""
+            if (!interfaceExists()) {
+                // Issue #301(a): on some firmware (Civic 4.2.2) `svc` is a hollow
+                // stub — it exits 0 but never powers the radio. Fall back to the
+                // privileged app_process helper, which enables the radio through
+                // the framework API directly; hostapd still owns the AP itself.
+                // The helper only runs after svc already failed, so it cannot
+                // change the outcome on units where svc works.
+                val helper = WifiRadioHelper.run(appContext)
+                helperEvidence = "; helper ok=${helper.ok} (${helper.raw})"
+                onDiagnostic("hostapd: svc left ${HostapdConfig.INTERFACE_NAME} absent; helper ok=${helper.ok} (${helper.raw})")
+                awaitInterface(deadlineMillis(deadline, 15_000)) { interfaceExists() }
+                if (closed || isCancelled()) throw InterruptedIOException("Hostapd hotspot startup cancelled")
+            }
             if (!interfaceExists()) {
                 val netdevs = RootShell.run("ls /sys/class/net 2>/dev/null", 3_000)
                     .output.trim().replace('\n', ' ').take(200)
                 throw IOException(
                     "hostapd: ${HostapdConfig.INTERFACE_NAME} did not appear after enabling Wi-Fi " +
-                        "(netdevs: $netdevs)",
+                        "(netdevs: $netdevs$helperEvidence)",
                 )
             }
         }
