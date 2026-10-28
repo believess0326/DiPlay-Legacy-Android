@@ -1767,7 +1767,7 @@ class CarPlayController(
                             } catch (e: Throwable) {
                                 val isBusy = e.message?.contains("busy", ignoreCase = true) == true
                                 lateRetryBackoffMillis = if (isBusy) 5000L else 3500L
-                                debugLog("late Bluetooth bootstrap attempt failed: ${e.message} (backoff=${lateRetryBackoffMillis}ms)")
+                                debugLog("late Bluetooth bootstrap attempt failed (backoff=${lateRetryBackoffMillis}ms)", e)
                                 runCatching { lateChannel?.close() }
                                 lateChannel = null
                                 runCatching { lateStream?.close() }
@@ -1876,7 +1876,11 @@ class CarPlayController(
                         break
                     } catch (e: Throwable) {
                         lastBootstrapError = e
-                        debugLog("wireless Bluetooth bootstrap attempt $attempt failed: ${e.message}")
+                        // Issue #293: the A14 log carried only "Could not connect RFCOMM" —
+                        // the wrapped socket cause (refused/timeout/permission) was dropped
+                        // by the message-only overload. Pass the throwable so the report
+                        // keeps the cause chain.
+                        debugLog("wireless Bluetooth bootstrap attempt $attempt failed", e)
                         runCatching { channel?.close() }
                         channel = null
                         runCatching { stream?.close() }
