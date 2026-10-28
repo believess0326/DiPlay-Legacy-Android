@@ -51,6 +51,10 @@ class HostapdHotspotManager(
     // initial reset worked never see this path.
     private var btResetFailed = false
     private var btResetRetried = false
+    // Issue #337: the foreground probe runs once per manager, on the first
+    // launch failure only — every retry fails identically on the affected
+    // units, and each probe costs ~2s of foreground daemon time.
+    private var foregroundProbeDone = false
 
     /**
      * Set once [start] has changed anything on the head unit (killed stale
@@ -213,6 +217,24 @@ class HostapdHotspotManager(
             // whole log (it is truncated fresh at every launch) and keep its
             // end, where hostapd puts the failure.
             val log = RootShell.run("cat ${HostapdConfig.HOSTAPD_LOG_PATH} 2>/dev/null", 5_000)
+            // Issue #337: on the reporter's unit every launch dies within 1s
+            // AND hapd.log is missing (not empty) — the daemon never got far
+            // enough to write a byte, so the -B evidence cannot say why.
+            // Run the same binary once in the foreground and capture its own
+            // words: a config error, a driver error, or an unwritable log
+            // directory all print here. Bounded to ~2s, killed afterwards,
+            // and the next start's killStale cleans up if the kill misses.
+            // Once per manager: later retries fail identically.
+            var fgProbe = ""
+            if (!foregroundProbeDone) {
+                foregroundProbeDone = true
+                val probeCmd =
+                    "$hostapdPath ${HostapdConfig.CONF_PATH} >${HostapdConfig.FG_PROBE_LOG_PATH} 2>&1 & FG=\$!; sleep 2; " +
+                        "if kill -0 \$FG 2>/dev/null; then echo FG_ALIVE; kill \$FG; sleep 1; else echo FG_DEAD; fi; " +
+                        "ls -ld /data/local/tmp 2>/dev/null; cat ${HostapdConfig.FG_PROBE_LOG_PATH} 2>/dev/null"
+                val probeResult = runCatching { RootShell.run(probeCmd, 10_000) }.getOrNull()
+                fgProbe = probeResult?.output?.trim()?.replace('\n', ' ')?.take(600) ?: "unavailable"
+            }
             val evidence = buildString {
                 append("cmd=").append(launchCmd)
                 append("; pid=").append(launchedPid ?: "unknown")
@@ -223,6 +245,7 @@ class HostapdHotspotManager(
                 append("; launchOut=").append(launched.output.trim().replace('\n', ' ').take(200))
                 append("; hapdBytes=").append(logBytes ?: "missing")
                 append("; hapd.log=").append(log.output.trim().replace('\n', ' ').takeLast(300))
+                if (fgProbe.isNotEmpty()) append("; fgProbe=").append(fgProbe)
             }
             onDiagnostic("hostapd: launch failed evidence: $evidence")
             throw IOException("hostapd: hostapd did not stay up; $evidence")

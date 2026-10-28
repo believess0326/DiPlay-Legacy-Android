@@ -34,6 +34,9 @@ object HostapdConfig {
     const val CONF_PATH = "/data/misc/wifi/hostapd.conf"
     const val TMP_CONF_PATH = "/data/local/tmp/hostapd_full.conf"
     const val HOSTAPD_LOG_PATH = "/data/local/tmp/hapd.log"
+    // Issue #337: foreground-probe log, kept apart from hapd.log so the
+    // probe never clobbers the daemon-launch evidence it investigates.
+    const val FG_PROBE_LOG_PATH = "/data/local/tmp/hapd-fg.log"
     const val DNSMASQ_LOG_PATH = "/data/local/tmp/dns.log"
     const val LEASES_PATH = "/data/local/tmp/dnsmasq.leases"
     const val DNSMASQ_PID_PATH = "/data/local/tmp/dnsmasq.pid"
