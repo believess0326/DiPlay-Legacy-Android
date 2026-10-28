@@ -109,7 +109,15 @@ internal object DiagnosticExportStore {
             // Do not overwrite an existing report or follow an unexpected symlink.
             if (destination.exists()) return@runCatching emptyList()
             val bytes = report.toByteArray(Charsets.UTF_8)
-            destination.outputStream().use { it.write(bytes); it.flush() }
+            destination.outputStream().use { stream ->
+                stream.write(bytes)
+                stream.flush()
+                // Issue #341: length() alone cannot prove the bytes reached the stick —
+                // a caching mount can report the right size for content it later loses.
+                // Best-effort sync: mounts without fsync support throw here, and that
+                // must not fail an otherwise good copy.
+                runCatching { stream.fd.sync() }
+            }
             if (destination.length() != bytes.size.toLong()) {
                 destination.delete()
                 return@runCatching emptyList()
