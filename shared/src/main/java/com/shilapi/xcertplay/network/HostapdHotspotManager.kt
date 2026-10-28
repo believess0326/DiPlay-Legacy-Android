@@ -34,6 +34,7 @@ class HostapdHotspotManager(
     private val ssid: String,
     private val passphrase: String,
     private val channel: Int,
+    private val appleVendorIe: Boolean = false,
     private val onDiagnostic: (String) -> Unit = {},
     private val isCancelled: () -> Boolean = { false },
 ) : WirelessHotspotManager {
@@ -129,7 +130,7 @@ class HostapdHotspotManager(
             }
         }
 
-        val conf = HostapdConfig.renderConf(ssid, passphrase, channel)
+        val conf = HostapdConfig.renderConf(ssid, passphrase, channel, appleVendorIe)
         // Deploy by staging the file in app-private storage and copying it
         // into place as root — the recipe proven on-device (issue #301). The
         // earlier heredoc write depends on the root shell's temp directory,

@@ -702,6 +702,8 @@
     <string name="settings_direct_usbfs_mode_description">للوحدات التي لا تُظهر قائمة USB في النظام جهاز iPhone أبدًا: يقوم بتعداد الأجهزة مباشرة وفتح عقدة الجهاز، وقد يتطلب صلاحيات الجذر. يُطبق عند الاتصال التالي ويعيد تشغيل CarPlay.</string>
     <string name="settings_root_hotspot_mode">نقطة اتصال الجذر (hostapd) (تجريبي)</string>
     <string name="settings_root_hotspot_mode_description">لوحدات السيارة ذات صلاحيات الجذر التي لا تستطيع التطبيقات فتح نقطة اتصالها مطلقًا. يشغّل DiPlay برنامج hostapd الخاص بالنظام بصلاحيات الجذر وينشئ نقطة اتصاله الخاصة؛ اختر وضع نقطة اتصال الجذر في إعدادات الاتصال وحدّد اسمها وكلمة مرورها هناك. يُطبق عند الاتصال التالي.</string>
+    <string name="settings_hostapd_apple_vendor_ie">عنصر بائع Apple في نقطة اتصال الجذر (تجريبي)</string>
+    <string name="settings_hostapd_apple_vendor_ie_description">يضيف عنصر بائع Apple إلى إشارة نقطة اتصال الجذر (hostapd) حتى تنضم هواتف iPhone تلقائيًا. بدونه لا ترتبط هواتف iPhone من تلقاء نفسها رغم أن النقر اليدوي ينجح. يؤثر على وضع نقطة اتصال الجذر فقط. يُطبق عند الاتصال التالي.</string>
     <string name="settings_hostapd_channel">قناة نقطة الاتصال</string>
     <string name="settings_hostapd_channel_description">2.4 غيغاهرتز فقط (القنوات 1–13). القناة 1 هي الأكثر توافقًا.</string>
     <string name="hotspot_mode_hostapd">نقطة اتصال الجذر (hostapd)</string>

@@ -21,6 +21,16 @@ object HostapdConfig {
     const val MIN_CHANNEL = 1
     const val MAX_CHANNEL = 13
 
+    /**
+     * Issue #344: Apple vendor IE for the 2.4 GHz beacon, so iPhones auto-join
+     * the AP instead of waiting for a manual tap. The 5 GHz bytes (…0021) are
+     * the ones verified in docs/WIRELESS_HOTSPOT_JOIN.md; this backend is
+     * 2.4 GHz-only (hw_mode=g), and the 2.4 GHz tail byte (…0022) follows the
+     * reporter's LIVI citation — on-device verification still awaited, which
+     * is why this stays behind an experimental toggle.
+     */
+    const val APPLE_VENDOR_IE_2G = "dd0800a0400000020022"
+
     const val CONF_PATH = "/data/misc/wifi/hostapd.conf"
     const val TMP_CONF_PATH = "/data/local/tmp/hostapd_full.conf"
     const val HOSTAPD_LOG_PATH = "/data/local/tmp/hapd.log"
@@ -56,7 +66,7 @@ object HostapdConfig {
         value.any { it < ' ' || it == '\u007f' }
 
     /** The hostapd configuration file body for the generated AP. */
-    fun renderConf(ssid: String, passphrase: String, channel: Int): String = buildString {
+    fun renderConf(ssid: String, passphrase: String, channel: Int, appleVendorIe: Boolean = false): String = buildString {
         append("interface=").append(INTERFACE_NAME).append('\n')
         append("driver=nl80211\n")
         append("ssid=").append(ssid).append('\n')
@@ -69,6 +79,9 @@ object HostapdConfig {
         append("wpa_key_mgmt=WPA-PSK\n")
         append("rsn_pairwise=CCMP\n")
         append("max_num_sta=8\n")
+        // Issue #344: without this element iPhones never auto-join the AP
+        // (a manual tap connects fine, which proves the rest of the chain).
+        if (appleVendorIe) append("vendor_elements=").append(APPLE_VENDOR_IE_2G).append('\n')
     }
 
     /** Directories searched for the hostapd/dnsmasq binaries, in order. */

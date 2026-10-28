@@ -1633,6 +1633,16 @@ class DiPlayActivity : ComponentActivity() {
                 AirPlayPersistence.saveRootHotspotEnabled(this, it)
                 markReconnectNeeded()
             }
+            // Issue #344: Apple vendor IE on the root hostapd beacon — iPhones
+            // never auto-join an AP without it (a manual tap connects fine,
+            // which proves the rest of the chain). Only affects Root hotspot
+            // mode; applies at the next connection.
+            toggle(card, getString(R.string.settings_hostapd_apple_vendor_ie),
+                getString(R.string.settings_hostapd_apple_vendor_ie_description),
+                AirPlayPersistence.loadHostapdAppleVendorIe(this)) {
+                AirPlayPersistence.saveHostapdAppleVendorIe(this, it)
+                markReconnectNeeded()
+            }
         }
         filteredSection(content, SettingsSection.CAR_BUTTON,
             getString(R.string.car_button_in_carplay), R.drawable.ic_dp_car) { card -> carButtonCard = card; carButtonControls(card) }

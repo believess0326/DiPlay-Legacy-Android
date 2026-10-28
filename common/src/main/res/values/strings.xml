@@ -818,6 +818,8 @@
     <string name="settings_direct_usbfs_mode_description">For head units whose system USB list never shows the iPhone: enumerates USB devices directly and opens the device node, which may require root. Applies at the next connection and restarts CarPlay.</string>
     <string name="settings_root_hotspot_mode">Root hotspot (hostapd) (experimental)</string>
     <string name="settings_root_hotspot_mode_description">For rooted head units whose hotspot cannot be opened by apps at all. DiPlay runs the system hostapd as root and creates its own hotspot; pick the Root hotspot mode in Connection setup and set its name and password there. Applies at the next connection.</string>
+    <string name="settings_hostapd_apple_vendor_ie">Apple vendor IE on Root hotspot (experimental)</string>
+    <string name="settings_hostapd_apple_vendor_ie_description">Adds the Apple vendor information element to the Root hotspot (hostapd) beacon, so iPhones auto-join it. Without it, iPhones never associate on their own even though a manual tap connects fine. Only affects Root hotspot mode. Applies at the next connection.</string>
     <string name="settings_hostapd_channel">Hotspot channel</string>
     <string name="settings_hostapd_channel_description">2.4 GHz only (channels 1–13). Channel 1 is the most compatible.</string>
     <string name="hotspot_mode_hostapd">Root hotspot (hostapd)</string>

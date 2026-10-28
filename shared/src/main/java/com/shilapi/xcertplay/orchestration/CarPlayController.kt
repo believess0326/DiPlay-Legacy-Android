@@ -3464,6 +3464,7 @@ class CarPlayController(
                     ?: throw WirelessStartupException(WirelessStartupFailure.HOTSPOT_CONFIGURATION, "Hostapd hotspot SSID is not configured"),
                 passphrase = config.hostapdPassphrase.orEmpty(),
                 channel = config.hostapdChannel,
+                appleVendorIe = config.hostapdAppleVendorIe,
                 onDiagnostic = { debugLog("generation=$generation $it") },
                 isCancelled = { isStaleWirelessRun(generation) },
             )

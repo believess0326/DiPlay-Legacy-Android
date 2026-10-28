@@ -79,6 +79,7 @@ object AirPlayPersistence {
     private const val KEY_HOSTAPD_SSID = "hostapd_ssid"
     private const val KEY_HOSTAPD_PASSPHRASE = "hostapd_passphrase"
     private const val KEY_HOSTAPD_CHANNEL = "hostapd_channel"
+    private const val KEY_HOSTAPD_APPLE_VENDOR_IE = "hostapd_apple_vendor_ie"
     private const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
@@ -731,6 +732,14 @@ object AirPlayPersistence {
 
     fun saveRootHotspotEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ROOT_HOTSPOT_ENABLED, enabled).apply()
+    }
+
+    /** Issue #344: Apple vendor IE on the root hostapd beacon (Advanced, experimental). */
+    fun loadHostapdAppleVendorIe(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_HOSTAPD_APPLE_VENDOR_IE, false)
+
+    fun saveHostapdAppleVendorIe(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_HOSTAPD_APPLE_VENDOR_IE, enabled).apply()
     }
 
     fun loadHostapdSsid(context: Context): String =

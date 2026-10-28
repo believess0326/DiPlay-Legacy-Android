@@ -714,6 +714,8 @@
     <string name="settings_direct_usbfs_mode_description">Для пристроїв, де системний список USB ніколи не показує iPhone: перераховує пристрої напряму та відкриває вузол пристрою, може знадобитися root. Застосовується при наступному підключенні та перезапускає CarPlay.</string>
     <string name="settings_root_hotspot_mode">Root-точка доступу (hostapd) (експериментально)</string>
     <string name="settings_root_hotspot_mode_description">Для рутованих пристроїв, точку доступу яких застосунки відкрити не можуть. DiPlay запускає системний hostapd від root і створює власну точку доступу; оберіть режим Root-точки доступу в налаштуваннях підключення та задайте там назву й пароль. Застосується при наступному підключенні.</string>
+    <string name="settings_hostapd_apple_vendor_ie">Apple vendor IE у Root-точці доступу (експериментально)</string>
+    <string name="settings_hostapd_apple_vendor_ie_description">Додає елемент Apple vendor до маяка Root-точки доступу (hostapd), щоб iPhone підключалися автоматично. Без нього iPhone самі не асоціюються, хоча ручне підключення працює. Впливає лише на режим Root-точки доступу. Застосується при наступному підключенні.</string>
     <string name="settings_hostapd_channel">Канал точки доступу</string>
     <string name="settings_hostapd_channel_description">Лише 2,4 ГГц (канали 1–13). Канал 1 — найсумісніший.</string>
     <string name="hotspot_mode_hostapd">Root-точка доступу (hostapd)</string>

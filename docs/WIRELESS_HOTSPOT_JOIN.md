@@ -57,6 +57,12 @@ OUI `00:a0:40`, type 0), following the public
 The bytes identify the tested element; they are not a general certified CarPlay
 configuration recipe.
 
+Issue #344: the experimental root hostapd backend now offers this element as
+an Advanced toggle (Apple vendor IE on Root hotspot). That backend is
+2.4 GHz-only, so it appends the 2.4 GHz variant (…0022); the 5 GHz bytes
+above remain the doc-verified reference. The toggle applies at the next
+connection; on-device verification is still awaited.
+
 A complete private Android hotspot configuration backup was taken first. The
 privileged shell API copied that configuration and changed only its vendor
 element list. Removal restored the exact original configuration. After re-add,

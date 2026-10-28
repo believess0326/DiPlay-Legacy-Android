@@ -124,6 +124,20 @@ class HostapdConfigTest {
         assertNull(HostapdConfig.error("My Car ü 车", "pass word ü 1", 1))
     }
 
+    @Test fun appleVendorIeIsOffByDefault() {
+        val conf = HostapdConfig.renderConf("My Car", "secret-pass", 6)
+        assertFalse(conf.contains("vendor_elements="))
+    }
+
+    @Test fun appleVendorIeAppendsExactlyOneWellFormedElement() {
+        val ie = HostapdConfig.APPLE_VENDOR_IE_2G
+        assertTrue(ie.length % 2 == 0 && ie.all { it in '0'..'9' || it in 'a'..'f' })
+        assertTrue(ie.startsWith("dd08"))
+        val conf = HostapdConfig.renderConf("My Car", "secret-pass", 6, appleVendorIe = true)
+        assertTrue(conf.contains("vendor_elements=$ie\n"))
+        assertEquals(13, conf.lines().filter { it.isNotEmpty() }.size)
+    }
+
     @Test fun everyRenderedLineIsExactlyOneKnownDirective() {
         val conf = HostapdConfig.renderConf("My Car", "secret-pass", 6)
         val directive = Regex(

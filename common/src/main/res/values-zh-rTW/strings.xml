@@ -770,6 +770,8 @@
     <string name="settings_direct_usbfs_mode_description">適用於系統 USB 列表始終看不到 iPhone 的車機：繞過系統列表直接列舉並開啟裝置節點，可能需要 root。會在下次連接時生效，並重新連接 CarPlay。</string>
     <string name="settings_root_hotspot_mode">Root 熱點（hostapd）（實驗性）</string>
     <string name="settings_root_hotspot_mode_description">適用於已 root、且應用完全無法打開熱點的車機。DiPlay 以 root 身份運行系統 hostapd 並自行建立熱點；在連接設定中選擇 Root 熱點模式並設定名稱與密碼。下次連接時生效。</string>
+    <string name="settings_hostapd_apple_vendor_ie">Root 熱點 Apple 廠商資訊元（實驗性）</string>
+    <string name="settings_hostapd_apple_vendor_ie_description">給 Root 熱點（hostapd）的信標加上 Apple 廠商資訊元，iPhone 才會自動加入。沒有它時 iPhone 不會自動關聯（手動點選卻能連上）。僅影響 Root 熱點模式。下次連接時生效。</string>
     <string name="settings_hostapd_channel">熱點頻道</string>
     <string name="settings_hostapd_channel_description">僅 2.4 GHz（頻道 1–13），頻道 1 相容性最好。</string>
     <string name="hotspot_mode_hostapd">Root 熱點（hostapd）</string>
