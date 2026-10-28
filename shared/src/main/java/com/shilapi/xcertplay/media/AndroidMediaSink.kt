@@ -1000,6 +1000,8 @@ private class VideoDecoder(
     private var lastKeyFrameRequestNs = 0L
     private var consecutiveInputWithoutOutput = 0
     private var consecutiveDroppedWithoutKeyFrame = 0
+    /** Issue #346: consecutive output stalls; forces a decoder rebuild at threshold. */
+    private val stallRebuildTracker = DecoderStallRebuildTracker()
     /** Issue #216: when the current wait for an acceptable keyframe began. */
     private var keyframeWaitStartedNs = 0L
     private var lastOutputRenderedNs = 0L
@@ -1448,6 +1450,7 @@ private class VideoDecoder(
         queue.discardFrames()
         consecutiveInputWithoutOutput = 0
         consecutiveDroppedWithoutKeyFrame = 0
+        stallRebuildTracker.reset()
         keyframeWaitStartedNs = 0L
         val now = System.nanoTime()
         lastOutputRenderedNs = now
@@ -1577,13 +1580,21 @@ private class VideoDecoder(
             val elapsedSinceSurfaceAttachNs = now - surfaceAttachedAtNs
             // Allow 3.5s warm-up grace period after surface attach to prevent false positives on busy map streams (Issue #315, #320)
             if (elapsedSinceSurfaceAttachNs >= 3_500_000_000L && (lastOutputRenderedNs == 0L || elapsedSinceOutputNs >= MIN_OUTPUT_STALL_NS)) {
-                recover("video decoder output stalled: $consecutiveInputWithoutOutput frames queued without output", allowRebuild = false)
+                // Issue #346: the first stalls only re-ask for a keyframe (existing
+                // behavior); once the tracker counts repeated stalls, force a decoder
+                // rebuild even though a keyframe wait is already in progress — on the
+                // T3 unit the requested keyframes never unstick the wedged decoder,
+                // so the wait never clears and the plain path never rebuilds.
+                val forceRebuild = !reverseSuspended && stallRebuildTracker.onStall()
+                val reason = "video decoder output stalled: $consecutiveInputWithoutOutput frames queued without output" +
+                    if (forceRebuild) " (repeated stalls; forcing decoder rebuild)" else ""
+                recover(reason, allowRebuild = false, forceRebuild = forceRebuild)
                 return
             }
         }
     }
 
-    private fun recover(reason: String, allowRebuild: Boolean = true) {
+    private fun recover(reason: String, allowRebuild: Boolean = true, forceRebuild: Boolean = false) {
         // Issue #315: no recovery may resurrect the codec while it is
         // suspended for reverse; the delayed cold start owns the restart.
         if (reverseSuspended) return
@@ -1598,7 +1609,12 @@ private class VideoDecoder(
         // genuinely wedged codec still gets rebuilt once per keyframe cycle:
         // accepting an IDR clears the wait, so the next recovery rebuilds.
         // Queue backlog / frame drops keep the healthy decoder instance and only wait for IDR.
-        val rebuild = allowRebuild && !referenceChain.needsKeyFrame
+        // Issue #346: a forced rebuild bypasses the keyframe-wait gate: when the
+        // decoder is genuinely wedged, the requested keyframes never arrive (or
+        // never unstick it), so the wait never clears and the plain path would
+        // never rebuild. The stall tracker rate-limits this to one forced rebuild
+        // per REBUILD_AFTER_STALLS stalls.
+        val rebuild = forceRebuild || (allowRebuild && !referenceChain.needsKeyFrame)
         consecutiveInputWithoutOutput = 0
         consecutiveDroppedWithoutKeyFrame = 0
         keyframeWaitStartedNs = 0L
@@ -1656,6 +1672,7 @@ private class VideoDecoder(
                     if (shown) {
                         stats.onRendered()
                         consecutiveInputWithoutOutput = 0
+                        stallRebuildTracker.onOutput()
                         lastOutputRenderedNs = now
                     }
                     if (shown && !renderedFrameLogged) {
