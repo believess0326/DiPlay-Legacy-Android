@@ -677,7 +677,22 @@ class AndroidMediaSink(
     override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
         // This callback runs on the downlink thread; microphone failures must not stop playback.
         try {
-            if (config.audioType == "telephony" && !callMicCompatibility) enterCommunicationMode(id)
+            if (config.audioType == "telephony") {
+                // Issue #290: the call volume boost does not need the communication
+                // mode, so it runs even when mic compatibility skips the mode.
+                boostCallStreamVolume()
+                // Issue #343: with the downlink on the music stream, entering the
+                // communication mode is the one remaining difference from the
+                // audible media path on firmware that takes over output routing
+                // in that mode — skip it while the experiment is on.
+                if (telephonyDownlinkViaMusic) {
+                    runCatching {
+                        onAudioDiagnostic("Audio: communication mode skipped for telephony; downlink via music stream (experimental)")
+                    }
+                } else if (!callMicCompatibility) {
+                    enterCommunicationMode(id)
+                }
+            }
             // Issue #272 follow-up: call echo complaints were undiagnosable because a
             // missing echo reference was silent — the uplink only logs when one is
             // present. State all three inputs whenever a call microphone starts.
