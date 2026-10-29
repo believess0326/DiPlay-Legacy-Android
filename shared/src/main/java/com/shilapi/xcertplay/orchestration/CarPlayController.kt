@@ -2312,9 +2312,22 @@ class CarPlayController(
                         } else if (!adapter.isEnabled) {
                             debugLog("autoBtDisconnect=skipped (adapter already off)")
                         } else {
-                            runCatching { adapter.disable() }
-                            autoBtDisabled.set(true)
-                            debugLog("autoBtDisconnect=disabled (wireless CarPlay connected, experimental switch)")
+                            // Issue #343: prefer dropping just the HFP link (the
+                            // native call screen rides it) over turning the whole
+                            // adapter off; fall back to the adapter-off path when
+                            // the HFP release is unavailable or unverified.
+                            val hfpDevices = runCatching {
+                                connectedBluetoothDevices(adapter, BluetoothProfile.HEADSET, BluetoothHeadset::class.java)
+                            }.getOrDefault(emptySet())
+                            debugLog("autoBtDisconnect=hfpDevices=${hfpDevices.size}")
+                            val hfpReleased = releaseHfpLinks(adapter, hfpDevices)
+                            if (hfpReleased) {
+                                debugLog("autoBtDisconnect=hfp-released (native HFP link dropped, Bluetooth stays on)")
+                            } else {
+                                runCatching { adapter.disable() }
+                                autoBtDisabled.set(true)
+                                debugLog("autoBtDisconnect=disabled (wireless CarPlay connected, experimental switch)")
+                            }
                         }
                     }
                 }
@@ -3881,6 +3894,62 @@ class CarPlayController(
             Log.w(IphoneCarPlayConfiguration.TAG, "Timed out reading Bluetooth profile $profile")
         }
         return synchronized(devices) { devices.toSet() }
+    }
+
+    /**
+     * Issue #343: try to drop just the phone's native HFP link instead of
+     * turning the whole head-unit Bluetooth off. There is no public API for
+     * this — BluetoothHeadset.disconnect is hidden — so this is best-effort:
+     * invoke it by reflection, verify the link is actually gone, and fall
+     * back to the whole-adapter-off path on any failure. Returns true only
+     * on a verified release.
+     */
+    private fun releaseHfpLinks(adapter: BluetoothAdapter, targets: Set<BluetoothDevice>): Boolean {
+        if (targets.isEmpty()) return false
+        val latch = CountDownLatch(1)
+        val released = AtomicBoolean(false)
+        val listener = object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profileId: Int, proxy: BluetoothProfile) {
+                try {
+                    if (proxy is BluetoothHeadset) {
+                        for (device in targets) {
+                            val invoked = runCatching {
+                                val method = proxy.javaClass.getMethod("disconnect", BluetoothDevice::class.java)
+                                method.invoke(proxy, device) as? Boolean == true
+                            }.getOrDefault(false)
+                            if (!invoked) continue
+                            var gone = false
+                            for (attempt in 0 until 3) {
+                                if (proxy.connectedDevices.orEmpty().none { it.address == device.address }) {
+                                    gone = true
+                                    break
+                                }
+                                try {
+                                    Thread.sleep(300)
+                                } catch (_: InterruptedException) {
+                                    Thread.currentThread().interrupt()
+                                    break
+                                }
+                            }
+                            if (gone) released.set(true)
+                        }
+                    }
+                } catch (error: SecurityException) {
+                    Log.w(IphoneCarPlayConfiguration.TAG, "Could not release HFP link", error)
+                } finally {
+                    runCatching { adapter.closeProfileProxy(profileId, proxy) }
+                    latch.countDown()
+                }
+            }
+
+            override fun onServiceDisconnected(profileId: Int) {
+                latch.countDown()
+            }
+        }
+        val ok = runCatching { adapter.getProfileProxy(appContext, listener, BluetoothProfile.HEADSET) }.getOrDefault(false)
+        if (!ok) return false
+        latch.await(4, TimeUnit.SECONDS)
+        return released.get()
     }
 
     @Suppress("DEPRECATION")
