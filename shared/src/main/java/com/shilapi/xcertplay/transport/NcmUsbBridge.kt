@@ -57,6 +57,11 @@ class NcmUsbBridge internal constructor(
     private val writeWatchdogFired = AtomicBoolean(false)
     private var inboundFrameSeen = false
     private var consecutiveWriteFailures = 0
+    /** Issue #352-Q4: bulk-OUT queue-vs-wire split (frames in, chunks out, bytes out). */
+    private var ncmWriteEnqueuedFrames = 0
+    private var ncmWriteSubmittedChunks = 0
+    private var ncmWriteCompletedChunks = 0
+    private var ncmWriteSuccessBytes = 0
     /** Issue #279: the data-interface reset is attempted once per failure run. */
     private var interfaceResetAttempted = false
     private val frames = ArrayDeque<ByteArray>()
@@ -92,6 +97,7 @@ class NcmUsbBridge internal constructor(
     /** Wraps one Ethernet frame in one NTB16 block and writes it to bulk OUT. */
     fun send(frame: ByteArray, timeoutMillis: Int) = synchronized(writeLock) {
         if (closed || isAbortedOrDetached) return@synchronized
+        ncmWriteEnqueuedFrames++
         checkOpen()
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         val sequence = synchronized(stateLock) {
@@ -106,8 +112,13 @@ class NcmUsbBridge internal constructor(
         val transferred = try {
             writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
                 val started = System.nanoTime()
+                ncmWriteSubmittedChunks++
                 val written = sharedConnection.bulkTransfer(outEndpoint, block, offset, count, timeout)
-                if (written > 0) return@writeUsbChunks written
+                if (written > 0) {
+                    ncmWriteCompletedChunks++
+                    ncmWriteSuccessBytes += written
+                    return@writeUsbChunks written
+                }
                 failedAfterNanos = System.nanoTime() - started
                 // The framework collapses every failure into -1, which hides the one fact that
                 // decides the fix: a phone that NAKs (ETIMEDOUT) needs the link brought up, a
@@ -117,7 +128,11 @@ class NcmUsbBridge internal constructor(
                 // to recover the errno (and keep the data if it lands).
                 if (failedAfterNanos < timeout.toLong() * SLOW_FAILURE_NANOS_PER_MILLIS) {
                     val probed = sharedConnection.bulkTransferErrno(outEndpoint, block, offset, count, timeout)
-                    if (probed > 0) return@writeUsbChunks probed
+                    if (probed > 0) {
+                        ncmWriteCompletedChunks++
+                        ncmWriteSuccessBytes += probed
+                        return@writeUsbChunks probed
+                    }
                     errno = if (probed < 0) -probed else 0
                 }
                 written
@@ -145,7 +160,9 @@ class NcmUsbBridge internal constructor(
             val failureLine = "ncm bulk-out failed $consecutiveWriteFailures/$MAX_CONSECUTIVE_WRITE_FAILURES " +
                 "while the data path was live: endpoint=0x${outEndpoint.address.toString(16)} " +
                 "requested=${block.size} transferred=$transferred errno=${errnoLabel(errno)} " +
-                "elapsedMs=${failedAfterNanos / NANOS_PER_MILLISECOND} timeoutMs=$timeoutMillis"
+                "elapsedMs=${failedAfterNanos / NANOS_PER_MILLISECOND} timeoutMs=$timeoutMillis " +
+                "ncmCounts=enqueued=$ncmWriteEnqueuedFrames submitted=$ncmWriteSubmittedChunks " +
+                "completed=$ncmWriteCompletedChunks successBytes=$ncmWriteSuccessBytes"
             Log.i(IphoneCarPlayConfiguration.TAG, failureLine)
             // Reports only carry the diagnostic channel; the probe lines below
             // were logcat-only, so a report could never show the halt state
