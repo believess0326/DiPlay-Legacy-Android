@@ -42,11 +42,12 @@ internal object AudioChannelMapper {
         payloadType: Int,
         mode: AudioChannelMappingMode,
         navigationStreamType: Int = DEFAULT_NAVIGATION_STREAM_TYPE,
+        telephonyDownlinkViaMusic: Boolean = false,
     ): AudioChannelSelection {
         val normalized = audioType.lowercase()
         return when (mode) {
-            AudioChannelMappingMode.MOBILE_COMPATIBLE -> mapMobileCompatible(normalized, payloadType, navigationStreamType)
-            AudioChannelMappingMode.AUTOMOTIVE_BUS -> mapAutomotiveBus(normalized, payloadType, navigationStreamType)
+            AudioChannelMappingMode.MOBILE_COMPATIBLE -> mapMobileCompatible(normalized, payloadType, navigationStreamType, telephonyDownlinkViaMusic)
+            AudioChannelMappingMode.AUTOMOTIVE_BUS -> mapAutomotiveBus(normalized, payloadType, navigationStreamType, telephonyDownlinkViaMusic)
         }
     }
 
@@ -57,8 +58,9 @@ internal object AudioChannelMapper {
         audioType: String,
         payloadType: Int,
         navigationStreamType: Int,
+        telephonyDownlinkViaMusic: Boolean,
     ): AudioChannelSelection = when (audioType) {
-        "telephony" -> AudioChannelSelection(AudioChannel.PHONE, AudioContentType.SPEECH, AudioManager.STREAM_VOICE_CALL)
+        "telephony" -> AudioChannelSelection(AudioChannel.PHONE, AudioContentType.SPEECH, if (telephonyDownlinkViaMusic) AudioManager.STREAM_MUSIC else AudioManager.STREAM_VOICE_CALL)
         "speechrecognition" ->
             AudioChannelSelection(AudioChannel.ASSISTANT, AudioContentType.SPEECH, AudioManager.STREAM_VOICE_CALL)
         "media" -> AudioChannelSelection(AudioChannel.MEDIA, AudioContentType.MUSIC, AudioManager.STREAM_MUSIC)
@@ -71,8 +73,9 @@ internal object AudioChannelMapper {
         audioType: String,
         payloadType: Int,
         navigationStreamType: Int,
+        telephonyDownlinkViaMusic: Boolean,
     ): AudioChannelSelection = when (audioType) {
-        "telephony" -> AudioChannelSelection(AudioChannel.PHONE, AudioContentType.SPEECH, AudioManager.STREAM_VOICE_CALL)
+        "telephony" -> AudioChannelSelection(AudioChannel.PHONE, AudioContentType.SPEECH, if (telephonyDownlinkViaMusic) AudioManager.STREAM_MUSIC else AudioManager.STREAM_VOICE_CALL)
         "speechrecognition" ->
             AudioChannelSelection(AudioChannel.ASSISTANT, AudioContentType.SPEECH, AudioManager.STREAM_VOICE_CALL)
         "media", "compatibility" ->

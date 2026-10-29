@@ -822,6 +822,8 @@
     <string name="settings_hostapd_apple_vendor_ie_description">Adds the Apple vendor information element to the Root hotspot (hostapd) beacon, so iPhones auto-join it. Without it, iPhones never associate on their own even though a manual tap connects fine. Only affects Root hotspot mode. Applies at the next connection.</string>
     <string name="settings_carplay_auto_disconnect_bt">Auto-disconnect phone Bluetooth after CarPlay connects (experimental)</string>
     <string name="settings_carplay_auto_disconnect_bt_description">After wireless CarPlay connects, disconnects the phone Bluetooth link (the head unit Bluetooth is turned off) so the native Bluetooth call screen stops popping up; Bluetooth is turned back on when the session ends. Wireless only, applies at the next connection. If the app exits abnormally, Bluetooth may stay off: turn it back on in system settings.</string>
+    <string name="settings_telephony_downlink_via_music">Route the call downlink through the music stream (experimental)</string>
+    <string name="settings_telephony_downlink_via_music_description">Route the call downlink through the music stream instead of the telephony stream, while call mode and the microphone uplink stay unchanged. Use this only if the call downlink is silent on the telephony stream while media audio works. Applies at the next connection.</string>
     <string name="settings_hostapd_channel">Hotspot channel</string>
     <string name="settings_hostapd_channel_description">2.4 GHz only (channels 1–13). Channel 1 is the most compatible.</string>
     <string name="hotspot_mode_hostapd">Root hotspot (hostapd)</string>

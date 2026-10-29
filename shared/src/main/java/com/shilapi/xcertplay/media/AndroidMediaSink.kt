@@ -317,6 +317,8 @@ class AndroidMediaSink(
     private val videoHeight: Int = 720,
     private val preferSoftwareHevcDecoder: Boolean = false,
     private val advancedAudioChannelMapping: Boolean = false,
+    /** Issue #343-Q1: route the call downlink through the music stream (experimental). */
+    private val telephonyDownlinkViaMusic: Boolean = false,
     private val audioFocusEnabled: Boolean = false,
     private val audioFocusAutoYield: Boolean = true,
     /** Issue #290: media focus exclusive mode; read per session, default keeps MAY_DUCK. */
@@ -898,6 +900,7 @@ class AndroidMediaSink(
         return AudioRenderer(
             format,
             advancedAudioChannelMapping,
+            telephonyDownlinkViaMusic,
             audioFocusEnabled,
             mediaChannel,
             navigationChannel,
@@ -1825,6 +1828,7 @@ private fun MediaFormat.intOrNull(key: String): Int? =
 private class AudioRenderer(
     val format: AudioFormat,
     private val advancedAudioChannelMapping: Boolean,
+    private val telephonyDownlinkViaMusic: Boolean,
     private val audioFocusEnabled: Boolean,
     private val mediaChannel: Int,
     private val navigationChannel: Int,
@@ -2303,8 +2307,9 @@ private class AudioRenderer(
             TAG,
             "audio route type=${format.payloadType} audioType=${format.audioType} " +
                 "mode=${if (advancedAudioChannelMapping) AudioChannelMappingMode.AUTOMOTIVE_BUS else AudioChannelMappingMode.MOBILE_COMPATIBLE} " +
-                "channel=${selection.channel} usage=${usageFor(selection.channel)} " +
-                "contentType=${contentTypeFor(selection.contentType)} " +
+                "channel=${selection.channel} usage=${effectiveUsage(selection)} " +
+                "contentType=${effectiveContentType(selection)} " +
+                "telephonyViaMusic=$telephonyDownlinkViaMusic " +
                 "streamOverride=$streamOverride " +
                 "focus=${if (audioFocusEnabled) "on" else "off"}",
         )
@@ -2316,6 +2321,19 @@ private class AudioRenderer(
         AudioChannel.NAVIGATION -> navigationChannel
         else -> 0
     }
+
+    /**
+     * Issue #343-Q1: with the music-stream experiment on, the call downlink leaves
+     * the telephony path on the usage layer too (the legacy stream type is switched
+     * in AudioChannelMapper); channel stays PHONE, call mode and mic unchanged.
+     */
+    private fun effectiveUsage(selection: AudioChannelSelection): Int =
+        if (telephonyDownlinkViaMusic && selection.channel == AudioChannel.PHONE) AudioAttributes.USAGE_MEDIA
+        else usageFor(selection.channel)
+
+    private fun effectiveContentType(selection: AudioChannelSelection): Int =
+        if (telephonyDownlinkViaMusic && selection.channel == AudioChannel.PHONE) AudioAttributes.CONTENT_TYPE_MUSIC
+        else contentTypeFor(selection.contentType)
 
     @RequiresApi(21)
     private fun audioAttributesFor(
@@ -2333,8 +2351,8 @@ private class AudioRenderer(
             }
         }
         return AudioAttributes.Builder()
-            .setUsage(usageFor(selection.channel))
-            .setContentType(contentTypeFor(selection.contentType))
+            .setUsage(effectiveUsage(selection))
+            .setContentType(effectiveContentType(selection))
             .build()
     }
 
@@ -2349,6 +2367,7 @@ private class AudioRenderer(
             payloadType = format.payloadType,
             mode = mode,
             navigationStreamType = navigationStreamType,
+            telephonyDownlinkViaMusic = telephonyDownlinkViaMusic,
         )
     }
 
@@ -2363,8 +2382,8 @@ private class AudioRenderer(
             }
         }
         return AudioAttributes.Builder()
-            .setUsage(usageFor(selection.channel))
-            .setContentType(contentTypeFor(selection.contentType))
+            .setUsage(effectiveUsage(selection))
+            .setContentType(effectiveContentType(selection))
             .build()
     }
 
@@ -2406,6 +2425,7 @@ private class AudioRenderer(
             payloadType = format.payloadType,
             mode = mode,
             navigationStreamType = navigationStreamType,
+            telephonyDownlinkViaMusic = telephonyDownlinkViaMusic,
         ).streamType
     }
 
