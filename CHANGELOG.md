@@ -1,3 +1,11 @@
+# DiPlay 0.3.7 — 2026-10-29
+
+- Post fallback surface re-add out of layout pass (#290): defer the removal and re-addition of the fallback SurfaceView to after the layout traversal (`fallback.post`), eliminating the null pointer dereference on Android 5.1.1 during startup size oscillations.
+- Extract call volume boost from communication mode (#290): decouple `STREAM_VOICE_CALL` volume boosting into an independent helper so that vehicles with mic compatibility enabled still receive boosted call volume and clean restoration.
+- Skip communication mode under telephony downlink music switch (#343): completely bypass `MODE_IN_COMMUNICATION` when routing telephony audio through the music stream, preventing firmware audio routing takeovers from silencing in-call downlink sound.
+
+See [v0.3.7 release notes](docs/RELEASE-NOTES-0.3.7.md) for details.
+
 # DiPlay 0.3.6 — 2026-10-29
 
 - Ignore transitional shrinks inside the settle window after a surface re-add (#290): filter out intermediate smaller bounds within the 3-second settle window after a grow re-add, keeping the restored full-size Surface instead of collapsing back down.
