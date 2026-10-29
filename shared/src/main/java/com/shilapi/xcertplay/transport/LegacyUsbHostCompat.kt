@@ -112,22 +112,18 @@ internal object LegacyUsbHostCompat {
             return ConfigurationResult(false, null, activeConfiguration(connection))
         }
         // EBUSY can be transient while a vendor USB host driver finishes releasing
-        // the prior interface table (issue #305: the previous round's claim can
-        // linger past a single settle). Retry up to twice with a growing settle;
-        // do not treat GET_CONFIGURATION == target as proof of success, because
-        // that readback describes the phone, not the kernel.
-        var busyAttempts = 0
-        while (errno == USBFS_EBUSY && busyAttempts < 2) {
-            busyAttempts++
-            onDiagnostic("usb configuration busy target=$target retry $busyAttempts after settle")
-            SystemClock.sleep(CONFIG_SETTLE_MILLIS * (1L shl (busyAttempts - 1)))
+        // the prior interface table. Retry once; do not treat GET_CONFIGURATION == target
+        // as proof of success, because that readback describes the phone, not the kernel.
+        if (errno == USBFS_EBUSY) {
+            onDiagnostic("usb configuration busy target=$target retrying once after settle")
+            SystemClock.sleep(CONFIG_SETTLE_MILLIS)
             errno = try {
                 nativeSelect(fd, target)
             } catch (error: LinkageError) {
                 Log.w(TAG, "usbfs set-configuration retry unavailable config=$target", error)
                 return ConfigurationResult(false, null, activeConfiguration(connection))
             }
-            onDiagnostic("usb configuration retry target=$target attempt=$busyAttempts errno=$errno")
+            onDiagnostic("usb configuration retry target=$target errno=$errno")
         }
         SystemClock.sleep(CONFIG_SETTLE_MILLIS)
         val active = activeConfiguration(connection)
