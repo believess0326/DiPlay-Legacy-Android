@@ -721,6 +721,9 @@ class AndroidMediaSink(
             if (communicationModeStream != null) return
             // Select the HAL communication path before AudioRecord is created.
             savedAudioMode = manager.mode
+            // Issue #343-Q2: the remedy below may turn the speakerphone on; remember
+            // the pre-call state so teardown restores it instead of leaking it on.
+            savedSpeakerphoneOn = manager.isSpeakerphoneOn
             manager.mode = AudioManager.MODE_IN_COMMUNICATION
             communicationModeStream = id
             earpieceFallbackTried = false
@@ -772,6 +775,7 @@ class AndroidMediaSink(
      */
     private var earpieceFallbackTried = false // guarded by audioModeLock
     private var savedCallStreamVolume: Int? = null // guarded by audioModeLock
+    private var savedSpeakerphoneOn: Boolean? = null // guarded by audioModeLock
     private fun moveCallToLoudspeaker(id: AudioStreamId) {
         val manager = audioManager ?: return
         val line = synchronized(audioModeLock) {
@@ -811,6 +815,11 @@ class AndroidMediaSink(
                 savedCallStreamVolume = null
                 runCatching { manager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, saved, 0) }
                 runCatching { onAudioDiagnostic("Audio: call volume restored stream=VOICE_CALL to=$saved") }
+            }
+            savedSpeakerphoneOn?.let { saved ->
+                savedSpeakerphoneOn = null
+                runCatching { manager.isSpeakerphoneOn = saved }
+                runCatching { onAudioDiagnostic("Audio: speakerphone restored to=$saved") }
             }
             runCatching { onAudioDiagnostic(line) }
         }
