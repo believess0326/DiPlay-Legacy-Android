@@ -254,12 +254,14 @@ class T3LegacyRuntimeTest {
                     if (input >= 0) {
                         val pixels = ByteArray(320 * 240 * 3 / 2) { 128.toByte() }
                         encoder.inputBuffers[input].apply { clear(); put(pixels) }
-                        encoder.queueInputBuffer(input, 0, pixels.size, submitted * 33333L, 0)
+                        encoder.queueInputBuffer(input, 0, pixels.size, submitted * 33333L,
+                            if (submitted == 9) android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
                         submitted++
                     }
                 }
                 val output = encoder.dequeueOutputBuffer(info, 10000)
                 if (output == android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    lines += "encoder output format changed: ${encoder.outputFormat}"
                     fun parameter(name: String): ByteArray {
                         val buffer = encoder.outputFormat.getByteBuffer(name)!!.duplicate()
                         val bytes = ByteArray(buffer.remaining()).also(buffer::get)
@@ -274,6 +276,7 @@ class T3LegacyRuntimeTest {
                     sink.onVideoCodec(0, VideoCodec.H264)
                     sink.onVideoConfig(0, avc)
                 } else if (output >= 0) {
+                    lines += "encoder output flags=${info.flags} bytes=${info.size}"
                     if (info.flags and android.media.MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && info.size > 0) {
                         val buffer = encoder.outputBuffers[output].duplicate().apply {
                             position(info.offset); limit(info.offset + info.size)
