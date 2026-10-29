@@ -99,11 +99,15 @@ class CarPlayMediaEngine(
      * See issue #106.
      */
     private val pendingScreenReaps = ConcurrentHashMap<AirPlaySession, ScheduledFuture<*>>()
+    /** Issues #327/#350: sessions that already used their video-only recovery attempt. */
+    private val videoRecoveryAttempted = Collections.synchronizedSet(mutableSetOf<AirPlaySession>())
     private val screenReapScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "xcertplay-screen-reap").apply { isDaemon = true }
     }
     /** Test seam: production uses [SCREEN_REAP_GRACE_MILLIS]. */
     internal var screenReapGraceMillis: Long = SCREEN_REAP_GRACE_MILLIS
+    /** Issues #327/#350: video-only recovery action (controller changeModes); set by the host. */
+    internal var videoRecoveryAction: (() -> Unit)? = null
 
     private class BufferedStream(val stream: BufferedAudioStream, val connectionId: Any?)
 
@@ -184,22 +188,39 @@ class CarPlayMediaEngine(
     }
 
     private fun scheduleScreenReap(session: AirPlaySession) {
-        cancelScreenReap(session)
+        // Future-only cancel: the re-schedule below must not clear the
+        // videoRecoveryAttempted flag it just set.
+        pendingScreenReaps.remove(session)?.cancel(false)
         val graceMillis = screenReapGraceMillis
         pendingScreenReaps[session] = screenReapScheduler.schedule({
             pendingScreenReaps.remove(session)
             if (!session.isClosed) {
-                session.logDebug(
-                    "screen stream did not recover within ${graceMillis}ms; " +
-                        "closing the control session",
-                )
-                session.close()
+                if (videoRecoveryAttempted.add(session)) {
+                    // Issues #327/#350: first expiry tries video-only recovery
+                    // (re-ask for the screen via changeModes; the sink already
+                    // requests keyframes throughout) and grants a second grace
+                    // instead of nuking the healthy control session at once.
+                    session.logDebug(
+                        "screen stream did not recover within ${graceMillis}ms; " +
+                            "attempting video-only recovery before closing the control session",
+                    )
+                    runCatching { videoRecoveryAction?.invoke() }
+                    scheduleScreenReap(session)
+                } else {
+                    videoRecoveryAttempted.remove(session)
+                    session.logDebug(
+                        "screen stream did not recover within ${graceMillis}ms after video-only recovery; " +
+                            "closing the control session",
+                    )
+                    session.close()
+                }
             }
         }, graceMillis, TimeUnit.MILLISECONDS)
     }
 
     private fun cancelScreenReap(session: AirPlaySession) {
         pendingScreenReaps.remove(session)?.cancel(false)
+        videoRecoveryAttempted.remove(session)
     }
 
     override fun onAudio(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Map<String, Any?>? {

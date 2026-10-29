@@ -4880,6 +4880,10 @@ class CarPlayHostActivity : ComponentActivity() {
             },
         )
         controller = next
+        // Issues #327/#350: on a video-only recovery attempt, re-ask the phone
+        // for the screen (changeModes Take Screen); wireless sessions no-op
+        // inside takeMainAudioAndScreen by design.
+        media.videoRecoveryAction = { next.takeMainAudioAndScreen() }
         resetSidePanel() // a new session starts without the side panel
         updateClusterMapShown()
         CarPlayMediaKeys.attach(this, next)
