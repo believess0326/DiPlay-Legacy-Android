@@ -425,6 +425,9 @@ class CarPlayHostActivity : ComponentActivity() {
     private var videoView: View? = null
     private var fallbackVideoView: SurfaceView? = null
     private var fallbackVideoBounds: CarPlaySurfaceBounds? = null
+    /** Issue #290: size established by the latest grow re-add, with its timestamp. */
+    private var surfaceReaddBounds: CarPlaySurfaceBounds? = null
+    private var surfaceReaddAtMs: Long = 0L
 
     // Smooth video (a setting): SurfaceView output with frames released at the iPhone's frame time.
     private var smoothVideo = false
@@ -5157,6 +5160,19 @@ class CarPlayHostActivity : ComponentActivity() {
         return base
     }
 
+    /**
+     * Issue #290: true while [bounds] is a transitional shrink below the size the
+     * latest grow re-add just established, inside the same settle window the
+     * reapply listener uses (3 s). A genuine later shrink (a new reverse entry)
+     * either exceeds the re-added size or arrives after the window and applies
+     * normally.
+     */
+    private fun isTransitionalShrinkAfterReadd(bounds: CarPlaySurfaceBounds): Boolean {
+        val readd = surfaceReaddBounds ?: return false
+        if (bounds.width >= readd.width || bounds.height >= readd.height) return false
+        return SystemClock.elapsedRealtime() - surfaceReaddAtMs < 3_000L
+    }
+
     private fun updateVideoLayout(viewWidth: Int, viewHeight: Int) {
         val view = videoView ?: return
         if (viewWidth <= 0 || viewHeight <= 0) return
@@ -5164,7 +5180,19 @@ class CarPlayHostActivity : ComponentActivity() {
         val fallback = fallbackVideoView
         if (fallback != null) {
             val bounds = CarPlaySurfaceBounds.from(content)
-            if (fallbackVideoBounds != bounds) {
+            // Issue #290 (0.3.5 retest): right after the grow re-add below recreates
+            // the Surface at the restored size, the video view passes through a
+            // transitional smaller size; fitting to it would setFixedSize the new
+            // Surface back down and the settle listener would keep re-asserting
+            // the small size, so the loop ended small instead of converging.
+            val transitionalShrink = fallbackVideoBounds != bounds && isTransitionalShrinkAfterReadd(bounds)
+            if (transitionalShrink) {
+                appendLog(
+                    "Display: ignored transitional shrink to ${bounds.width}x${bounds.height} " +
+                        "after surface re-add; keeping ${surfaceReaddBounds?.width}x${surfaceReaddBounds?.height}",
+                )
+            }
+            if (fallbackVideoBounds != bounds && !transitionalShrink) {
                 val previousBounds = fallbackVideoBounds
                 fallbackVideoBounds = bounds
                 fallback.layoutParams = FrameLayout.LayoutParams(bounds.width, bounds.height,
@@ -5186,6 +5214,8 @@ class CarPlayHostActivity : ComponentActivity() {
                 fallback.requestLayout()
                 fallback.invalidate()
                 if (previousBounds != null && bounds.height > previousBounds.height) {
+                    surfaceReaddBounds = bounds
+                    surfaceReaddAtMs = SystemClock.elapsedRealtime()
                     // Issue #290: on some firmwares a live Surface ignores
                     // setFixedSize — the size is latched at creation. A
                     // reverse window is shorter than full screen, so on the
