@@ -136,6 +136,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var reconnectAttempts = 0
     /** Issues #275/#243: consecutive wired no-TCP failures on pre-Lollipop units. */
     private var wiredNoTcpFailures = 0
+    /** Issue #305: consecutive wired USB-busy (EBUSY) failures. */
+    private var wiredUsbBusyFailures = 0
     private val siriKey = WheelSiriKey()
     private val siriKeyPresses = WheelKeyPresses()
     private val legacySiriPresses = mutableSetOf<Triple<Int, Int, Int>>()
@@ -1831,6 +1833,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 startupRetryStopped = false
                 reconnectAttempts = 0
                 wiredNoTcpFailures = 0
+                wiredUsbBusyFailures = 0
                 visibility = View.GONE
                 restartCarPlay(getString(R.string.connecting_to_your_iphone))
             }
@@ -4538,6 +4541,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     CarPlayBackgroundSession.active = true
                     reconnectAttempts = 0
                     wiredNoTcpFailures = 0
+                    wiredUsbBusyFailures = 0
                     logThemeState(ThemeModeDiagnostics.Source.SESSION_ACTIVE, resources.configuration)
                     syncAirPlayDarkMode(ThemeModeDiagnostics.Source.SESSION_ACTIVE)
                     if (menuOpen) return@runOnUiThread
@@ -4675,7 +4679,10 @@ class CarPlayHostActivity : ComponentActivity() {
         when (status) {
             // The phone is gone (or was replugged): a fresh attach episode starts,
             // so the legacy wired no-TCP budget starts over (issues #275/#243).
-            is CarPlayStatus.WaitingForIphone -> wiredNoTcpFailures = 0
+            is CarPlayStatus.WaitingForIphone -> {
+                wiredNoTcpFailures = 0
+                wiredUsbBusyFailures = 0
+            }
             is CarPlayStatus.Failed -> if (status.wifiResetRequired) {
                 wifiRecoveryButton?.visibility = View.VISIBLE
             } else {
@@ -5408,6 +5415,23 @@ class CarPlayHostActivity : ComponentActivity() {
                 startupRetryStopped = true
                 startupRetryButton?.visibility = View.VISIBLE
                 setConnectionStage(getString(R.string.wired_no_tcp_replug_required))
+                return
+            }
+        }
+        // Issue #305: a USB-busy (EBUSY) failure repeats identically while the
+        // previous round's interface claim lingers — the outer retry loop
+        // would otherwise hammer it forever with a growing backoff. Mirror
+        // the wired-no-TCP stop: after a few consecutive busy failures, stop
+        // the automatic loop and ask for a physical replug instead. The VPN
+        // guard above already claimed "Device or resource busy" reasons, so
+        // matching "usbfs" here only catches the USB-select path.
+        if (!wirelessEnabled && reason.contains("usbfs", ignoreCase = true)) {
+            wiredUsbBusyFailures += 1
+            if (wiredUsbBusyFailures >= WIRED_USB_BUSY_FAILURE_LIMIT) {
+                appendLog("wired USB busy failures=$wiredUsbBusyFailures; automatic retry stopped, manual replug required generation=$restartGeneration")
+                startupRetryStopped = true
+                startupRetryButton?.visibility = View.VISIBLE
+                setConnectionStage(getString(R.string.usb_iphone_busy_or_occupied))
                 return
             }
         }
@@ -6263,6 +6287,8 @@ class CarPlayHostActivity : ComponentActivity() {
         const val LEGACY_REVERSE_COLD_START_DELAY_MILLIS = 2_500L
         /** Issues #275/#243: automatic wired no-TCP retries allowed on pre-Lollipop units before asking for a physical replug. */
         const val WIRED_NO_TCP_FAILURE_LIMIT = 2
+        /** Issue #305: automatic wired USB-busy retries allowed before asking for a physical replug. */
+        const val WIRED_USB_BUSY_FAILURE_LIMIT = 3
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         /**
          * Issue #188 follow-up: a human cannot read and dismiss the system VPN
