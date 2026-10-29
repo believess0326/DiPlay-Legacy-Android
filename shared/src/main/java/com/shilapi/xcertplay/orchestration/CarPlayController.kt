@@ -539,6 +539,14 @@ class CarPlayController(
      */
     fun takeMainAudio(): Boolean {
         val session = activeSession ?: return false
+        // Issue #293: like takeMainAudioAndScreen(), a MainAudio Untake on a wireless
+        // session makes the phone end the screen stream and close the session (seen
+        // ~4 ms after the request, right after a touch, on two head units). The untake
+        // exists for wired sessions returning to native media; wireless keeps ownership.
+        if (config.transport == CarPlayTransport.WIRELESS) {
+            debugLog("skipped MainAudio changeModes for wireless session; retaining negotiated MainAudio ownership")
+            return false
+        }
         val resources = listOf(
             linkedMapOf("resourceID" to 2, "transferType" to 2), // Untake MainAudio (iPhone outputs audio)
         )
