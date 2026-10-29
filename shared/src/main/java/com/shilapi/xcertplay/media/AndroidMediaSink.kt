@@ -1000,6 +1000,8 @@ private class VideoDecoder(
     private var lastKeyFrameRequestNs = 0L
     private var consecutiveInputWithoutOutput = 0
     private var consecutiveDroppedWithoutKeyFrame = 0
+    /** Issue #351: stale frames dropped while the pipeline is still rendering. */
+    private var staleFramesDropped = 0
     /** Issue #346: consecutive output stalls; forces a decoder rebuild at threshold. */
     private val stallRebuildTracker = DecoderStallRebuildTracker()
     /** Issue #216: when the current wait for an acceptable keyframe began. */
@@ -1093,8 +1095,21 @@ private class VideoDecoder(
                         is VideoJob.Config -> configureDecoder(job)
                         is VideoJob.Frame -> {
                             if (System.nanoTime() - job.receivedNs > MAX_FRAME_AGE_NS) {
-                                queue.discardFrames()
-                                recover("video backlog exceeded 800 ms", allowRebuild = false)
+                                // Issue #351: when frames are still rendering, the
+                                // decoder is behind but alive — drop just this stale
+                                // frame and keep feeding instead of flushing the whole
+                                // queue and waiting for a keyframe (that loop is what
+                                // made slow-decode streams stutter). A genuine stall
+                                // (nothing rendered recently) keeps the old path.
+                                if (System.nanoTime() - lastOutputRenderedNs < MIN_OUTPUT_STALL_NS) {
+                                    staleFramesDropped++
+                                    if (staleFramesDropped == 1 || staleFramesDropped % 30 == 0) {
+                                        report("video stale frame dropped count=$staleFramesDropped (decoder behind, keeping feed)")
+                                    }
+                                } else {
+                                    queue.discardFrames()
+                                    recover("video backlog exceeded 800 ms", allowRebuild = false)
+                                }
                             } else feed(job.nalus, localTimeOf(job))
                         }
                         is VideoJob.SurfaceChanged -> changeSurface(job.surface)
@@ -1672,6 +1687,7 @@ private class VideoDecoder(
                     if (shown) {
                         stats.onRendered()
                         consecutiveInputWithoutOutput = 0
+                        staleFramesDropped = 0
                         stallRebuildTracker.onOutput()
                         lastOutputRenderedNs = now
                     }
