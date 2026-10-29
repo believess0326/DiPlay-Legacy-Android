@@ -1731,6 +1731,19 @@ private class VideoDecoder(
             } catch (_: Exception) {
                 // Best effort.
             }
+            // Issue #316: a released decoder leaves its last frame on the
+            // surface, so a dead session looks frozen instead of showing the
+            // disconnect prompt. Clear the surface to black; if the surface
+            // is gone or still connected, this is a no-op.
+            if (outputSurface != null) {
+                runCatching {
+                    val surface = outputSurface ?: return@runCatching
+                    val canvas = surface.lockCanvas(null)
+                    canvas.drawColor(android.graphics.Color.BLACK)
+                    surface.unlockCanvasAndPost(canvas)
+                    report("video surface cleared on decoder release")
+                }
+            }
         }
     }
 
