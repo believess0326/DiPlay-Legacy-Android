@@ -106,8 +106,10 @@ class CarPlayMediaEngine(
     }
     /** Test seam: production uses [SCREEN_REAP_GRACE_MILLIS]. */
     internal var screenReapGraceMillis: Long = SCREEN_REAP_GRACE_MILLIS
-    /** Issues #327/#350: video-only recovery action (controller changeModes); set by the host. */
-    internal var videoRecoveryAction: (() -> Unit)? = null
+    /** Issues #327/#350: video-only recovery action (controller changeModes); set by the host.
+     * Public (not internal): the host lives in the common module, and Kotlin internal
+     * is module-scoped, so an internal member here is invisible there. */
+    var videoRecoveryAction: (() -> Unit)? = null
 
     private class BufferedStream(val stream: BufferedAudioStream, val connectionId: Any?)
 
