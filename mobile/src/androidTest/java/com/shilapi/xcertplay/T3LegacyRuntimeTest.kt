@@ -270,18 +270,28 @@ class T3LegacyRuntimeTest {
                     }
                     val sps = parameter("csd-0")
                     val pps = parameter("csd-1")
-                    val avc = byteArrayOf(1, sps[1], sps[2], sps[3], 0xff.toByte(), 0xe1.toByte(),
-                        (sps.size ushr 8).toByte(), sps.size.toByte()) + sps +
-                        byteArrayOf(1, (pps.size ushr 8).toByte(), pps.size.toByte()) + pps
-                    sink.onVideoCodec(0, VideoCodec.H264)
-                    sink.onVideoConfig(0, avc)
+                    configureH264Sink(sink, sps, pps)
                 } else if (output >= 0) {
                     lines += "encoder output flags=${info.flags} bytes=${info.size}"
-                    if (info.flags and android.media.MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && info.size > 0) {
+                    if (info.size > 0) {
                         val buffer = encoder.outputBuffers[output].duplicate().apply {
                             position(info.offset); limit(info.offset + info.size)
                         }
-                        sink.onVideoFrame(0, carPlayAccessUnit(ByteArray(info.size).also(buffer::get)))
+                        val packet = carPlayAccessUnit(ByteArray(info.size).also(buffer::get))
+                        if (info.flags and android.media.MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                            // Jelly Bean reports SPS/PPS in a config buffer without an
+                            // INFO_OUTPUT_FORMAT_CHANGED event; feed the same AVC config.
+                            val input = java.io.DataInputStream(java.io.ByteArrayInputStream(packet))
+                            val units = mutableListOf<ByteArray>()
+                            while (input.available() > 0) {
+                                val size = input.readInt()
+                                check(size > 0 && size <= input.available())
+                                units += ByteArray(size).also(input::readFully)
+                            }
+                            configureH264Sink(sink,
+                                units.first { it[0].toInt() and 31 == 7 },
+                                units.first { it[0].toInt() and 31 == 8 })
+                        } else sink.onVideoFrame(0, packet)
                     }
                     encoder.releaseOutputBuffer(output, false)
                 }
@@ -295,6 +305,14 @@ class T3LegacyRuntimeTest {
             val released = sink.awaitVideoReleased(3000)
             assertTrue("Video decoder did not release", released)
         }
+    }
+
+    private fun configureH264Sink(sink: AndroidMediaSink, sps: ByteArray, pps: ByteArray) {
+        val avc = byteArrayOf(1, sps[1], sps[2], sps[3], 0xff.toByte(), 0xe1.toByte(),
+            (sps.size ushr 8).toByte(), sps.size.toByte()) + sps +
+            byteArrayOf(1, (pps.size ushr 8).toByte(), pps.size.toByte()) + pps
+        sink.onVideoCodec(0, VideoCodec.H264)
+        sink.onVideoConfig(0, avc)
     }
 
     @Test fun airPlayListenerAnswersInfoAndRecoversOccupiedPortTwice() {
