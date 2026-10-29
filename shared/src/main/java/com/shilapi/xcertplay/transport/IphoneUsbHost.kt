@@ -305,6 +305,10 @@ class IphoneUsbHost(
         TransitionResult.Failed(IphoneUsbException.DeviceUnavailable("iPhone USB operation failed", error))
     }
 
+    /** Issue #305: surface EBUSY as "busy" so the UI maps it to the unplug guidance. */
+    private fun errnoSuffix(errno: Int?): String =
+        errno?.let { e -> " (usbfs errno $e" + if (e == ERRNO_BUSY) ", interface busy)" else ")" } ?: ""
+
     private fun openIap2UsbSession(
         device: UsbDevice,
         knownConfiguration: CarPlayUsbConfiguration? = null,
@@ -344,7 +348,7 @@ class IphoneUsbHost(
                 throw IphoneUsbException.DeviceUnavailable(
                     "USB CarPlay configuration ${configuration.id} could not be selected; " +
                         "activeConfig=${selected.activeConfiguration ?: "unknown"}" +
-                        (selected.errno?.let { " (usbfs errno $it)" } ?: ""),
+                        errnoSuffix(selected.errno),
                 )
             }
 
@@ -386,7 +390,7 @@ class IphoneUsbHost(
             if (!muxClaim.claimed) {
                 throw IphoneUsbException.DeviceUnavailable(
                     "Android could not claim USBMUX interface ${usbMux.id}" +
-                        (muxClaim.errno?.let { " (usbfs errno $it)" } ?: "") +
+                        errnoSuffix(muxClaim.errno) +
                         " targetConfig=${configuration.id} activeConfig=${activeAfterClaim ?: "unknown"}",
                 )
             }
@@ -514,6 +518,7 @@ class IphoneUsbHost(
         private const val USB_CLAIM_RETRY_DELAY_MILLIS = 400L
         /** usbfs ENOENT: the kernel has no such interface (configuration not adopted). */
         private const val ERRNO_NO_SUCH_FILE = 2
+        private const val ERRNO_BUSY = 16
         private const val USB_VENDOR_DEVICE_IN = 0xc0
         private const val CARPLAY_CONFIGURATION_REQUEST = 0x52
         private const val CARPLAY_CONFIGURATION_INDEX = 0x0004
