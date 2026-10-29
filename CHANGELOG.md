@@ -1,3 +1,10 @@
+# DiPlay 0.3.6 — 2026-10-29
+
+- Ignore transitional shrinks inside the settle window after a surface re-add (#290): filter out intermediate smaller bounds within the 3-second settle window after a grow re-add, keeping the restored full-size Surface instead of collapsing back down.
+- Skip MainAudio untake on wireless CarPlay sessions (#293): retain negotiated MainAudio ownership on wireless links instead of issuing Untake changeModes, preventing the iPhone from aborting the screen stream and closing the session.
+
+See [v0.3.6 release notes](docs/RELEASE-NOTES-0.3.6.md) for details.
+
 # DiPlay 0.3.5 — 2026-10-29
 
 - Recover video before retiring the control session; prevent cancelled recovery work from rearming a stale session timeout (#327/#350).
