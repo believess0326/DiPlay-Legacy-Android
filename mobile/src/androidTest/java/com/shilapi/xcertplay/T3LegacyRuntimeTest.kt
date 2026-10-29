@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.hardware.usb.UsbInterface
+import android.opengl.EGL14
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
@@ -186,20 +187,19 @@ class T3LegacyRuntimeTest {
     @Test fun h264FirstFrameRendersAndDecoderReleasesOnKitKat() {
         // Drain the real consumer between sessions. Without a current GL context and
         // updateTexImage(), a second frame notification can remain coalesced on KitKat.
-        val egl = android.opengl.EGL14
-        val display = egl.eglGetDisplay(egl.EGL_DEFAULT_DISPLAY)
-        assertTrue(egl.eglInitialize(display, IntArray(2), 0, IntArray(2), 0))
+        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+        assertTrue(EGL14.eglInitialize(display, IntArray(2), 0, IntArray(2), 0))
         val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
-        assertTrue(egl.eglChooseConfig(display, intArrayOf(
-            egl.EGL_RENDERABLE_TYPE, egl.EGL_OPENGL_ES2_BIT,
-            egl.EGL_SURFACE_TYPE, egl.EGL_PBUFFER_BIT,
-            egl.EGL_RED_SIZE, 8, egl.EGL_GREEN_SIZE, 8, egl.EGL_BLUE_SIZE, 8, egl.EGL_NONE,
+        assertTrue(EGL14.eglChooseConfig(display, intArrayOf(
+            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+            EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
+            EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_NONE,
         ), 0, configs, 0, 1, IntArray(1), 0))
-        val glContext = egl.eglCreateContext(display, configs[0], egl.EGL_NO_CONTEXT,
-            intArrayOf(egl.EGL_CONTEXT_CLIENT_VERSION, 2, egl.EGL_NONE), 0)
-        val pbuffer = egl.eglCreatePbufferSurface(display, configs[0],
-            intArrayOf(egl.EGL_WIDTH, 1, egl.EGL_HEIGHT, 1, egl.EGL_NONE), 0)
-        assertTrue(egl.eglMakeCurrent(display, pbuffer, pbuffer, glContext))
+        val glContext = EGL14.eglCreateContext(display, configs[0], EGL14.EGL_NO_CONTEXT,
+            intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0)
+        val pbuffer = EGL14.eglCreatePbufferSurface(display, configs[0],
+            intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
+        assertTrue(EGL14.eglMakeCurrent(display, pbuffer, pbuffer, glContext))
         val textureNames = IntArray(1)
         android.opengl.GLES20.glGenTextures(1, textureNames, 0)
         val texture = android.graphics.SurfaceTexture(textureNames[0])
@@ -215,10 +215,10 @@ class T3LegacyRuntimeTest {
             surface.release()
             texture.release()
             android.opengl.GLES20.glDeleteTextures(1, textureNames, 0)
-            egl.eglMakeCurrent(display, egl.EGL_NO_SURFACE, egl.EGL_NO_SURFACE, egl.EGL_NO_CONTEXT)
-            egl.eglDestroySurface(display, pbuffer)
-            egl.eglDestroyContext(display, glContext)
-            egl.eglTerminate(display)
+            EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+            EGL14.eglDestroySurface(display, pbuffer)
+            EGL14.eglDestroyContext(display, glContext)
+            EGL14.eglTerminate(display)
         }
     }
 
