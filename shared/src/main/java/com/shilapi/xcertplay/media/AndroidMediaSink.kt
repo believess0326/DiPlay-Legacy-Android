@@ -717,6 +717,26 @@ class AndroidMediaSink(
         }
     }
 
+    /**
+     * Issue #290: raise the telephony stream to max for the call. This does not
+     * need the communication mode, so it also runs when mic compatibility (or
+     * the music-stream experiment) skips entering that mode; restoreAudioMode
+     * puts the saved volume back when the call ends.
+     */
+    private fun boostCallStreamVolume() {
+        val manager = audioManager ?: return
+        synchronized(audioModeLock) {
+            if (savedCallStreamVolume != null) return
+            val callMax = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull()
+            val callNow = runCatching { manager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull()
+            if (callMax != null && callNow != null && callNow < callMax) {
+                savedCallStreamVolume = callNow
+                runCatching { manager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, callMax, 0) }
+                runCatching { onAudioDiagnostic("Audio: call volume boosted stream=VOICE_CALL from=$callNow to=$callMax") }
+            }
+        }
+    }
+
     private fun enterCommunicationMode(id: AudioStreamId) {
         val manager = audioManager ?: return
         synchronized(audioModeLock) {
@@ -757,16 +777,7 @@ class AndroidMediaSink(
             ) {
                 moveCallToLoudspeaker(id)
             }
-            // Issue #290: the telephony stream has no independent slider on
-            // this head unit, and it sits below the music stream — raise it to
-            // max for the call; restoreAudioMode puts it back when the call ends.
-            val callMax = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull()
-            val callNow = runCatching { manager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull()
-            if (callMax != null && callNow != null && callNow < callMax) {
-                savedCallStreamVolume = callNow
-                runCatching { manager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, callMax, 0) }
-                runCatching { onAudioDiagnostic("Audio: call volume boosted stream=VOICE_CALL from=$callNow to=$callMax") }
-            }
+            boostCallStreamVolume()
         }
     }
 
@@ -792,8 +803,17 @@ class AndroidMediaSink(
     private fun restoreAudioMode(id: AudioStreamId?) {
         val manager = audioManager ?: return
         synchronized(audioModeLock) {
-            val active = communicationModeStream ?: return
-            if (id != null && id != active) return
+            val active = communicationModeStream
+            if (active != null && id != null && id != active) return
+            // Issue #290: the call volume is saved and boosted independently of
+            // the communication mode (mic-compatibility calls never enter it),
+            // so restore it before the mode early-return below.
+            savedCallStreamVolume?.let { saved ->
+                savedCallStreamVolume = null
+                runCatching { manager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, saved, 0) }
+                runCatching { onAudioDiagnostic("Audio: call volume restored stream=VOICE_CALL to=$saved") }
+            }
+            if (active == null) return
             communicationModeStream = null
             val line = try {
                 manager.mode = savedAudioMode
@@ -812,11 +832,6 @@ class AndroidMediaSink(
                 Log.w("xcertplay-usb", "could not restore audio mode $savedAudioMode", error)
                 "Audio: mode restore failed requested=$savedAudioMode now=${manager.mode}" +
                     " error=${error.javaClass.simpleName}"
-            }
-            savedCallStreamVolume?.let { saved ->
-                savedCallStreamVolume = null
-                runCatching { manager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, saved, 0) }
-                runCatching { onAudioDiagnostic("Audio: call volume restored stream=VOICE_CALL to=$saved") }
             }
             savedSpeakerphoneOn?.let { saved ->
                 savedSpeakerphoneOn = null
