@@ -752,6 +752,16 @@ class AndroidMediaSink(
             ) {
                 moveCallToLoudspeaker(id)
             }
+            // Issue #290: the telephony stream has no independent slider on
+            // this head unit, and it sits below the music stream — raise it to
+            // max for the call; restoreAudioMode puts it back when the call ends.
+            val callMax = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull()
+            val callNow = runCatching { manager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) }.getOrNull()
+            if (callMax != null && callNow != null && callNow < callMax) {
+                savedCallStreamVolume = callNow
+                runCatching { manager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, callMax, 0) }
+                runCatching { onAudioDiagnostic("Audio: call volume boosted stream=VOICE_CALL from=$callNow to=$callMax") }
+            }
         }
     }
 
@@ -761,6 +771,7 @@ class AndroidMediaSink(
      * loudspeaker on. Once per call, only in communication mode.
      */
     private var earpieceFallbackTried = false // guarded by audioModeLock
+    private var savedCallStreamVolume: Int? = null // guarded by audioModeLock
     private fun moveCallToLoudspeaker(id: AudioStreamId) {
         val manager = audioManager ?: return
         val line = synchronized(audioModeLock) {
@@ -795,6 +806,11 @@ class AndroidMediaSink(
                 Log.w("xcertplay-usb", "could not restore audio mode $savedAudioMode", error)
                 "Audio: mode restore failed requested=$savedAudioMode now=${manager.mode}" +
                     " error=${error.javaClass.simpleName}"
+            }
+            savedCallStreamVolume?.let { saved ->
+                savedCallStreamVolume = null
+                runCatching { manager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, saved, 0) }
+                runCatching { onAudioDiagnostic("Audio: call volume restored stream=VOICE_CALL to=$saved") }
             }
             runCatching { onAudioDiagnostic(line) }
         }
