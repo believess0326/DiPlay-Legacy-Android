@@ -1,6 +1,10 @@
 package com.shilapi.xcertplay.airplay
 
 import java.net.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,10 +38,33 @@ class ScreenStreamReapTest {
     @Test
     fun screenReapClosesSessionAfterGraceExpires() {
         val session = testSession()
+        val attempts = AtomicInteger()
+        engine.videoRecoveryAction = { attempts.incrementAndGet() }
         scheduleReap(session)
         Thread.sleep(600)
         assertTrue(session.isClosed)
         assertFalse(hasPendingReap(session))
+        assertEquals(1, attempts.get())
+    }
+
+    @Test
+    fun recoveredStreamDuringRecoveryActionDoesNotResurrectTimeout() {
+        val session = testSession()
+        val recovered = CountDownLatch(1)
+        engine.videoRecoveryAction = {
+            cancelReap(session) // A new screen SETUP cancels the old reap.
+            recovered.countDown()
+        }
+        try {
+            scheduleReap(session)
+            assertTrue(recovered.await(2, TimeUnit.SECONDS))
+            Thread.sleep(500)
+            assertFalse("Recovered control session must survive", session.isClosed)
+            assertFalse(hasPendingReap(session))
+        } finally {
+            cancelReap(session)
+            session.close()
+        }
     }
 
     @Test

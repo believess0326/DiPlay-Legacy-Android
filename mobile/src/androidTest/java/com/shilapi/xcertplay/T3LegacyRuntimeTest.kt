@@ -186,6 +186,17 @@ class T3LegacyRuntimeTest {
     @Test fun h264FirstFrameRendersAndDecoderReleasesOnKitKat() {
         val texture = android.graphics.SurfaceTexture(1)
         val surface = android.view.Surface(texture)
+        try {
+            // A decoder release must leave the same producer available for the next session.
+            // lockCanvas() would attach a CPU producer permanently and break the second round.
+            repeat(2) { renderH264ToSurface(texture, surface) }
+        } finally {
+            surface.release()
+            texture.release()
+        }
+    }
+
+    private fun renderH264ToSurface(texture: android.graphics.SurfaceTexture, surface: android.view.Surface) {
         val rendered = CountDownLatch(1)
         val frameAvailable = CountDownLatch(1)
         texture.setOnFrameAvailableListener { frameAvailable.countDown() }
@@ -253,8 +264,6 @@ class T3LegacyRuntimeTest {
             encoder.release()
             sink.close()
             val released = sink.awaitVideoReleased(3000)
-            surface.release()
-            texture.release()
             assertTrue("Video decoder did not release", released)
         }
     }

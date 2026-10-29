@@ -1,3 +1,14 @@
+# DiPlay 0.3.5 — 2026-10-29
+
+- Recover video before retiring the control session; prevent cancelled recovery work from rearming a stale session timeout (#327/#350).
+- Preserve MediaCodec Surface reuse by removing CPU Canvas clearing during decoder release; cover consecutive H.264 decode sessions on Android 4.4 (#316).
+- Drop stale video backlog while output remains live and re-add the fallback surface after reverse return (#351/#290).
+- Bound repeated USB-busy retries, retain the single EBUSY configuration retry, and record NCM queue-versus-wire counters (#305/#352).
+- Restore call volume and speakerphone state; offer an opt-in music-stream telephony downlink, and prefer HFP release over disabling Bluetooth (#343/#290).
+- Request Android 12+ Bluetooth scan permission and capture the hostapd foreground probe exit code (#293/#337).
+
+See [v0.3.5 release notes](docs/RELEASE-NOTES-0.3.5.md) for details.
+
 # DiPlay 0.3.4 — 2026-10-28
 
 - Rebuild video decoder after repeated output stalls (#346): force-rebuild the decoder and cold-start with a fresh IDR frame when output stalls exceed threshold, fixing frozen/corrupt CarPlay video that cannot self-recover after extended driving.
