@@ -5236,21 +5236,39 @@ class CarPlayHostActivity : ComponentActivity() {
                     // surfaceDestroyed / surfaceCreated, the same
                     // lifecycle desktop re-entry already survives.
                     val parent = fallback.parent as? ViewGroup
-                    val index = parent?.indexOfChild(fallback) ?: -1
-                    if (parent != null && index >= 0) {
-                        parent.removeView(fallback)
-                        parent.addView(fallback, index, fallback.layoutParams)
+                    if (parent != null) {
+                        // Issue #290 (0.3.5/0.3.6 startup crash): removing and
+                        // re-adding the view synchronously inside this layout
+                        // pass crashes on Android 5.1.1 — the following layout
+                        // dereferences the SurfaceView's not-yet-ready window
+                        // (startup size oscillation 600->500->600, 6 of 6
+                        // crashes). Post it to after the current traversal
+                        // and re-validate the view state there.
+                        fallback.post {
+                            if (isDestroyed || fallbackVideoView !== fallback) return@post
+                            val currentParent = fallback.parent as? ViewGroup ?: return@post
+                            val index = currentParent.indexOfChild(fallback)
+                            if (index < 0) return@post
+                            currentParent.removeView(fallback)
+                            currentParent.addView(fallback, index, fallback.layoutParams)
+                            appendLog(
+                                "Display: fallback surface re-add after grow to " +
+                                    "${bounds.width}x${bounds.height} (was " +
+                                    "${previousBounds.width}x${previousBounds.height})",
+                            )
+                            sink?.refreshPicture(SCREEN_TYPE_MAIN)
+                        }
                     } else {
                         fallback.visibility = View.GONE
                         fallback.post {
                             if (fallbackVideoView === fallback) fallback.visibility = View.VISIBLE
                         }
+                        appendLog(
+                            "Display: fallback surface re-add after grow to " +
+                                "${bounds.width}x${bounds.height} (was " +
+                                "${previousBounds.width}x${previousBounds.height})",
+                        )
                     }
-                    appendLog(
-                        "Display: fallback surface re-add after grow to " +
-                            "${bounds.width}x${bounds.height} (was " +
-                            "${previousBounds.width}x${previousBounds.height})",
-                    )
                 }
                 if (previousBounds != null && (bounds.width > previousBounds.width || bounds.height > previousBounds.height)) {
                     sink?.refreshPicture(SCREEN_TYPE_MAIN)
